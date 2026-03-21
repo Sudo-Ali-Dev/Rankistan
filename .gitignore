@@ -1,3 +1,5 @@
 .env
 node_modules/
 PkDevIndex-brain.md
+public/test-*.json
+public/score-test*.json

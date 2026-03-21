@@ -1,0 +1,53 @@
+name: Update Weekly Digest
+
+on:
+  schedule:
+    - cron: "0 19 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-digest:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Karachi
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Ensure Groq secret is configured
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
+        run: |
+          if [ -z "${GROQ_API_KEY}" ]; then
+            echo "Missing required secret: GROQ_API_KEY_PakDevIndex"
+            exit 1
+          fi
+
+      - name: Run Module 3 self-test
+        run: node scripts/module3-selftest.js
+
+      - name: Generate digest.json
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
+        run: node scripts/generate-digest.js
+
+      - name: Commit and push digest update
+        run: |
+          if git diff --quiet -- public/digest.json; then
+            echo "No digest changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/digest.json
+          git commit -m "chore: update weekly digest"
+          git push
