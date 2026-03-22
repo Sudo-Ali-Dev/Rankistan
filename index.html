@@ -1,107 +1,15 @@
 <!doctype html>
-<html class="dark" lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PakDev Index | Leaderboard</title>
-    <script id="tailwind-config">
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            colors: {
-              'surface-variant': '#31353c',
-              'on-tertiary-fixed-variant': '#00531b',
-              primary: '#a2c9ff',
-              'tertiary-container': '#50b85e',
-              'inverse-primary': '#0060aa',
-              background: '#10141a',
-              'surface-tint': '#a2c9ff',
-              outline: '#8b919d',
-              secondary: '#d8baff',
-              'on-background': '#dfe2eb',
-              'on-error-container': '#ffdad6',
-              'on-secondary-fixed-variant': '#5b2b9a',
-              'on-surface-variant': '#c0c7d4',
-              'surface-container-low': '#181c22',
-              'error-container': '#93000a',
-              'surface-container': '#1c2026',
-              surface: '#10141a',
-              'on-tertiary-fixed': '#002106',
-              'inverse-on-surface': '#2d3137',
-              'primary-fixed': '#d3e4ff',
-              'on-error': '#690005',
-              'on-primary-container': '#003a6b',
-              'surface-container-lowest': '#0a0e14',
-              'tertiary-fixed': '#90fa97',
-              'on-secondary-fixed': '#290055',
-              'on-surface': '#dfe2eb',
-              'surface-container-highest': '#31353c',
-              'on-primary-fixed-variant': '#004882',
-              'primary-fixed-dim': '#a2c9ff',
-              'secondary-fixed': '#eddcff',
-              'surface-bright': '#353940',
-              'outline-variant': '#414752',
-              error: '#ffb4ab',
-              'primary-container': '#58a6ff',
-              'surface-container-high': '#262a31',
-              'inverse-surface': '#dfe2eb',
-              'on-tertiary-container': '#004414',
-              'on-primary-fixed': '#001c38',
-              'on-tertiary': '#003910',
-              'secondary-container': '#5d2d9c',
-              tertiary: '#74dd7e',
-              'secondary-fixed-dim': '#d8baff',
-              'tertiary-fixed-dim': '#74dd7e',
-              'on-secondary': '#430882',
-              'surface-dim': '#10141a',
-              'on-primary': '#00315c',
-              'on-secondary-container': '#cda8ff'
-            },
-            fontFamily: {
-              headline: ['Space Grotesk'],
-              body: ['Inter'],
-              label: ['Space Grotesk'],
-              mono: ['Fira Code', 'monospace']
-            },
-            borderRadius: {
-              DEFAULT: '0px',
-              lg: '0px',
-              xl: '0px',
-              full: '9999px'
-            }
-          }
-        }
-      };
-    </script>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@400;500;600&amp;family=Fira+Code:wght@400;500&amp;display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet" />
-    <style>
-      .material-symbols-outlined {
-        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        vertical-align: middle;
-      }
-
-      ::-webkit-scrollbar {
-        width: 4px;
-        height: 4px;
-      }
-
-      ::-webkit-scrollbar-track {
-        background: #0a0e14;
-      }
-
-      ::-webkit-scrollbar-thumb {
-        background: #414752;
-      }
-
-      ::-webkit-scrollbar-thumb:hover {
-        background: #8b919d;
-      }
-    </style>
-  </head>
-  <body>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+  <body class="bg-surface text-on-surface font-body selection:bg-primary selection:text-on-primary">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
