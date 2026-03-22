@@ -25,24 +25,35 @@ export default function Leaderboard() {
       setError('');
 
       try {
-        let leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
-        if (!leaderboardPayload || cache.isStale(CACHE_KEYS.LEADERBOARD)) {
+        let leaderboardPayload;
+        try {
           const response = await fetch('./data.json', { cache: 'no-store' });
-          if (!response.ok) {
-            throw new Error(`Failed to load data.json (${response.status})`);
+          if (response.ok) {
+            leaderboardPayload = await response.json();
+            cache.set(CACHE_KEYS.LEADERBOARD, leaderboardPayload);
           }
-          leaderboardPayload = await response.json();
-          cache.set(CACHE_KEYS.LEADERBOARD, leaderboardPayload);
+        } catch {
+          leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
+        }
+        if (!leaderboardPayload) {
+          leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
+        }
+        if (!leaderboardPayload) {
+          throw new Error('Failed to load data.json and no cached data available.');
         }
 
-        let digestPayload = cache.get(CACHE_KEYS.DIGEST);
-        if (!digestPayload || cache.isStale(CACHE_KEYS.DIGEST)) {
+        let digestPayload;
+        try {
           const response = await fetch('./digest.json', { cache: 'no-store' });
-          if (!response.ok) {
-            throw new Error(`Failed to load digest.json (${response.status})`);
+          if (response.ok) {
+            digestPayload = await response.json();
+            cache.set(CACHE_KEYS.DIGEST, digestPayload);
           }
-          digestPayload = await response.json();
-          cache.set(CACHE_KEYS.DIGEST, digestPayload);
+        } catch {
+          digestPayload = cache.get(CACHE_KEYS.DIGEST);
+        }
+        if (!digestPayload) {
+          digestPayload = cache.get(CACHE_KEYS.DIGEST);
         }
 
         if (!alive) return;
