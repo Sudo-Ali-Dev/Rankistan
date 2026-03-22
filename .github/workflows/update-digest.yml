@@ -31,23 +31,22 @@ jobs:
             exit 1
           fi
 
-      - name: Run Module 3 self-test
-        run: node scripts/module3-selftest.js
-
-      - name: Generate digest.json
+      - name: Run Full Indexing Pipeline
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
-        run: node scripts/generate-digest.js
+          GROQ_API_KEY_PakDevIndex: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/run-all.js
 
-      - name: Commit and push digest update
+      - name: Commit and push updates
         run: |
-          if git diff --quiet -- public/digest.json; then
-            echo "No digest changes to commit."
+          if git diff --quiet -- public/; then
+            echo "No data changes to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data.json
           git add public/digest.json
-          git commit -m "chore: update weekly digest"
+          git commit -m "chore: automated weekly ecosystem sync"
           git push
