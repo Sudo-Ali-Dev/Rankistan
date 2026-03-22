@@ -1,8 +1,8 @@
 const CACHE_KEYS = {
-  LEADERBOARD: 'pakdev_leaderboard',
-  LEADERBOARD_TS: 'pakdev_leaderboard_ts',
-  DIGEST: 'pakdev_digest',
-  DIGEST_TS: 'pakdev_digest_ts'
+  LEADERBOARD: 'pakdev_leaderboard_v2',
+  LEADERBOARD_TS: 'pakdev_leaderboard_ts_v2',
+  DIGEST: 'pakdev_digest_v2',
+  DIGEST_TS: 'pakdev_digest_ts_v2'
 };
 
 const TTL = {
