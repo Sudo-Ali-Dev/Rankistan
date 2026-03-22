@@ -1,47 +1,327 @@
 {
   "week_of": "March 16 - March 22, 2026",
-  "generated_at": "2026-03-21T22:31:00.000Z",
-  "digest_text": "This week, Pakistani open-source developers delivered a strong mix of AI, frontend, DevOps, and data tooling. Ahmed Khan pushed practical language AI work with llm-urdu-nlp and a Pakistan-focused RAG pipeline, while Sara Ali expanded polished React and Next.js starters for faster product delivery. On the infrastructure side, Bilal Raza shipped reusable GitHub Actions release workflows and hardening-focused Docker assets, helping teams improve deployment reliability. Data engineering momentum stayed visible through Zain Malik's ETL and observability projects, and mobile innovation continued with Hina Noor's Flutter and React Native apps focused on everyday usability. Overall, the ecosystem showed healthy breadth: production workflows, developer tooling, and user-facing apps all moved forward in parallel.",
+  "generated_at": "2026-03-22T14:28:47.269Z",
+  "digest_text": "This week, Pakistani developers on GitHub have been busy creating a wide range of innovative projects. In the realm of AI and machine learning, dr-mushtaq has been actively contributing to several repositories, including Machine-Learning, Deep-Learning, natural-language-processing-projects-python, and Computer-Vision, which offer comprehensive guides and tutorials on these topics. Meanwhile, mubaidr's gem-team project focuses on multi-agent AI orchestration, while arifpucit's Generative-and-Agentic-AI repository contains notebooks and resources for a course on the subject. EimanTahir071's Mathematics-for-Machine-Learning-and-Artificial-Intelligence project explores the mathematical foundations of ML and AI.\n\nIn the web development sphere, realrashid has released several Laravel packages, including sweet-alert, cart, and plan-craft, which aim to simplify tasks such as notification management and shopping cart integration. ranajahanzaib's react-library-template and ts-react-library-template provide templates for creating React component libraries, while umarprogrammer19's Furniro-E-Commerce project is a modern eCommerce platform with features like product browsing and secure checkout.\n\nOther notable projects include shanraisshan's claude-code-best-practice and codex-cli-best-practice, which focus on coding best practices, as well as GlobalTechInfo's MEGA-MD and MEGA-MDX, which are high-performance multi-device WhatsApp bots. Waqar144's quran_memorization_helper is a helpful app for huffaz revising the Quran, while SilentProgrammer-max's Ayesha-osint-toolkit is a Python OSINT toolkit for instant username, email, and IP intelligence. Overall, it's been an exciting week for Pakistani developers on GitHub, with a diverse range of projects showcasing their skills and creativity.",
   "repos": [
     {
-      "owner": "ahmed-dev",
-      "name": "llm-urdu-nlp",
-      "description": "A language model toolkit for Urdu NLP tasks.",
-      "stars": 245,
-      "language": "Python",
-      "url": "https://github.com/ahmed-dev/llm-urdu-nlp"
+      "owner": "shanraisshan",
+      "name": "claude-code-best-practice",
+      "description": "practice made claude perfect",
+      "language": "HTML",
+      "stars": 20257,
+      "url": "https://github.com/shanraisshan/claude-code-best-practice"
     },
     {
-      "owner": "sara-builds",
-      "name": "react-admin-kit",
-      "description": "Composable React admin dashboard starter.",
-      "stars": 201,
+      "owner": "realrashid",
+      "name": "sweet-alert",
+      "description": "A BEAUTIFUL, RESPONSIVE, CUSTOMIZABLE, ACCESSIBLE (WAI-ARIA) REPLACEMENT FOR JAVASCRIPT'S POPUP BOXES FOR LARAVEL",
+      "language": "PHP",
+      "stars": 1162,
+      "url": "https://github.com/realrashid/sweet-alert"
+    },
+    {
+      "owner": "ahmad9059",
+      "name": "HyprFlux",
+      "description": "HyprFlux : Minimal, productive, elegant, and fast",
+      "language": "CSS",
+      "stars": 835,
+      "url": "https://github.com/ahmad9059/HyprFlux"
+    },
+    {
+      "owner": "shanraisshan",
+      "name": "codex-cli-best-practice",
+      "description": "practice makes codex perfect",
+      "language": "Python",
+      "stars": 227,
+      "url": "https://github.com/shanraisshan/codex-cli-best-practice"
+    },
+    {
+      "owner": "shanraisshan",
+      "name": "claude-code-hooks",
+      "description": "adding voice to claude code via hooks",
+      "language": "HTML",
+      "stars": 182,
+      "url": "https://github.com/shanraisshan/claude-code-hooks"
+    },
+    {
+      "owner": "GlobalTechInfo",
+      "name": "MEGA-MD",
+      "description": "High performance multi-device WhatsApp bot",
+      "language": "JavaScript",
+      "stars": 140,
+      "url": "https://github.com/GlobalTechInfo/MEGA-MD"
+    },
+    {
+      "owner": "GlobalTechInfo",
+      "name": "MEGA-MDX",
+      "description": "High performance multi-device WhatsApp bot",
       "language": "TypeScript",
-      "url": "https://github.com/sara-builds/react-admin-kit"
+      "stars": 123,
+      "url": "https://github.com/GlobalTechInfo/MEGA-MDX"
     },
     {
-      "owner": "bilalops",
-      "name": "gha-release-pipeline",
-      "description": "GitHub Actions release workflows for monorepos.",
-      "stars": 149,
-      "language": "YAML",
-      "url": "https://github.com/bilalops/gha-release-pipeline"
-    },
-    {
-      "owner": "zain-data",
-      "name": "pk-etl-warehouse",
-      "description": "ETL workflows for analytics warehouse ingestion.",
-      "stars": 118,
-      "language": "Python",
-      "url": "https://github.com/zain-data/pk-etl-warehouse"
-    },
-    {
-      "owner": "hina-mobile",
-      "name": "flutter-health-tracker",
-      "description": "Cross-platform health tracking app in Flutter.",
+      "owner": "realrashid",
+      "name": "cart",
+      "description": "Meet Cart — your seamless solution for efficient shopping cart management in Laravel. Simplifying everything from product additions to total calculations, Cart ensures a frictionless user experience for e-commerce applications.",
+      "language": "PHP",
       "stars": 109,
+      "url": "https://github.com/realrashid/cart"
+    },
+    {
+      "owner": "realrashid",
+      "name": "plan-craft",
+      "description": "Transforming Laravel Plans Management. Break free from conventional database storage constraints.",
+      "language": "PHP",
+      "stars": 88,
+      "url": "https://github.com/realrashid/plan-craft"
+    },
+    {
+      "owner": "dr-mushtaq",
+      "name": "Machine-Learning",
+      "description": "A complete A-Z guide to Machine Learning and Data Science using Python. Includes implementation of ML algorithms, statistical methods, and feature selection techniques in Jupyter Notebooks. Follow Coursesteach for tutorials and updates.",
+      "language": "Jupyter Notebook",
+      "stars": 55,
+      "url": "https://github.com/dr-mushtaq/Machine-Learning"
+    },
+    {
+      "owner": "mubaidr",
+      "name": "gem-team",
+      "description": "Multi-agent AI orchestration framework for complex project execution — 8 specialized agents, DAG-based planning, parallel execution, TDD verification",
+      "language": "Unknown",
+      "stars": 43,
+      "url": "https://github.com/mubaidr/gem-team"
+    },
+    {
+      "owner": "Waqar144",
+      "name": "quran_memorization_helper",
+      "description": "An app to help huffaz revise Quran",
       "language": "Dart",
-      "url": "https://github.com/hina-mobile/flutter-health-tracker"
+      "stars": 36,
+      "url": "https://github.com/Waqar144/quran_memorization_helper"
+    },
+    {
+      "owner": "dr-mushtaq",
+      "name": "Deep-Learning",
+      "description": "This repository offers video-based tutorials on Deep Learning concepts along with practical implementations using Python, TensorFlow, and Keras. It is designed for students, educators, and self-learners who want to understand the theory and apply it through hands-on projects.",
+      "language": "Jupyter Notebook",
+      "stars": 36,
+      "url": "https://github.com/dr-mushtaq/Deep-Learning"
+    },
+    {
+      "owner": "AsharibAli",
+      "name": "ramadan-prompting-nights",
+      "description": "A scenario-based prompting competition exclusively for GIAIC students.",
+      "language": "TypeScript",
+      "stars": 31,
+      "url": "https://github.com/AsharibAli/ramadan-prompting-nights"
+    },
+    {
+      "owner": "dr-mushtaq",
+      "name": "Python-Notes",
+      "description": "This repository is related to all about Python - an A-Z guide to the world of Data Science. This supplement contains the implementation of Python from Basic to advance level. Follow Coursesteach for more content 😊",
+      "language": "Jupyter Notebook",
+      "stars": 27,
+      "url": "https://github.com/dr-mushtaq/Python-Notes"
+    },
+    {
+      "owner": "GlobalTechInfo",
+      "name": "WEB-PAIR-QR",
+      "description": "Session Id Generator For Whatsapp Bots Using Mega",
+      "language": "HTML",
+      "stars": 23,
+      "url": "https://github.com/GlobalTechInfo/WEB-PAIR-QR"
+    },
+    {
+      "owner": "dr-mushtaq",
+      "name": "natural-language-processing-projects-python",
+      "description": "A complete A–Z guide to Natural Language Processing (NLP) using Python — includes real-world projects, machine learning models, and chatbot implementations. Ideal for students, researchers, and data science enthusiasts.",
+      "language": "Jupyter Notebook",
+      "stars": 18,
+      "url": "https://github.com/dr-mushtaq/natural-language-processing-projects-python"
+    },
+    {
+      "owner": "dr-mushtaq",
+      "name": "Computer-Vision",
+      "description": "Educational repository for learning Computer Vision using Python, OpenCV, and deep learning — includes tutorials, projects, and code examples.",
+      "language": "Jupyter Notebook",
+      "stars": 17,
+      "url": "https://github.com/dr-mushtaq/Computer-Vision"
+    },
+    {
+      "owner": "AsharibAli",
+      "name": "Flowise",
+      "description": "Build customized LLM orchestration flow & AI agents",
+      "language": "TypeScript",
+      "stars": 16,
+      "url": "https://github.com/AsharibAli/Flowise"
+    },
+    {
+      "owner": "shanraisshan",
+      "name": "codex-cli-hooks",
+      "description": "adding voice to codex cli via hooks",
+      "language": "Python",
+      "stars": 13,
+      "url": "https://github.com/shanraisshan/codex-cli-hooks"
+    },
+    {
+      "owner": "umarprogrammer19",
+      "name": "Furniro-E-Commerce",
+      "description": "Modern eCommerce platform with product browsing, cart management, and secure checkout.",
+      "language": "TypeScript",
+      "stars": 11,
+      "url": "https://github.com/umarprogrammer19/Furniro-E-Commerce"
+    },
+    {
+      "owner": "SilentProgrammer-max",
+      "name": "Ayesha-osint-toolkit",
+      "description": "A laser-focused Python OSINT toolkit for instant username, email & IP intelligence—empowering you to uncover hidden digital footprints.",
+      "language": "Python",
+      "stars": 11,
+      "url": "https://github.com/SilentProgrammer-max/Ayesha-osint-toolkit"
+    },
+    {
+      "owner": "RizwanMunawar",
+      "name": "ultralytics",
+      "description": "NEW - YOLOv8 🚀 in PyTorch > ONNX > OpenVINO > CoreML > TFLite",
+      "language": "Python",
+      "stars": 10,
+      "url": "https://github.com/RizwanMunawar/ultralytics"
+    },
+    {
+      "owner": "mmtrt",
+      "name": "wine-platform",
+      "description": "WINE platform snap provides WINE base for snaps that are depended on WINE",
+      "language": "Shell",
+      "stars": 9,
+      "url": "https://github.com/mmtrt/wine-platform"
+    },
+    {
+      "owner": "iamtalhaasghar",
+      "name": "spy-on-little-brother",
+      "description": "A simple script which takes screenshots of whole screen and uploads it to a discord channel after every 15 secs using webhooks. This allows you to have any eye on our brother and see what he is doing. Only for linux.",
+      "language": "Python",
+      "stars": 8,
+      "url": "https://github.com/iamtalhaasghar/spy-on-little-brother"
+    },
+    {
+      "owner": "arifpucit",
+      "name": "Generative-and-Agentic-AI",
+      "description": "Contains notebooks and resources for the course",
+      "language": "Jupyter Notebook",
+      "stars": 8,
+      "url": "https://github.com/arifpucit/Generative-and-Agentic-AI"
+    },
+    {
+      "owner": "GlobalTechInfo",
+      "name": "PAIRING-WEB",
+      "description": "Session Id Generator For WhatsApp Bots Using Paste Bin",
+      "language": "HTML",
+      "stars": 7,
+      "url": "https://github.com/GlobalTechInfo/PAIRING-WEB"
+    },
+    {
+      "owner": "AdnanKhan45",
+      "name": "interactive_3d",
+      "description": "A plugin to render interactive 3D model in .gLTF or .glb format using Filament on Android & GLTFSceneKit on iOS",
+      "language": "C",
+      "stars": 6,
+      "url": "https://github.com/AdnanKhan45/interactive_3d"
+    },
+    {
+      "owner": "mubashir1837",
+      "name": "mubashir1837",
+      "description": "This is my github profile  readme",
+      "language": "Unknown",
+      "stars": 6,
+      "url": "https://github.com/mubashir1837/mubashir1837"
+    },
+    {
+      "owner": "arhamansari11",
+      "name": "arhamansari11",
+      "description": "Check out my GitHub profile 🧑🏻‍💻 for a showcase of my coding projects and skills 🚀. Feel free to give it a star 🌟 if you like it, and don't hesitate to fork it for inspiration 💡 or to use the template for your own projects. Thank you for visiting! 🙃",
+      "language": "Unknown",
+      "stars": 6,
+      "url": "https://github.com/arhamansari11/arhamansari11"
+    },
+    {
+      "owner": "mubaidr",
+      "name": "awesome-copilot",
+      "description": "Community-contributed instructions, prompts, and configurations to help you make the most of GitHub Copilot.",
+      "language": "Python",
+      "stars": 5,
+      "url": "https://github.com/mubaidr/awesome-copilot"
+    },
+    {
+      "owner": "dr-mushtaq",
+      "name": "Research-Work",
+      "description": "This section presents MS student thesis projects on machine learning, deep learning, NLP, computer vision, and e-learning. Each thesis includes research reviews, datasets, code implementations, and performance results—serving as practical resources for researchers and students.",
+      "language": "Jupyter Notebook",
+      "stars": 5,
+      "url": "https://github.com/dr-mushtaq/Research-Work"
+    },
+    {
+      "owner": "Hasnatrasool163",
+      "name": "Hasnatrasool163",
+      "description": "Config files for my GitHub profile.",
+      "language": "Unknown",
+      "stars": 5,
+      "url": "https://github.com/Hasnatrasool163/Hasnatrasool163"
+    },
+    {
+      "owner": "farhanashrafdev",
+      "name": "mantis",
+      "description": "Open-source AI red-team CLI. Automated security testing for LLM apps",
+      "language": "TypeScript",
+      "stars": 4,
+      "url": "https://github.com/farhanashrafdev/mantis"
+    },
+    {
+      "owner": "realrashid",
+      "name": "laravel-zoho-cliq",
+      "description": "A Laravel package for integrating with Zoho Cliq, allowing you to send messages, notifications, and rich content seamlessly from your Laravel application.",
+      "language": "PHP",
+      "stars": 4,
+      "url": "https://github.com/realrashid/laravel-zoho-cliq"
+    },
+    {
+      "owner": "AnasMohammad4321",
+      "name": "AnasMohammad4321",
+      "description": "Config files for my GitHub profile.",
+      "language": "Unknown",
+      "stars": 4,
+      "url": "https://github.com/AnasMohammad4321/AnasMohammad4321"
+    },
+    {
+      "owner": "EimanTahir071",
+      "name": "Mathematics-for-Machine-Learning-and-Artificial-Intelligence",
+      "description": "Mathematical Concepts - Linear algebra, statistics, calculus foundations for ML/AI",
+      "language": "Python",
+      "stars": 4,
+      "url": "https://github.com/EimanTahir071/Mathematics-for-Machine-Learning-and-Artificial-Intelligence"
+    },
+    {
+      "owner": "ranajahanzaib",
+      "name": "react-library-template",
+      "description": "Instantly Create React Component Library & Publish on NPM",
+      "language": "HTML",
+      "stars": 4,
+      "url": "https://github.com/ranajahanzaib/react-library-template"
+    },
+    {
+      "owner": "ranajahanzaib",
+      "name": "ts-react-library-template",
+      "description": "Template repo for React Component Library (TypeScript)",
+      "language": "TypeScript",
+      "stars": 4,
+      "url": "https://github.com/ranajahanzaib/ts-react-library-template"
+    },
+    {
+      "owner": "sarfraznawaz2005",
+      "name": "lmf",
+      "description": "A text-based image format that any LLM can read, write, and understand — no vision required.",
+      "language": "TypeScript",
+      "stars": 3,
+      "url": "https://github.com/sarfraznawaz2005/lmf"
     }
   ]
 }
