@@ -68,19 +68,19 @@ npm run dev
 
 ## GitHub Actions Schedule
 
-The pipeline runs automatically every Friday night / Saturday morning (PKT):
+The pipeline runs **every night** (PKT):
 
 | PKT | Phase | Description |
 |---|---|---|
-| Sat 12:00 AM | `batch-0` | Lahore accounts created 2010–2017 |
-| Sat 1:00 AM | `batch-1` | Lahore accounts created 2018–2019 |
-| Sat 2:00 AM | `batch-2` | Lahore accounts created 2020 |
-| Sat 3:00 AM | `batch-3` | Lahore accounts created 2021 |
-| Sat 4:00 AM | `batch-4` | Lahore accounts created 2022 |
-| Sat 5:00 AM | `batch-5` | Lahore accounts created 2023 |
-| Sat 6:00 AM | `batch-6` | Lahore accounts created 2024 |
-| Sat 7:00 AM | `batch-7` | Lahore accounts created 2025–2026 |
-| Sat 8:00 AM | `merge` | Merge all batches → filter → score → digest |
+| 12:00 AM | `batch-0` | Lahore accounts created 2010–2017 |
+| 1:00 AM | `batch-1` | Lahore accounts created 2018–2019 |
+| 2:00 AM | `batch-2` | Lahore accounts created 2020 |
+| 3:00 AM | `batch-3` | Lahore accounts created 2021 |
+| 4:00 AM | `batch-4` | Lahore accounts created 2022 |
+| 5:00 AM | `batch-5` | Lahore accounts created 2023 |
+| 6:00 AM | `batch-6` | Lahore accounts created 2024 |
+| 7:00 AM | `batch-7` | Lahore accounts created 2025–2026 |
+| 8:00 AM | `merge` | Merge all batches → filter → score → digest |
 
 You can also trigger any phase manually via **Actions → "Update Weekly Digest" → Run workflow**.
 

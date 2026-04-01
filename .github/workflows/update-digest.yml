@@ -2,15 +2,15 @@ name: Update Weekly Digest
 
 on:
   schedule:
-    - cron: "0 19 * * 5"
-    - cron: "0 20 * * 5"
-    - cron: "0 21 * * 5"
-    - cron: "0 22 * * 5"
-    - cron: "0 23 * * 5"
-    - cron: "0 0 * * 6"
-    - cron: "0 1 * * 6"
-    - cron: "0 2 * * 6"
-    - cron: "0 3 * * 6"
+    - cron: "0 19 * * *"
+    - cron: "0 20 * * *"
+    - cron: "0 21 * * *"
+    - cron: "0 22 * * *"
+    - cron: "0 23 * * *"
+    - cron: "0 0 * * *"
+    - cron: "0 1 * * *"
+    - cron: "0 2 * * *"
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       phase:
@@ -48,15 +48,15 @@ jobs:
           else
             SCHEDULE="${{ github.event.schedule }}"
             case "$SCHEDULE" in
-              "0 19 * * 5") echo "phase=batch-0" >> "$GITHUB_OUTPUT" ;;
-              "0 20 * * 5") echo "phase=batch-1" >> "$GITHUB_OUTPUT" ;;
-              "0 21 * * 5") echo "phase=batch-2" >> "$GITHUB_OUTPUT" ;;
-              "0 22 * * 5") echo "phase=batch-3" >> "$GITHUB_OUTPUT" ;;
-              "0 23 * * 5") echo "phase=batch-4" >> "$GITHUB_OUTPUT" ;;
-              "0 0 * * 6")  echo "phase=batch-5" >> "$GITHUB_OUTPUT" ;;
-              "0 1 * * 6")  echo "phase=batch-6" >> "$GITHUB_OUTPUT" ;;
-              "0 2 * * 6")  echo "phase=batch-7" >> "$GITHUB_OUTPUT" ;;
-              "0 3 * * 6")  echo "phase=merge"   >> "$GITHUB_OUTPUT" ;;
+              "0 19 * * *") echo "phase=batch-0" >> "$GITHUB_OUTPUT" ;;
+              "0 20 * * *") echo "phase=batch-1" >> "$GITHUB_OUTPUT" ;;
+              "0 21 * * *") echo "phase=batch-2" >> "$GITHUB_OUTPUT" ;;
+              "0 22 * * *") echo "phase=batch-3" >> "$GITHUB_OUTPUT" ;;
+              "0 23 * * *") echo "phase=batch-4" >> "$GITHUB_OUTPUT" ;;
+              "0 0 * * *")  echo "phase=batch-5" >> "$GITHUB_OUTPUT" ;;
+              "0 1 * * *")  echo "phase=batch-6" >> "$GITHUB_OUTPUT" ;;
+              "0 2 * * *")  echo "phase=batch-7" >> "$GITHUB_OUTPUT" ;;
+              "0 3 * * *")  echo "phase=merge"   >> "$GITHUB_OUTPUT" ;;
               *)            echo "phase=all"     >> "$GITHUB_OUTPUT" ;;
             esac
           fi
