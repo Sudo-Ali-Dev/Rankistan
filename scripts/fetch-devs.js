@@ -8,11 +8,18 @@ const SEARCH_DELAY_MS = 2000;
 const SEARCH_RETRY_DELAY_MS = 3000;
 const MAX_DEVELOPERS = 300;
 const PRELIMINARY_MAX_DEVELOPERS = 500;
-const USER_EVENTS_PER_PAGE = 90;
+const USER_EVENTS_PER_PAGE = 100;
+const USER_EVENTS_MAX_PAGES = 3;
 const USER_REPOS_PER_PAGE = 100;
 const SEARCH_MAX_PAGES = 10;
 const INACTIVE_DAYS_CUTOFF = 90;
 const MIN_ACCOUNT_AGE_DAYS = 30;
+
+const ACTIVITY_THRESHOLDS = {
+  MIN_CONTRIBUTIONS_90D: 36,
+  MIN_ACTIVE_WEEKS: 6,
+  MAX_INACTIVITY_GAP_DAYS: 14
+};
 const REQUEST_TIMEOUT_MS = 20000;
 const RATE_LIMIT_RETRY_DELAY_MS = 60000;
 const USER_CALL_DELAY_MIN_MS = 100;
@@ -82,6 +89,52 @@ function daysSince(date) {
   const now = Date.now();
   const then = new Date(date).getTime();
   return Math.floor((now - then) / (1000 * 60 * 60 * 24));
+}
+
+function computeActivityMetrics(rawEvents90d) {
+  const now = Date.now();
+  const NINETY_DAYS_MS = INACTIVE_DAYS_CUTOFF * 24 * 60 * 60 * 1000;
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+  const meaningful = (rawEvents90d || []).filter((e) => MEANINGFUL_EVENT_TYPES.has(e.type));
+  const totalContributions = meaningful.length;
+
+  const weekBuckets = new Set();
+  for (const event of meaningful) {
+    const eventTime = new Date(event.created_at).getTime();
+    const weeksAgo = Math.floor((now - eventTime) / ONE_WEEK_MS);
+    if (weeksAgo < 12) {
+      weekBuckets.add(weeksAgo);
+    }
+  }
+
+  const activeWeeks = weekBuckets.size;
+
+  const timestamps = meaningful
+    .map((e) => new Date(e.created_at).getTime())
+    .filter((t) => t >= now - NINETY_DAYS_MS)
+    .sort((a, b) => a - b);
+
+  let longestGapDays = INACTIVE_DAYS_CUTOFF;
+
+  if (timestamps.length > 0) {
+    const periodStart = now - NINETY_DAYS_MS;
+    longestGapDays = Math.floor((timestamps[0] - periodStart) / (1000 * 60 * 60 * 24));
+
+    for (let i = 1; i < timestamps.length; i += 1) {
+      const gap = Math.floor((timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60 * 24));
+      longestGapDays = Math.max(longestGapDays, gap);
+    }
+
+    const gapToNow = Math.floor((now - timestamps[timestamps.length - 1]) / (1000 * 60 * 60 * 24));
+    longestGapDays = Math.max(longestGapDays, gapToNow);
+  }
+
+  return {
+    total_contributions_90d: totalContributions,
+    active_weeks_12: activeWeeks,
+    longest_gap_days: longestGapDays
+  };
 }
 
 async function githubRequest(endpoint, token, options = {}) {
@@ -392,11 +445,18 @@ async function fetchDeveloperActivity(username, token) {
     return null;
   }
 
-  const eventsResponse = await githubRequest(
-    `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=1`,
-    token
-  );
-  const events = Array.isArray(eventsResponse) ? eventsResponse : [];
+  const events = [];
+  for (let page = 1; page <= USER_EVENTS_MAX_PAGES; page += 1) {
+    const eventsResponse = await githubRequest(
+      `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=${page}`,
+      token
+    );
+    const pageEvents = Array.isArray(eventsResponse) ? eventsResponse : [];
+    events.push(...pageEvents);
+    if (pageEvents.length < USER_EVENTS_PER_PAGE) {
+      break;
+    }
+  }
 
   const repos = await fetchAllUserRepos(username, token);
 
@@ -406,6 +466,8 @@ async function fetchDeveloperActivity(username, token) {
   const reposActive7d = extractReposPushedInLast7Days(eventsLast90Days).map((repo) => repo.name);
   const topRepos = mapTopRepos(repos);
   const digestRepos = buildDigestRepos(reposActive7d, repos);
+
+  const activityMetrics = computeActivityMetrics(eventsLast90Days);
 
   return {
     username: profile.login || username,
@@ -422,6 +484,9 @@ async function fetchDeveloperActivity(username, token) {
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
     events_90d: eventsLast90Days.length > 0,
+    total_contributions_90d: activityMetrics.total_contributions_90d,
+    active_weeks_12: activityMetrics.active_weeks_12,
+    longest_gap_days: activityMetrics.longest_gap_days,
     repos_active_7d: reposActive7d,
     digest_repos: digestRepos,
     raw_events_90d: eventsLast90Days
@@ -474,10 +539,29 @@ async function fetchPakistaniDevelopers(options = {}) {
     const hasNoRepos = Number(dev.public_repos || 0) === 0;
     const hasNoNetwork = Number(dev.followers || 0) === 0 && Number(dev.following || 0) === 0;
     const isVeryNewAccount = daysSince(dev.created_at) < MIN_ACCOUNT_AGE_DAYS;
-    const isInactive = !dev.events_90d;
 
-    return !(hasNoRepos || hasNoNetwork || isVeryNewAccount || isInactive);
+    if (hasNoRepos || hasNoNetwork || isVeryNewAccount) {
+      return false;
+    }
+
+    const hasEnoughContributions = dev.total_contributions_90d >= ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_90D;
+    const hasSteadyPresence = dev.active_weeks_12 >= ACTIVITY_THRESHOLDS.MIN_ACTIVE_WEEKS;
+    const hasNoLongGaps = dev.longest_gap_days <= ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS;
+
+    return hasEnoughContributions && hasSteadyPresence && hasNoLongGaps;
   });
+
+  const passedBasic = fetchedDevelopers.filter((dev) => {
+    const hasNoRepos = Number(dev.public_repos || 0) === 0;
+    const hasNoNetwork = Number(dev.followers || 0) === 0 && Number(dev.following || 0) === 0;
+    const isVeryNewAccount = daysSince(dev.created_at) < MIN_ACCOUNT_AGE_DAYS;
+    return !(hasNoRepos || hasNoNetwork || isVeryNewAccount);
+  });
+
+  console.log(
+    `Activity filter: ${fetchedDevelopers.length} fetched -> ${passedBasic.length} passed basic checks -> ${filteredDevelopers.length} passed activity thresholds ` +
+    `(>=${ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_90D} contributions, >=${ACTIVITY_THRESHOLDS.MIN_ACTIVE_WEEKS} active weeks, <=${ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS}d max gap)`
+  );
 
   filteredDevelopers.sort((a, b) => {
     const followerDiff = Number(b.followers || 0) - Number(a.followers || 0);
@@ -490,14 +574,16 @@ async function fetchPakistaniDevelopers(options = {}) {
 
   const finalDevelopers = filteredDevelopers.slice(0, MAX_DEVELOPERS);
 
-  console.log(`Fetched: ${fetchedDevelopers.length} | Filtered valid: ${filteredDevelopers.length} | Final capped: ${finalDevelopers.length}`);
+  console.log(`Final leaderboard: ${finalDevelopers.length} developers (capped at ${MAX_DEVELOPERS})`);
   return finalDevelopers;
 }
 
 module.exports = {
   fetchPakistaniDevelopers,
+  computeActivityMetrics,
   LOCATION_QUERIES,
-  MAX_DEVELOPERS
+  MAX_DEVELOPERS,
+  ACTIVITY_THRESHOLDS
 };
 
 if (require.main === module) {

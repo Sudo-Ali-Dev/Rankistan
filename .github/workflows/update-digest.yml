@@ -48,5 +48,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add public/data.json
           git add public/digest.json
+          git add public/raw.json
+          git add public/scored.json
           git commit -m "chore: automated weekly ecosystem sync"
           git push

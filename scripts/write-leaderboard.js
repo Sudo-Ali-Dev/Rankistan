@@ -5,6 +5,10 @@ const path = require('node:path');
 
 const STRIP_FIELDS = new Set([
   'events_90d',
+  'total_contributions_90d',
+  'active_weeks_12',
+  'longest_gap_days',
+  'raw_events_90d',
   'repos_active_7d',
   'following',
   'age_penalty_applied'
