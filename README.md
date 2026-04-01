@@ -11,7 +11,7 @@ The pipeline discovers developers from GitHub's location search, fetches their r
 | Stage | Script | Output |
 |---|---|---|
 | **Discover** | `scripts/fetch-devs.js` | Searches GitHub for developers in Lahore, split by account creation year to bypass the 1,000-result cap |
-| **Fetch** | `scripts/fetch-devs.js` | Fetches profile, events (last 60 days), and repos for each developer |
+| **Fetch** | `scripts/fetch-devs.js` | Fetches profile, events (up to 2 pages / 200 events, last 60 days), and repos for each developer |
 | **Score** | `scripts/score.js` | Calculates a weighted score based on stars, recent activity, followers, and repo count |
 | **Leaderboard** | `scripts/write-leaderboard.js` | Writes the final ranked `data.json` with public-safe fields |
 | **Digest** | `scripts/generate-digest.js` | Generates an AI-powered weekly summary of ecosystem trends |
@@ -36,7 +36,7 @@ To maximize coverage within GitHub's API limits, the discovery phase splits sear
 Lahore 2010-2017 → Lahore 2018-2019 → Lahore 2020 → ... → Lahore 2025-2026
 ```
 
-Each batch runs as a separate GitHub Actions job, spaced 1 hour apart, to stay within rate limits. A final merge step combines all batches, deduplicates, filters, scores, and generates the digest.
+Each batch runs as a separate GitHub Actions job, spaced 1 hour apart, to stay within rate limits. A final merge step combines all batches, deduplicates, filters, scores, and generates the digest. Rate limit tracking distinguishes between core and search API quotas to avoid unnecessary pauses.
 
 ### Scoring Formula
 

@@ -8,7 +8,7 @@ const SEARCH_DELAY_MS = 2100;
 const SEARCH_RETRY_DELAY_MS = 3000;
 const MAX_DEVELOPERS = 300;
 const USER_EVENTS_PER_PAGE = 100;
-const USER_EVENTS_MAX_PAGES = 1;
+const USER_EVENTS_MAX_PAGES = 2;
 const USER_REPOS_PER_PAGE = 100;
 const SEARCH_MAX_PAGES = 10;
 const INACTIVE_DAYS_CUTOFF = 60;
@@ -126,6 +126,8 @@ function computeActivityMetrics(rawEvents) {
 }
 
 function updateRateLimit(headers) {
+  const resource = headers.get('x-ratelimit-resource');
+  if (resource && resource !== 'core') return;
   const remaining = parseInt(headers.get('x-ratelimit-remaining'), 10);
   const resetAt = parseInt(headers.get('x-ratelimit-reset'), 10);
   if (!Number.isNaN(remaining)) rateLimit.remaining = remaining;
