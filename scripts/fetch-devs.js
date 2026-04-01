@@ -4,20 +4,19 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const GITHUB_API_BASE = 'https://api.github.com';
-const SEARCH_DELAY_MS = 2000;
+const SEARCH_DELAY_MS = 2100;
 const SEARCH_RETRY_DELAY_MS = 3000;
 const MAX_DEVELOPERS = 300;
-const PRELIMINARY_MAX_DEVELOPERS = 2500;
 const USER_EVENTS_PER_PAGE = 100;
 const USER_EVENTS_MAX_PAGES = 1;
 const USER_REPOS_PER_PAGE = 100;
 const SEARCH_MAX_PAGES = 10;
-const INACTIVE_DAYS_CUTOFF = 90;
+const INACTIVE_DAYS_CUTOFF = 60;
 const MIN_ACCOUNT_AGE_DAYS = 30;
+const RATE_LIMIT_BUFFER = 150;
 
 const ACTIVITY_THRESHOLDS = {
-  MIN_CONTRIBUTIONS_90D: 25,
-  MIN_ACTIVE_WEEKS: 4,
+  MIN_CONTRIBUTIONS_60D: 30,
   MAX_INACTIVITY_GAP_DAYS: 30
 };
 const REQUEST_TIMEOUT_MS = 20000;
@@ -32,16 +31,18 @@ const MEANINGFUL_EVENT_TYPES = new Set([
   'ReleaseEvent'
 ]);
 
-const LOCATION_QUERIES = [
-  'location:Pakistan',
-  'location:Lahore',
-  'location:Karachi',
-  'location:Islamabad',
-  'location:Rawalpindi',
-  'location:Peshawar',
-  'location:Faisalabad',
-  'location:PK'
+const SEARCH_BATCHES = [
+  { label: 'Lahore 2010-2017', q: 'location:Lahore type:user repos:>3 followers:>2 created:2010-01-01..2017-12-31' },
+  { label: 'Lahore 2018-2019', q: 'location:Lahore type:user repos:>3 followers:>2 created:2018-01-01..2019-12-31' },
+  { label: 'Lahore 2020',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2020-01-01..2020-12-31' },
+  { label: 'Lahore 2021',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2021-01-01..2021-12-31' },
+  { label: 'Lahore 2022',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2022-01-01..2022-12-31' },
+  { label: 'Lahore 2023',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2023-01-01..2023-12-31' },
+  { label: 'Lahore 2024',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2024-01-01..2024-12-31' },
+  { label: 'Lahore 2025-2026', q: 'location:Lahore type:user repos:>3 followers:>2 created:2025-01-01..2026-12-31' }
 ];
+
+const rateLimit = { remaining: Infinity, resetAt: 0 };
 
 async function loadDotEnv(repoRoot) {
   const envPath = path.join(repoRoot, '.env');
@@ -91,34 +92,22 @@ function daysSince(date) {
   return Math.floor((now - then) / (1000 * 60 * 60 * 24));
 }
 
-function computeActivityMetrics(rawEvents90d) {
+function computeActivityMetrics(rawEvents) {
   const now = Date.now();
-  const NINETY_DAYS_MS = INACTIVE_DAYS_CUTOFF * 24 * 60 * 60 * 1000;
-  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const CUTOFF_MS = INACTIVE_DAYS_CUTOFF * 24 * 60 * 60 * 1000;
 
-  const meaningful = (rawEvents90d || []).filter((e) => MEANINGFUL_EVENT_TYPES.has(e.type));
+  const meaningful = (rawEvents || []).filter((e) => MEANINGFUL_EVENT_TYPES.has(e.type));
   const totalContributions = meaningful.length;
-
-  const weekBuckets = new Set();
-  for (const event of meaningful) {
-    const eventTime = new Date(event.created_at).getTime();
-    const weeksAgo = Math.floor((now - eventTime) / ONE_WEEK_MS);
-    if (weeksAgo < 12) {
-      weekBuckets.add(weeksAgo);
-    }
-  }
-
-  const activeWeeks = weekBuckets.size;
 
   const timestamps = meaningful
     .map((e) => new Date(e.created_at).getTime())
-    .filter((t) => t >= now - NINETY_DAYS_MS)
+    .filter((t) => t >= now - CUTOFF_MS)
     .sort((a, b) => a - b);
 
   let longestGapDays = INACTIVE_DAYS_CUTOFF;
 
   if (timestamps.length > 0) {
-    const periodStart = now - NINETY_DAYS_MS;
+    const periodStart = now - CUTOFF_MS;
     longestGapDays = Math.floor((timestamps[0] - periodStart) / (1000 * 60 * 60 * 24));
 
     for (let i = 1; i < timestamps.length; i += 1) {
@@ -131,14 +120,32 @@ function computeActivityMetrics(rawEvents90d) {
   }
 
   return {
-    total_contributions_90d: totalContributions,
-    active_weeks_12: activeWeeks,
+    total_contributions_60d: totalContributions,
     longest_gap_days: longestGapDays
   };
 }
 
+function updateRateLimit(headers) {
+  const remaining = parseInt(headers.get('x-ratelimit-remaining'), 10);
+  const resetAt = parseInt(headers.get('x-ratelimit-reset'), 10);
+  if (!Number.isNaN(remaining)) rateLimit.remaining = remaining;
+  if (!Number.isNaN(resetAt)) rateLimit.resetAt = resetAt;
+}
+
+async function waitForRateLimit() {
+  if (rateLimit.remaining > RATE_LIMIT_BUFFER) return;
+  const waitMs = Math.max(0, rateLimit.resetAt * 1000 - Date.now()) + 5000;
+  console.log(
+    `Rate limit low (${rateLimit.remaining} remaining). Pausing ${Math.ceil(waitMs / 1000)}s until reset...`
+  );
+  await sleep(waitMs);
+  rateLimit.remaining = Infinity;
+}
+
 async function githubRequest(endpoint, token, options = {}) {
   const { allow404 = false, retriedAfter429 = false } = options;
+
+  await waitForRateLimit();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -164,30 +171,27 @@ async function githubRequest(endpoint, token, options = {}) {
     clearTimeout(timeout);
   }
 
+  updateRateLimit(response.headers);
+
   if (response.status === 404 && allow404) {
     return null;
   }
 
   if (response.status === 429 && !retriedAfter429) {
-    console.warn(`Rate limited on ${endpoint}; waiting 60s and retrying once.`);
-    await sleep(RATE_LIMIT_RETRY_DELAY_MS);
-    return githubRequest(endpoint, token, {
-      ...options,
-      retriedAfter429: true
-    });
+    const retryAfter = parseInt(response.headers.get('retry-after'), 10);
+    const waitMs = (retryAfter > 0 ? retryAfter * 1000 : RATE_LIMIT_RETRY_DELAY_MS) + 5000;
+    console.warn(`Rate limited on ${endpoint}; waiting ${Math.ceil(waitMs / 1000)}s and retrying.`);
+    await sleep(waitMs);
+    return githubRequest(endpoint, token, { ...options, retriedAfter429: true });
   }
 
   if (!response.ok) {
     const body = await response.text();
-    // GitHub Search API returns 403 (Forbidden) instead of 429 when rate limit is exceeded
-    if (response.status === 403 && body.includes('API rate limit exceeded') && !retriedAfter429) {
-      console.warn(`Search Rate limited (403) on ${endpoint}; waiting 65s and retrying once.`);
-      // Wait 65 seconds just to be absolutely safe the minute window resets
-      await sleep(RATE_LIMIT_RETRY_DELAY_MS + 5000);
-      return githubRequest(endpoint, token, {
-        ...options,
-        retriedAfter429: true
-      });
+    if (response.status === 403 && body.includes('rate limit') && !retriedAfter429) {
+      const waitMs = Math.max(0, rateLimit.resetAt * 1000 - Date.now()) + 5000;
+      console.warn(`Rate limited (403) on ${endpoint}; waiting ${Math.ceil(waitMs / 1000)}s and retrying.`);
+      await sleep(waitMs);
+      return githubRequest(endpoint, token, { ...options, retriedAfter429: true });
     }
     throw new Error(`GitHub API error ${response.status} for ${endpoint}: ${body}`);
   }
@@ -245,54 +249,56 @@ function dedupeUsernames(usernames) {
   return deduped;
 }
 
-async function discoverUsersByLocation(token) {
+async function discoverUsers(token, batches) {
   const discovered = [];
 
-  for (let index = 0; index < LOCATION_QUERIES.length; index += 1) {
-    const query = LOCATION_QUERIES[index];
-    console.log(`[discover ${index + 1}/${LOCATION_QUERIES.length}] ${query} (pages 1-${SEARCH_MAX_PAGES})`);
+  for (let index = 0; index < batches.length; index += 1) {
+    const batch = batches[index];
+    console.log(`[discover ${index + 1}/${SEARCH_BATCHES.length}] ${batch.label} (pages 1-${SEARCH_MAX_PAGES})`);
 
+    let batchCount = 0;
     let success = false;
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         for (let page = 1; page <= SEARCH_MAX_PAGES; page += 1) {
-          const endpoint = `/search/users?q=${encodeURIComponent(query)}&per_page=100&page=${page}`;
+          const endpoint =
+            `/search/users?q=${encodeURIComponent(batch.q)}` +
+            `&sort=followers&order=desc&per_page=100&page=${page}`;
           const result = await githubRequest(endpoint, token);
 
-          const items = result.items || [];
+          const items = result?.items || [];
           for (const item of items) {
             if (item && typeof item.login === 'string') {
               discovered.push(item.login);
+              batchCount += 1;
             }
           }
 
           if (items.length < 100) {
             break;
           }
-          
-          // The Search API restricts authenticated users to exactly 30 requests per minute
-          // We sleep for 2.1 seconds between every page to stay under the limit cleanly.
-          await sleep(2100);
+
+          await sleep(SEARCH_DELAY_MS);
         }
 
         success = true;
         break;
       } catch (error) {
         if (attempt === 1) {
-          console.warn(`Search failed for ${query}; retrying once after 3s. Reason: ${error.message}`);
+          console.warn(`Search failed for ${batch.label}; retrying after 3s. Reason: ${error.message}`);
           await sleep(SEARCH_RETRY_DELAY_MS);
         } else {
-          console.error(`Skipping query ${query} after retry failure: ${error.message}`);
+          console.error(`Skipping batch ${batch.label} after retry failure: ${error.message}`);
         }
       }
     }
 
-    if (!success) {
-      continue;
+    if (success) {
+      console.log(`  -> found ${batchCount} users`);
     }
 
-    if (index < LOCATION_QUERIES.length - 1) {
+    if (index < batches.length - 1) {
       await sleep(SEARCH_DELAY_MS);
     }
   }
@@ -464,14 +470,14 @@ async function fetchDeveloperActivity(username, token) {
 
   const repos = await fetchAllUserRepos(username, token);
 
-  const eventsLast90Days = extractRecentEvents(events, INACTIVE_DAYS_CUTOFF);
+  const recentEvents = extractRecentEvents(events, INACTIVE_DAYS_CUTOFF);
   const meaningfulLast30Days = filterMeaningfulEvents(extractRecentEvents(events, 30));
   const repoSummary = summarizeRepos(repos);
-  const reposActive7d = extractReposPushedInLast7Days(eventsLast90Days).map((repo) => repo.name);
+  const reposActive7d = extractReposPushedInLast7Days(recentEvents).map((repo) => repo.name);
   const topRepos = mapTopRepos(repos);
   const digestRepos = buildDigestRepos(reposActive7d, repos);
 
-  const activityMetrics = computeActivityMetrics(eventsLast90Days);
+  const activityMetrics = computeActivityMetrics(recentEvents);
 
   return {
     username: profile.login || username,
@@ -487,14 +493,20 @@ async function fetchDeveloperActivity(username, token) {
     top_languages: repoSummary.top_languages,
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
-    events_90d: eventsLast90Days.length > 0,
-    total_contributions_90d: activityMetrics.total_contributions_90d,
-    active_weeks_12: activityMetrics.active_weeks_12,
+    total_contributions_60d: activityMetrics.total_contributions_60d,
     longest_gap_days: activityMetrics.longest_gap_days,
     repos_active_7d: reposActive7d,
     digest_repos: digestRepos,
-    raw_events_90d: eventsLast90Days
+    raw_events_60d: recentEvents
   };
+}
+
+function applyActivityFilter(developers) {
+  return developers.filter((dev) => {
+    const hasEnoughContributions = dev.total_contributions_60d >= ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D;
+    const hasNoLongGaps = dev.longest_gap_days <= ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS;
+    return hasEnoughContributions && hasNoLongGaps;
+  });
 }
 
 async function fetchPakistaniDevelopers(options = {}) {
@@ -506,65 +518,77 @@ async function fetchPakistaniDevelopers(options = {}) {
     throw new Error('Missing GitHub token. Set MY_GITHUB_PAT in .env or pass options.token.');
   }
 
-  const discoveredUsers = await discoverUsersByLocation(token);
-  const registeredUsers = await loadRegisteredDevelopers(repoRoot);
+  const batchIndex = options.batchIndex;
+  const rawOnly = options.rawOnly === true;
+  const batches = batchIndex != null
+    ? [SEARCH_BATCHES[batchIndex]]
+    : SEARCH_BATCHES;
 
-  const merged = dedupeUsernames([...discoveredUsers, ...registeredUsers]);
-  const preliminaryUsernames = merged.slice(0, PRELIMINARY_MAX_DEVELOPERS);
+  console.log(
+    batchIndex != null
+      ? `Running batch ${batchIndex}: ${batches[0].label}`
+      : `Running all ${batches.length} search batches`
+  );
 
-  console.log(`Discovered ${discoveredUsers.length} users from location search.`);
-  console.log(`Loaded ${registeredUsers.length} registered users.`);
-  console.log(`Merged ${merged.length} unique users.`);
-  console.log(`Applying preliminary cap: ${preliminaryUsernames.length}/${PRELIMINARY_MAX_DEVELOPERS}`);
+  const discoveredUsers = await discoverUsers(token, batches);
+  const registeredUsers = batchIndex === 0 || batchIndex == null
+    ? await loadRegisteredDevelopers(repoRoot)
+    : [];
+
+  const allUsernames = dedupeUsernames([...discoveredUsers, ...registeredUsers]);
+
+  console.log(`Discovered ${discoveredUsers.length} users from search.`);
+  if (registeredUsers.length > 0) {
+    console.log(`Loaded ${registeredUsers.length} registered users.`);
+  }
+  console.log(`Total unique usernames to scan: ${allUsernames.length}`);
 
   const fetchedDevelopers = [];
+  let skippedProfile = 0;
+  let skippedError = 0;
 
-  for (let index = 0; index < preliminaryUsernames.length; index += 1) {
-    const username = preliminaryUsernames[index];
-    if (index % 10 === 0) {
-      console.log(`[fetch ${index + 1}/${preliminaryUsernames.length}] ${username}`);
+  for (let index = 0; index < allUsernames.length; index += 1) {
+    const username = allUsernames[index];
+    if (index % 50 === 0) {
+      console.log(
+        `[fetch ${index + 1}/${allUsernames.length}] ${username} ` +
+        `(rate limit: ${rateLimit.remaining} remaining)`
+      );
     }
 
     try {
       const developer = await fetchDeveloperActivity(username, token);
       if (developer) {
         fetchedDevelopers.push(developer);
+      } else {
+        skippedProfile += 1;
       }
     } catch (error) {
+      skippedError += 1;
       console.error(`Skipping ${username}: ${error.message}`);
     }
 
-    if (index < preliminaryUsernames.length - 1) {
+    if (index < allUsernames.length - 1) {
       await sleep(randomDelayMs(USER_CALL_DELAY_MIN_MS, USER_CALL_DELAY_MAX_MS));
     }
   }
 
-  const filteredDevelopers = fetchedDevelopers.filter((dev) => {
-    const hasNoRepos = Number(dev.public_repos || 0) === 0;
-    const hasNoNetwork = Number(dev.followers || 0) === 0 && Number(dev.following || 0) === 0;
-    const isVeryNewAccount = daysSince(dev.created_at) < MIN_ACCOUNT_AGE_DAYS;
+  console.log(
+    `Fetch complete: ${fetchedDevelopers.length} valid profiles, ` +
+    `${skippedProfile} skipped (empty/fake), ${skippedError} errors`
+  );
 
-    if (hasNoRepos || hasNoNetwork || isVeryNewAccount) {
-      return false;
-    }
+  if (rawOnly) {
+    console.log(`Raw mode: returning ${fetchedDevelopers.length} unfiltered developers.`);
+    return fetchedDevelopers;
+  }
 
-    const hasEnoughContributions = dev.total_contributions_90d >= ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_90D;
-    const hasSteadyPresence = dev.active_weeks_12 >= ACTIVITY_THRESHOLDS.MIN_ACTIVE_WEEKS;
-    const hasNoLongGaps = dev.longest_gap_days <= ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS;
-
-    return hasEnoughContributions && hasSteadyPresence && hasNoLongGaps;
-  });
-
-  const passedBasic = fetchedDevelopers.filter((dev) => {
-    const hasNoRepos = Number(dev.public_repos || 0) === 0;
-    const hasNoNetwork = Number(dev.followers || 0) === 0 && Number(dev.following || 0) === 0;
-    const isVeryNewAccount = daysSince(dev.created_at) < MIN_ACCOUNT_AGE_DAYS;
-    return !(hasNoRepos || hasNoNetwork || isVeryNewAccount);
-  });
+  const filteredDevelopers = applyActivityFilter(fetchedDevelopers);
 
   console.log(
-    `Activity filter: ${fetchedDevelopers.length} fetched -> ${passedBasic.length} passed basic checks -> ${filteredDevelopers.length} passed activity thresholds ` +
-    `(>=${ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_90D} contributions, >=${ACTIVITY_THRESHOLDS.MIN_ACTIVE_WEEKS} active weeks, <=${ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS}d max gap)`
+    `Activity filter: ${fetchedDevelopers.length} profiles -> ${filteredDevelopers.length} passed ` +
+    `(>=${ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D} contributions in 60d, ` +
+    `<=${ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS}d max gap)`
   );
 
   filteredDevelopers.sort((a, b) => {
@@ -584,8 +608,9 @@ async function fetchPakistaniDevelopers(options = {}) {
 
 module.exports = {
   fetchPakistaniDevelopers,
+  applyActivityFilter,
   computeActivityMetrics,
-  LOCATION_QUERIES,
+  SEARCH_BATCHES,
   MAX_DEVELOPERS,
   ACTIVITY_THRESHOLDS
 };

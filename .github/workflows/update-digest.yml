@@ -2,15 +2,33 @@ name: Update Weekly Digest
 
 on:
   schedule:
-    - cron: "0 19 * * 6"
+    - cron: "0 19 * * 5"
+    - cron: "0 20 * * 5"
+    - cron: "0 21 * * 5"
+    - cron: "0 22 * * 5"
+    - cron: "0 23 * * 5"
+    - cron: "0 0 * * 6"
+    - cron: "0 1 * * 6"
+    - cron: "0 2 * * 6"
+    - cron: "0 3 * * 6"
   workflow_dispatch:
+    inputs:
+      phase:
+        description: "batch-0 through batch-7, merge, or all"
+        required: false
+        default: "all"
 
 permissions:
   contents: write
 
+concurrency:
+  group: pakdev-pipeline
+  cancel-in-progress: false
+
 jobs:
   generate-digest:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       TZ: Asia/Karachi
     steps:
@@ -22,7 +40,30 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Determine phase
+        id: phase
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "phase=${{ github.event.inputs.phase }}" >> "$GITHUB_OUTPUT"
+          else
+            SCHEDULE="${{ github.event.schedule }}"
+            case "$SCHEDULE" in
+              "0 19 * * 5") echo "phase=batch-0" >> "$GITHUB_OUTPUT" ;;
+              "0 20 * * 5") echo "phase=batch-1" >> "$GITHUB_OUTPUT" ;;
+              "0 21 * * 5") echo "phase=batch-2" >> "$GITHUB_OUTPUT" ;;
+              "0 22 * * 5") echo "phase=batch-3" >> "$GITHUB_OUTPUT" ;;
+              "0 23 * * 5") echo "phase=batch-4" >> "$GITHUB_OUTPUT" ;;
+              "0 0 * * 6")  echo "phase=batch-5" >> "$GITHUB_OUTPUT" ;;
+              "0 1 * * 6")  echo "phase=batch-6" >> "$GITHUB_OUTPUT" ;;
+              "0 2 * * 6")  echo "phase=batch-7" >> "$GITHUB_OUTPUT" ;;
+              "0 3 * * 6")  echo "phase=merge"   >> "$GITHUB_OUTPUT" ;;
+              *)            echo "phase=all"     >> "$GITHUB_OUTPUT" ;;
+            esac
+          fi
+          echo "Detected phase: $(cat "$GITHUB_OUTPUT" | tail -1)"
+
       - name: Ensure Groq secret is configured
+        if: contains(steps.phase.outputs.phase, 'merge') || steps.phase.outputs.phase == 'all'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
         run: |
@@ -31,24 +72,47 @@ jobs:
             exit 1
           fi
 
-      - name: Run Full Indexing Pipeline
+      - name: Run pipeline
         env:
           GROQ_API_KEY_PakDevIndex: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/run-all.js
+        run: |
+          PHASE="${{ steps.phase.outputs.phase }}"
+          echo "Running phase: $PHASE"
+
+          if [[ "$PHASE" == batch-* ]]; then
+            BATCH_INDEX="${PHASE#batch-}"
+            node scripts/run-all.js --batch "$BATCH_INDEX"
+          elif [ "$PHASE" = "merge" ]; then
+            node scripts/run-all.js --merge
+          else
+            node scripts/run-all.js
+          fi
 
       - name: Commit and push updates
         run: |
-          if git diff --quiet -- public/; then
-            echo "No data changes to commit."
-            exit 0
-          fi
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/data.json
-          git add public/digest.json
-          git add public/raw.json
-          git add public/scored.json
-          git commit -m "chore: automated weekly ecosystem sync"
-          git push
+
+          PHASE="${{ steps.phase.outputs.phase }}"
+
+          if [[ "$PHASE" == batch-* ]]; then
+            BATCH_INDEX="${PHASE#batch-}"
+            BATCH_FILE="public/raw_batch_${BATCH_INDEX}.json"
+            if [ -f "$BATCH_FILE" ]; then
+              git add "$BATCH_FILE"
+              git commit -m "chore: fetch batch ${BATCH_INDEX} developers" || echo "Nothing to commit"
+              git push
+            fi
+          else
+            if git diff --quiet -- public/; then
+              echo "No data changes to commit."
+              exit 0
+            fi
+            git add public/data.json
+            git add public/digest.json
+            git add public/raw.json
+            git add public/scored.json
+            git commit -m "chore: automated weekly ecosystem sync"
+            git push
+          fi

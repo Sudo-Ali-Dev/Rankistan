@@ -4,11 +4,9 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const STRIP_FIELDS = new Set([
-  'events_90d',
-  'total_contributions_90d',
-  'active_weeks_12',
+  'total_contributions_60d',
   'longest_gap_days',
-  'raw_events_90d',
+  'raw_events_60d',
   'repos_active_7d',
   'following',
   'age_penalty_applied'
