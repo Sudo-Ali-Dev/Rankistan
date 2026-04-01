@@ -100,7 +100,7 @@ jobs:
             BATCH_INDEX="${PHASE#batch-}"
             BATCH_FILE="public/raw_batch_${BATCH_INDEX}.json"
             if [ -f "$BATCH_FILE" ]; then
-              git add "$BATCH_FILE"
+              git add -f "$BATCH_FILE"
               git commit -m "chore: fetch batch ${BATCH_INDEX} developers" || echo "Nothing to commit"
               git push
             fi
