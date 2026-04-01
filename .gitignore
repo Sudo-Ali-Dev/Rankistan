@@ -5,4 +5,5 @@ public/test-*.json
 public/score-test*.json
 *test*
 *Test*
-dist/
+dist/
+public/raw_batch_*.json
