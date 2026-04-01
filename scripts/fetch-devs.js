@@ -7,18 +7,18 @@ const GITHUB_API_BASE = 'https://api.github.com';
 const SEARCH_DELAY_MS = 2000;
 const SEARCH_RETRY_DELAY_MS = 3000;
 const MAX_DEVELOPERS = 300;
-const PRELIMINARY_MAX_DEVELOPERS = 500;
+const PRELIMINARY_MAX_DEVELOPERS = 2500;
 const USER_EVENTS_PER_PAGE = 100;
-const USER_EVENTS_MAX_PAGES = 3;
+const USER_EVENTS_MAX_PAGES = 1;
 const USER_REPOS_PER_PAGE = 100;
 const SEARCH_MAX_PAGES = 10;
 const INACTIVE_DAYS_CUTOFF = 90;
 const MIN_ACCOUNT_AGE_DAYS = 30;
 
 const ACTIVITY_THRESHOLDS = {
-  MIN_CONTRIBUTIONS_90D: 36,
-  MIN_ACTIVE_WEEKS: 6,
-  MAX_INACTIVITY_GAP_DAYS: 14
+  MIN_CONTRIBUTIONS_90D: 25,
+  MIN_ACTIVE_WEEKS: 4,
+  MAX_INACTIVITY_GAP_DAYS: 30
 };
 const REQUEST_TIMEOUT_MS = 20000;
 const RATE_LIMIT_RETRY_DELAY_MS = 60000;
@@ -442,6 +442,10 @@ async function fetchDeveloperActivity(username, token) {
   const profile = await githubRequest(`/users/${encodeURIComponent(username)}`, token, { allow404: true });
   if (!profile) {
     console.warn(`Skipping ${username}: user not found (404).`);
+    return null;
+  }
+
+  if (isLikelyFakeFromProfile(profile)) {
     return null;
   }
 

@@ -41,13 +41,18 @@ function hasValidRankAndScore(entry) {
 }
 
 function validateInput(entries) {
-  if (!Array.isArray(entries) || entries.length === 0) {
-    throw new Error('Module 4 aborted: input must be a non-empty array.');
+  if (!Array.isArray(entries)) {
+    throw new Error('Module 4 aborted: input must be an array.');
+  }
+
+  if (entries.length === 0) {
+    console.warn('Module 4 warning: 0 developers passed filters. Writing empty leaderboard.');
+    return;
   }
 
   const hasAtLeastOneValid = entries.some(hasValidRankAndScore);
   if (!hasAtLeastOneValid) {
-    throw new Error('Module 4 aborted: input must contain at least one entry with valid rank and score.');
+    console.warn('Module 4 warning: no entries with valid rank/score. Writing empty leaderboard.');
   }
 }
 
