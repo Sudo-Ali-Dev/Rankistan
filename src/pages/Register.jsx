@@ -30,8 +30,8 @@ function computeActivity(events) {
   let longestGap = 60;
 
   if (timestamps.length > 0) {
-    const start = now - cutoff;
-    longestGap = Math.floor((timestamps[0] - start) / (1000 * 60 * 60 * 24));
+    longestGap = 0;
+
     for (let i = 1; i < timestamps.length; i++) {
       const gap = Math.floor((timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60 * 24));
       if (gap > longestGap) longestGap = gap;

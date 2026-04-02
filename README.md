@@ -22,7 +22,7 @@ Not everyone with a GitHub account qualifies. Developers must pass these thresho
 | Criteria | Threshold |
 |---|---|
 | Meaningful contributions (pushes, PRs, issues, releases) | **>=30 in the last 60 days** |
-| Longest inactivity gap | **<=30 days** |
+| Longest inactivity gap (between events or since last event) | **<=30 days** |
 | Account age | **>=30 days** |
 | Public repos | **>3** |
 | Followers | **>1** |

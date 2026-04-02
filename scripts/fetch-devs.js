@@ -6,7 +6,7 @@ const path = require('node:path');
 const GITHUB_API_BASE = 'https://api.github.com';
 const SEARCH_DELAY_MS = 2100;
 const SEARCH_RETRY_DELAY_MS = 3000;
-const MAX_DEVELOPERS = 300;
+const MAX_DEVELOPERS = 1000;
 const USER_EVENTS_PER_PAGE = 100;
 const USER_EVENTS_MAX_PAGES = 2;
 const USER_REPOS_PER_PAGE = 100;
@@ -123,8 +123,7 @@ function computeActivityMetrics(rawEvents) {
   let longestGapDays = INACTIVE_DAYS_CUTOFF;
 
   if (timestamps.length > 0) {
-    const periodStart = now - CUTOFF_MS;
-    longestGapDays = Math.floor((timestamps[0] - periodStart) / (1000 * 60 * 60 * 24));
+    longestGapDays = 0;
 
     for (let i = 1; i < timestamps.length; i += 1) {
       const gap = Math.floor((timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60 * 24));
