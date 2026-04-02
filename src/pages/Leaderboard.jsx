@@ -4,16 +4,44 @@ import { CACHE_KEYS, cache } from '../utils/cache';
 import { enrichLeaderboardWithTags, getAvailableTags } from '../utils/tags';
 import { generateDeveloperSummary } from '../utils/groq';
 
-export default function Leaderboard() {
+const SORT_OPTIONS = [
+  { key: 'score_desc', label: 'SCORE DESC', fn: (a, b) => (b.score || 0) - (a.score || 0) },
+  { key: 'score_asc', label: 'SCORE ASC', fn: (a, b) => (a.score || 0) - (b.score || 0) },
+  { key: 'name_asc', label: 'NAME A-Z', fn: (a, b) => (a.name || '').localeCompare(b.name || '') },
+  { key: 'name_desc', label: 'NAME Z-A', fn: (a, b) => (b.name || '').localeCompare(a.name || '') },
+  { key: 'followers_desc', label: 'FOLLOWERS', fn: (a, b) => (b.followers || 0) - (a.followers || 0) },
+  { key: 'activity_desc', label: 'ACTIVITY', fn: (a, b) => (b.events_30d || 0) - (a.events_30d || 0) },
+];
+
+function exportCSV(devs) {
+  const headers = ['rank', 'username', 'name', 'location', 'score', 'followers', 'public_repos', 'events_30d', 'total_stars', 'top_languages'];
+  const rows = devs.map((d) =>
+    headers.map((h) => {
+      const val = d[h];
+      if (Array.isArray(val)) return `"${val.join(', ')}"`;
+      if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) return `"${val.replace(/"/g, '""')}"`;
+      return val ?? '';
+    }).join(',')
+  );
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pakdev-leaderboard-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export default function Leaderboard({ searchTerm = '' }) {
   const [leaderboard, setLeaderboard] = useState([]);
-  const [digest, setDigest] = useState(null);
   const [selectedTag, setSelectedTag] = useState('All');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [summaryByUser, setSummaryByUser] = useState({});
   const [loadingSummaryUser, setLoadingSummaryUser] = useState('');
+  const [sortIndex, setSortIndex] = useState(0);
 
-  // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const devsPerPage = 10;
 
@@ -42,20 +70,6 @@ export default function Leaderboard() {
           throw new Error('Failed to load data.json and no cached data available.');
         }
 
-        let digestPayload;
-        try {
-          const response = await fetch('./digest.json', { cache: 'no-store' });
-          if (response.ok) {
-            digestPayload = await response.json();
-            cache.set(CACHE_KEYS.DIGEST, digestPayload);
-          }
-        } catch {
-          digestPayload = cache.get(CACHE_KEYS.DIGEST);
-        }
-        if (!digestPayload) {
-          digestPayload = cache.get(CACHE_KEYS.DIGEST);
-        }
-
         if (!alive) return;
 
         const rows = Array.isArray(leaderboardPayload?.leaderboard)
@@ -63,7 +77,6 @@ export default function Leaderboard() {
           : [];
 
         setLeaderboard(enrichLeaderboardWithTags(rows));
-        setDigest(digestPayload || null);
       } catch (loadError) {
         if (!alive) return;
         setError(loadError?.message || 'Failed to load frontend data.');
@@ -73,18 +86,39 @@ export default function Leaderboard() {
     }
 
     loadAll();
-
     return () => { alive = false; };
   }, []);
 
   const tags = useMemo(() => ['All', ...getAvailableTags(leaderboard)], [leaderboard]);
 
   const filteredLeaderboard = useMemo(() => {
-    if (selectedTag === 'All') return leaderboard;
-    return leaderboard.filter((dev) => Array.isArray(dev?.tags) && dev.tags.includes(selectedTag));
-  }, [leaderboard, selectedTag]);
+    let result = leaderboard;
 
-  // Pagination Logic
+    if (selectedTag !== 'All') {
+      result = result.filter((dev) => Array.isArray(dev?.tags) && dev.tags.includes(selectedTag));
+    }
+
+    const q = searchTerm.trim().toLowerCase();
+    if (q) {
+      result = result.filter((dev) => {
+        const username = (dev.username || '').toLowerCase();
+        const name = (dev.name || '').toLowerCase();
+        const location = (dev.location || '').toLowerCase();
+        const langs = (dev.top_languages || []).join(' ').toLowerCase();
+        return username.includes(q) || name.includes(q) || location.includes(q) || langs.includes(q);
+      });
+    }
+
+    const sort = SORT_OPTIONS[sortIndex];
+    if (sort) {
+      result = [...result].sort(sort.fn);
+    }
+
+    return result;
+  }, [leaderboard, selectedTag, searchTerm, sortIndex]);
+
+  useEffect(() => { setCurrentPage(1); }, [selectedTag, searchTerm, sortIndex]);
+
   const indexOfLastDev = currentPage * devsPerPage;
   const indexOfFirstDev = Math.max(0, indexOfLastDev - devsPerPage);
   const currentDevs = filteredLeaderboard.slice(indexOfFirstDev, indexOfLastDev);
@@ -92,7 +126,7 @@ export default function Leaderboard() {
 
   const startIdx = indexOfFirstDev + 1;
   const endIdx = Math.min(indexOfLastDev, filteredLeaderboard.length);
-  
+
   async function handleGenerateSummary(dev) {
     const username = String(dev?.username || '').trim();
     if (!username || loadingSummaryUser === username) return;
@@ -104,6 +138,10 @@ export default function Leaderboard() {
     } finally {
       setLoadingSummaryUser('');
     }
+  }
+
+  function handleSortCycle() {
+    setSortIndex((prev) => (prev + 1) % SORT_OPTIONS.length);
   }
 
   return (
@@ -123,15 +161,26 @@ export default function Leaderboard() {
             <div className="bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs flex items-center gap-2 hover:bg-surface-container-highest transition-colors relative group cursor-pointer">
               <span className="material-symbols-outlined text-sm">filter_list</span>
               FILTER: {selectedTag.toUpperCase()}
-              <select className="absolute inset-0 opacity-0 cursor-pointer w-full" value={selectedTag} onChange={(e) => { setSelectedTag(e.target.value); setCurrentPage(1); }}>
+              <select
+                className="absolute inset-0 opacity-0 cursor-pointer w-full bg-surface-container-high text-on-surface"
+                value={selectedTag}
+                onChange={(e) => { setSelectedTag(e.target.value); }}
+                style={{ colorScheme: 'dark' }}
+              >
                 {tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
               </select>
             </div>
-            <button className="bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs flex items-center gap-2 hover:bg-surface-container-highest transition-colors">
+            <button
+              onClick={handleSortCycle}
+              className="bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs flex items-center gap-2 hover:bg-surface-container-highest transition-colors"
+            >
               <span className="material-symbols-outlined text-sm">sort</span>
-              SORT: SCORE_DESC
+              SORT: {SORT_OPTIONS[sortIndex].label}
             </button>
-            <button className="bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all">
+            <button
+              onClick={() => exportCSV(filteredLeaderboard)}
+              className="bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all"
+            >
               Export CSV
             </button>
           </div>
@@ -145,7 +194,6 @@ export default function Leaderboard() {
       ) : (
         <>
           <div className="border border-outline-variant overflow-hidden">
-            {/* Table Header */}
             <div className="hidden md:grid grid-cols-12 bg-surface-container-lowest text-outline font-mono text-[10px] uppercase tracking-widest py-4 px-6 border-b border-outline-variant">
               <div className="col-span-1">Rank</div>
               <div className="col-span-4">Developer Instance</div>
@@ -155,28 +203,32 @@ export default function Leaderboard() {
               <div className="col-span-1 text-right">Action</div>
             </div>
 
-            {/* Leaderboard Rows */}
             <div>
-              {currentDevs.map(dev => (
-                <DevCard 
-                  key={dev.username} 
-                  dev={dev} 
-                  onGenerateSummary={handleGenerateSummary}
-                  summary={summaryByUser[dev.username]}
-                  loadingSummaryUser={loadingSummaryUser}
-                />
-              ))}
+              {currentDevs.length === 0 ? (
+                <div className="text-center py-12 font-mono text-outline-variant text-xs uppercase">
+                  No developers match your search.
+                </div>
+              ) : (
+                currentDevs.map(dev => (
+                  <DevCard
+                    key={dev.username}
+                    dev={dev}
+                    onGenerateSummary={handleGenerateSummary}
+                    summary={summaryByUser[dev.username]}
+                    loadingSummaryUser={loadingSummaryUser}
+                  />
+                ))
+              )}
             </div>
           </div>
 
-          {/* Pagination Controls */}
           {filteredLeaderboard.length > 0 && (
             <div className="mt-8 flex flex-col md:flex-row justify-between items-center gap-4 font-mono text-xs border border-outline-variant p-4 bg-surface-container-lowest">
               <div className="text-outline uppercase">
                 Showing {String(startIdx).padStart(3, '0')} - {String(endIdx).padStart(3, '0')} of {filteredLeaderboard.length.toLocaleString()} Node_Instances
               </div>
               <div className="flex gap-px bg-outline-variant border border-outline-variant">
-                <button 
+                <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                   className="bg-surface px-4 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"
@@ -186,7 +238,7 @@ export default function Leaderboard() {
                 <button className="bg-primary text-on-primary px-4 py-2">
                   {String(currentPage).padStart(2, '0')}
                 </button>
-                <button 
+                <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
                   className="bg-surface px-4 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"

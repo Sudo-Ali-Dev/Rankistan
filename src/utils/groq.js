@@ -18,7 +18,9 @@ const SYSTEM_PROMPT = [
   'You are writing a brief developer profile summary.',
   'Write exactly 2 sentences describing this developer based on their GitHub activity.',
   'Be specific - mention their main technologies and what kind of projects they build.',
-  'Do not use bullet points. Do not start with "This developer". Write in third person.'
+  'Do not use bullet points. Do not start with "This developer". Write in third person.',
+  'Use he/him or she/her pronouns based on the developer\'s name. Pay careful attention to the name — e.g. Muhammad, Ali, Ibrahim, Ahmed are male; Fatima, Ayesha, Noor (female name) are female.',
+  'If the gender is truly ambiguous, use "they/them".'
 ].join(' ');
 
 const summaryCache = new Map();

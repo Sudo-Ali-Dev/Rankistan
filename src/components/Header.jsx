@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Header({ activeTab, onChangeTab }) {
+export default function Header({ activeTab, onChangeTab, searchTerm, onSearchChange }) {
   return (
     <nav className="bg-[#10141a] border-b border-[#414752] flex justify-between items-center w-full px-6 h-16 sticky top-0 z-50">
       <div className="flex items-center gap-8">
@@ -28,7 +28,7 @@ export default function Header({ activeTab, onChangeTab }) {
       <div className="flex items-center gap-4">
         {activeTab === 'leaderboard' && (
           <div className="relative hidden lg:block mr-2">
-            <input className="bg-surface-container-lowest border-b-2 border-outline-variant focus:border-tertiary focus:ring-0 text-sm font-mono py-1 px-3 w-64 placeholder:text-outline/50 transition-all text-on-surface" placeholder="Search developer..." type="text"/>
+            <input className="bg-surface-container-lowest border-b-2 border-outline-variant focus:border-tertiary focus:ring-0 text-sm font-mono py-1 px-3 w-64 placeholder:text-outline/50 transition-all text-on-surface" placeholder="Search developer..." type="text" value={searchTerm} onChange={(e) => onSearchChange(e.target.value)} />
             <span className="material-symbols-outlined absolute right-2 top-1 text-outline">search</span>
           </div>
         )}

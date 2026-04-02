@@ -6,14 +6,16 @@ import Register from './pages/Register';
 
 function App() {
   const [activeTab, setActiveTab] = useState('leaderboard');
+  const [searchTerm, setSearchTerm] = useState('');
+
   const handleChangeTab = useCallback((tab) => {
     setActiveTab(tab);
   }, []);
 
   return (
     <>
-      <Header activeTab={activeTab} onChangeTab={handleChangeTab} />
-      {activeTab === 'leaderboard' && <Leaderboard />}
+      <Header activeTab={activeTab} onChangeTab={handleChangeTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+      {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} />}
       {activeTab === 'register' && <Register />}
       <Footer />
     </>
