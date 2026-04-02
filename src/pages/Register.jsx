@@ -43,7 +43,7 @@ function computeActivity(events) {
   return { count, longestGap };
 }
 
-export default function Register() {
+export default function Register({ onChangeTab }) {
   const [username, setUsername] = useState('');
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -371,7 +371,7 @@ export default function Register() {
               ))}
             </div>
             <div className="mt-auto p-4 bg-surface-container-highest border-t border-outline-variant text-center">
-              <a className="font-mono text-[10px] text-primary uppercase tracking-widest hover:underline" href="#">View All Node Connections</a>
+              <button onClick={() => onChangeTab?.('leaderboard')} className="font-mono text-[10px] text-primary uppercase tracking-widest hover:underline">View All Node Connections</button>
             </div>
           </div>
         </div>

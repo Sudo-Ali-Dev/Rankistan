@@ -16,7 +16,7 @@ function App() {
     <>
       <Header activeTab={activeTab} onChangeTab={handleChangeTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
       {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} />}
-      {activeTab === 'register' && <Register />}
+      {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
       <Footer />
     </>
   );
