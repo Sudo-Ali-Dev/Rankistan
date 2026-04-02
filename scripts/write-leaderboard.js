@@ -28,7 +28,8 @@ const OUTPUT_FIELDS = [
   'top_repos',
   'top_languages',
   'tags',
-  'score'
+  'score',
+  'batch_index'
 ];
 
 function hasValidRankAndScore(entry) {

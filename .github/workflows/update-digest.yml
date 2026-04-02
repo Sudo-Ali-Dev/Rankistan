@@ -1,4 +1,4 @@
-name: Update Weekly Digest
+name: Update Leaderboard
 
 on:
   schedule:
@@ -11,12 +11,27 @@ on:
     - cron: "0 1 * * *"
     - cron: "0 2 * * *"
     - cron: "0 3 * * *"
+    - cron: "0 4 * * *"
+    - cron: "0 5 * * *"
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+    - cron: "0 8 * * *"
+    - cron: "0 9 * * *"
+    - cron: "0 10 * * *"
+    - cron: "0 11 * * *"
+    - cron: "0 12 * * *"
+    - cron: "0 13 * * *"
+    - cron: "0 14 * * *"
+    - cron: "0 15 * * *"
+    - cron: "0 16 * * *"
+    - cron: "0 17 * * *"
+    - cron: "0 18 * * *"
   workflow_dispatch:
     inputs:
-      phase:
-        description: "batch-0 through batch-7, merge, or all"
+      batch:
+        description: "Batch index (0-23)"
         required: false
-        default: "all"
+        default: "0"
 
 permissions:
   contents: write
@@ -26,7 +41,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  generate-digest:
+  update-leaderboard:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -40,79 +55,61 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Determine phase
-        id: phase
+      - name: Determine batch index
+        id: batch
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "phase=${{ github.event.inputs.phase }}" >> "$GITHUB_OUTPUT"
+            echo "index=${{ github.event.inputs.batch }}" >> "$GITHUB_OUTPUT"
           else
             SCHEDULE="${{ github.event.schedule }}"
             case "$SCHEDULE" in
-              "0 19 * * *") echo "phase=batch-0" >> "$GITHUB_OUTPUT" ;;
-              "0 20 * * *") echo "phase=batch-1" >> "$GITHUB_OUTPUT" ;;
-              "0 21 * * *") echo "phase=batch-2" >> "$GITHUB_OUTPUT" ;;
-              "0 22 * * *") echo "phase=batch-3" >> "$GITHUB_OUTPUT" ;;
-              "0 23 * * *") echo "phase=batch-4" >> "$GITHUB_OUTPUT" ;;
-              "0 0 * * *")  echo "phase=batch-5" >> "$GITHUB_OUTPUT" ;;
-              "0 1 * * *")  echo "phase=batch-6" >> "$GITHUB_OUTPUT" ;;
-              "0 2 * * *")  echo "phase=batch-7" >> "$GITHUB_OUTPUT" ;;
-              "0 3 * * *")  echo "phase=merge"   >> "$GITHUB_OUTPUT" ;;
-              *)            echo "phase=all"     >> "$GITHUB_OUTPUT" ;;
+              "0 19 * * *") echo "index=0"  >> "$GITHUB_OUTPUT" ;;
+              "0 20 * * *") echo "index=1"  >> "$GITHUB_OUTPUT" ;;
+              "0 21 * * *") echo "index=2"  >> "$GITHUB_OUTPUT" ;;
+              "0 22 * * *") echo "index=3"  >> "$GITHUB_OUTPUT" ;;
+              "0 23 * * *") echo "index=4"  >> "$GITHUB_OUTPUT" ;;
+              "0 0 * * *")  echo "index=5"  >> "$GITHUB_OUTPUT" ;;
+              "0 1 * * *")  echo "index=6"  >> "$GITHUB_OUTPUT" ;;
+              "0 2 * * *")  echo "index=7"  >> "$GITHUB_OUTPUT" ;;
+              "0 3 * * *")  echo "index=8"  >> "$GITHUB_OUTPUT" ;;
+              "0 4 * * *")  echo "index=9"  >> "$GITHUB_OUTPUT" ;;
+              "0 5 * * *")  echo "index=10" >> "$GITHUB_OUTPUT" ;;
+              "0 6 * * *")  echo "index=11" >> "$GITHUB_OUTPUT" ;;
+              "0 7 * * *")  echo "index=12" >> "$GITHUB_OUTPUT" ;;
+              "0 8 * * *")  echo "index=13" >> "$GITHUB_OUTPUT" ;;
+              "0 9 * * *")  echo "index=14" >> "$GITHUB_OUTPUT" ;;
+              "0 10 * * *") echo "index=15" >> "$GITHUB_OUTPUT" ;;
+              "0 11 * * *") echo "index=16" >> "$GITHUB_OUTPUT" ;;
+              "0 12 * * *") echo "index=17" >> "$GITHUB_OUTPUT" ;;
+              "0 13 * * *") echo "index=18" >> "$GITHUB_OUTPUT" ;;
+              "0 14 * * *") echo "index=19" >> "$GITHUB_OUTPUT" ;;
+              "0 15 * * *") echo "index=20" >> "$GITHUB_OUTPUT" ;;
+              "0 16 * * *") echo "index=21" >> "$GITHUB_OUTPUT" ;;
+              "0 17 * * *") echo "index=22" >> "$GITHUB_OUTPUT" ;;
+              "0 18 * * *") echo "index=23" >> "$GITHUB_OUTPUT" ;;
+              *)            echo "index=0"  >> "$GITHUB_OUTPUT" ;;
             esac
           fi
-          echo "Detected phase: $(cat "$GITHUB_OUTPUT" | tail -1)"
+          echo "Batch index: $(grep index "$GITHUB_OUTPUT" | tail -1)"
 
-      - name: Ensure Groq secret is configured
-        if: contains(steps.phase.outputs.phase, 'merge') || steps.phase.outputs.phase == 'all'
+      - name: Run incremental pipeline
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
-        run: |
-          if [ -z "${GROQ_API_KEY}" ]; then
-            echo "Missing required secret: GROQ_API_KEY_PakDevIndex"
-            exit 1
-          fi
-
-      - name: Run pipeline
-        env:
-          GROQ_API_KEY_PakDevIndex: ${{ secrets.GROQ_API_KEY_PakDevIndex }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PHASE="${{ steps.phase.outputs.phase }}"
-          echo "Running phase: $PHASE"
-
-          if [[ "$PHASE" == batch-* ]]; then
-            BATCH_INDEX="${PHASE#batch-}"
-            node scripts/run-all.js --batch "$BATCH_INDEX"
-          elif [ "$PHASE" = "merge" ]; then
-            node scripts/run-all.js --merge
-          else
-            node scripts/run-all.js
-          fi
+          BATCH="${{ steps.batch.outputs.index }}"
+          echo "Running incremental batch: $BATCH"
+          node scripts/run-all.js --incremental "$BATCH"
 
       - name: Commit and push updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          PHASE="${{ steps.phase.outputs.phase }}"
-
-          if [[ "$PHASE" == batch-* ]]; then
-            BATCH_INDEX="${PHASE#batch-}"
-            BATCH_FILE="public/raw_batch_${BATCH_INDEX}.json"
-            if [ -f "$BATCH_FILE" ]; then
-              git add -f "$BATCH_FILE"
-              git commit -m "chore: fetch batch ${BATCH_INDEX} developers" || echo "Nothing to commit"
-              git push
-            fi
-          else
-            if git diff --quiet -- public/; then
-              echo "No data changes to commit."
-              exit 0
-            fi
-            git add public/data.json
-            git add public/digest.json
-            git add public/raw.json
-            git add public/scored.json
-            git commit -m "chore: automated weekly ecosystem sync"
-            git push
+          if git diff --quiet -- public/data.json; then
+            echo "No leaderboard changes to commit."
+            exit 0
           fi
+
+          git add public/data.json
+          git commit -m "chore: update leaderboard (batch ${{ steps.batch.outputs.index }})"
+          git push

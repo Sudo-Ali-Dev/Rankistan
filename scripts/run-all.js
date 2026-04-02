@@ -1,119 +1,101 @@
 'use strict';
 
-const { execSync } = require('child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
+const DATA_JSON = path.join(PUBLIC_DIR, 'data.json');
 
-function runBatch(batchIndex) {
-  const { fetchPakistaniDevelopers, SEARCH_BATCHES } = require('./fetch-devs.js');
+function loadExistingLeaderboard() {
+  try {
+    const raw = fs.readFileSync(DATA_JSON, 'utf8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data.leaderboard) ? data.leaderboard : [];
+  } catch {
+    return [];
+  }
+}
+
+async function runIncremental(batchIndex) {
+  const {
+    fetchPakistaniDevelopers,
+    applyActivityFilter,
+    SEARCH_BATCHES,
+    MAX_DEVELOPERS,
+    ACTIVITY_THRESHOLDS
+  } = require('./fetch-devs.js');
+  const { scoreDevelopers } = require('./score.js');
+  const { stripInternalFields } = require('./write-leaderboard.js');
 
   if (batchIndex < 0 || batchIndex >= SEARCH_BATCHES.length) {
     console.error(`Invalid batch index: ${batchIndex}. Must be 0-${SEARCH_BATCHES.length - 1}.`);
     process.exit(1);
   }
 
-  const outputPath = path.join(PUBLIC_DIR, `raw_batch_${batchIndex}.json`);
+  console.log(`\n=== Incremental batch ${batchIndex}: ${SEARCH_BATCHES[batchIndex].label} ===\n`);
 
-  return fetchPakistaniDevelopers({
+  const rawDevs = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
     rawOnly: true
-  }).then((devs) => {
-    fs.writeFileSync(outputPath, JSON.stringify(devs, null, 2));
-    console.log(`Batch ${batchIndex}: saved ${devs.length} developers -> ${outputPath}`);
   });
-}
 
-function runMerge() {
-  const {
-    applyActivityFilter,
-    ACTIVITY_THRESHOLDS,
-    MAX_DEVELOPERS
-  } = require('./fetch-devs.js');
+  console.log(`Fetched ${rawDevs.length} raw developers.`);
 
-  const batchFiles = fs.readdirSync(PUBLIC_DIR)
-    .filter((f) => f.startsWith('raw_batch_') && f.endsWith('.json'))
-    .sort();
-
-  if (batchFiles.length === 0) {
-    console.error('No batch files found in public/. Run fetch batches first.');
-    process.exit(1);
-  }
-
-  const seen = new Set();
-  const allDevs = [];
-
-  for (const file of batchFiles) {
-    const raw = JSON.parse(fs.readFileSync(path.join(PUBLIC_DIR, file), 'utf8'));
-    let added = 0;
-    for (const dev of raw) {
-      const key = (dev.username || '').toLowerCase();
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        allDevs.push(dev);
-        added += 1;
-      }
-    }
-    console.log(`  ${file}: ${raw.length} devs (${added} new, ${raw.length - added} dupes)`);
-  }
-
-  console.log(`Merged ${batchFiles.length} batch files -> ${allDevs.length} unique developers`);
-
-  const filtered = applyActivityFilter(allDevs);
+  const filtered = applyActivityFilter(rawDevs);
   console.log(
-    `Activity filter: ${allDevs.length} -> ${filtered.length} passed ` +
+    `Activity filter: ${rawDevs.length} -> ${filtered.length} passed ` +
     `(>=${ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D} contributions in 60d, ` +
     `<=${ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS}d max gap)`
   );
 
-  filtered.sort((a, b) => {
-    const diff = Number(b.followers || 0) - Number(a.followers || 0);
+  const scored = scoreDevelopers(filtered);
+  console.log(`Scored ${scored.length} developers.`);
+
+  const newEntries = scored.map((d) => ({
+    ...stripInternalFields(d),
+    batch_index: batchIndex
+  }));
+
+  const existing = loadExistingLeaderboard();
+  const kept = existing.filter((d) => d.batch_index !== batchIndex);
+  console.log(`Existing leaderboard: ${existing.length} total, ${kept.length} kept (removed ${existing.length - kept.length} from batch ${batchIndex}).`);
+
+  const map = new Map(kept.map((d) => [String(d.username || '').toLowerCase(), d]));
+  for (const dev of newEntries) {
+    map.set(String(dev.username || '').toLowerCase(), dev);
+  }
+
+  let leaderboard = [...map.values()];
+  leaderboard.sort((a, b) => {
+    const diff = (b.score || 0) - (a.score || 0);
     return diff !== 0 ? diff : String(a.username || '').localeCompare(String(b.username || ''));
   });
+  leaderboard = leaderboard.slice(0, MAX_DEVELOPERS);
+  leaderboard.forEach((d, i) => { d.rank = i + 1; });
 
-  const capped = filtered.slice(0, MAX_DEVELOPERS);
-  console.log(`Final: ${capped.length} developers (capped at ${MAX_DEVELOPERS})`);
+  const output = {
+    last_updated: new Date().toISOString(),
+    total_devs: leaderboard.length,
+    leaderboard
+  };
 
-  fs.writeFileSync(path.join(PUBLIC_DIR, 'raw.json'), JSON.stringify(capped, null, 2));
-  console.log('Saved public/raw.json');
-
-  console.log('Scoring...');
-  execSync('node scripts/score.js public/raw.json public/scored.json', { stdio: 'inherit' });
-
-  console.log('Writing leaderboard...');
-  execSync('node scripts/write-leaderboard.js public/scored.json public/data.json', { stdio: 'inherit' });
-
-  console.log('Generating digest...');
-  execSync('node scripts/generate-digest.js', { stdio: 'inherit' });
-
-  console.log('All tasks finished successfully.');
-}
-
-function runFull() {
-  const { SEARCH_BATCHES } = require('./fetch-devs.js');
-
-  const chain = Promise.resolve();
-  const batchCount = SEARCH_BATCHES.length;
-
-  return Array.from({ length: batchCount }, (_, i) => i)
-    .reduce((p, i) => p.then(() => runBatch(i)), chain)
-    .then(() => runMerge());
+  fs.writeFileSync(DATA_JSON, JSON.stringify(output));
+  console.log(`\nLeaderboard updated: ${leaderboard.length} developers (capped at ${MAX_DEVELOPERS}).`);
+  console.log(`Added ${newEntries.length} from batch ${batchIndex}, kept ${kept.length} from other batches.`);
 }
 
 const args = process.argv.slice(2);
 const mode = args[0];
 
-if (mode === '--batch') {
+if (mode === '--incremental') {
   const idx = parseInt(args[1], 10);
   if (Number.isNaN(idx)) {
-    console.error('Usage: node scripts/run-all.js --batch <0-7>');
+    console.error('Usage: node scripts/run-all.js --incremental <0-23>');
     process.exit(1);
   }
-  runBatch(idx).catch((e) => { console.error(e.message); process.exit(1); });
-} else if (mode === '--merge') {
-  try { runMerge(); } catch (e) { console.error(e.message); process.exit(1); }
+  runIncremental(idx).catch((e) => { console.error(e.message); process.exit(1); });
 } else {
-  runFull().catch((e) => { console.error(e.message); process.exit(1); });
+  console.error('Usage: node scripts/run-all.js --incremental <batch-index>');
+  process.exit(1);
 }

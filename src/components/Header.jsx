@@ -18,12 +18,6 @@ export default function Header({ activeTab, onChangeTab }) {
             Leaderboard
           </button>
           <button 
-            onClick={() => onChangeTab('weekly_digest')}
-            className={`${activeTab === 'weekly_digest' ? 'text-[#a2c9ff] border-b-2 border-[#a2c9ff] pb-1' : 'text-[#8b919d] hover:text-[#a2c9ff]'} transition-colors duration-50`}
-          >
-            Weekly Digest
-          </button>
-          <button 
             onClick={() => onChangeTab('register')}
             className={`${activeTab === 'register' ? 'text-[#a2c9ff] border-b-2 border-[#a2c9ff] pb-1' : 'text-[#8b919d] hover:text-[#a2c9ff]'} transition-colors duration-50`}
           >

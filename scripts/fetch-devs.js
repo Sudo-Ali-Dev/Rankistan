@@ -32,14 +32,30 @@ const MEANINGFUL_EVENT_TYPES = new Set([
 ]);
 
 const SEARCH_BATCHES = [
-  { label: 'Lahore 2010-2017', q: 'location:Lahore type:user repos:>3 followers:>2 created:2010-01-01..2017-12-31' },
-  { label: 'Lahore 2018-2019', q: 'location:Lahore type:user repos:>3 followers:>2 created:2018-01-01..2019-12-31' },
-  { label: 'Lahore 2020',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2020-01-01..2020-12-31' },
-  { label: 'Lahore 2021',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2021-01-01..2021-12-31' },
-  { label: 'Lahore 2022',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2022-01-01..2022-12-31' },
-  { label: 'Lahore 2023',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2023-01-01..2023-12-31' },
-  { label: 'Lahore 2024',      q: 'location:Lahore type:user repos:>3 followers:>2 created:2024-01-01..2024-12-31' },
-  { label: 'Lahore 2025-2026', q: 'location:Lahore type:user repos:>3 followers:>2 created:2025-01-01..2026-12-31' }
+  { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
+  { label: 'PK Jul2014-Jan2016', q: 'location:pakistan type:user repos:>3 followers:>1 created:2014-07-01..2016-01-31' },
+  { label: 'PK Feb2016-Feb2017', q: 'location:pakistan type:user repos:>3 followers:>1 created:2016-02-01..2017-02-28' },
+  { label: 'PK Mar2017-Dec2017', q: 'location:pakistan type:user repos:>3 followers:>1 created:2017-03-01..2017-12-31' },
+  { label: 'PK Jan2018-Sep2018', q: 'location:pakistan type:user repos:>3 followers:>1 created:2018-01-01..2018-09-30' },
+  { label: 'PK Oct2018-Apr2019', q: 'location:pakistan type:user repos:>3 followers:>1 created:2018-10-01..2019-04-30' },
+  { label: 'PK May2019-Sep2019', q: 'location:pakistan type:user repos:>3 followers:>1 created:2019-05-01..2019-09-30' },
+  { label: 'PK Oct2019-Feb2020', q: 'location:pakistan type:user repos:>3 followers:>1 created:2019-10-01..2020-02-29' },
+  { label: 'PK Mar2020-Jun2020', q: 'location:pakistan type:user repos:>3 followers:>1 created:2020-03-01..2020-06-30' },
+  { label: 'PK Jul2020-Nov2020', q: 'location:pakistan type:user repos:>3 followers:>1 created:2020-07-01..2020-11-30' },
+  { label: 'PK Dec2020-Mar2021', q: 'location:pakistan type:user repos:>3 followers:>1 created:2020-12-01..2021-03-31' },
+  { label: 'PK Apr2021-Aug2021', q: 'location:pakistan type:user repos:>3 followers:>1 created:2021-04-01..2021-08-31' },
+  { label: 'PK Sep2021-Dec2021', q: 'location:pakistan type:user repos:>3 followers:>1 created:2021-09-01..2021-12-31' },
+  { label: 'PK Jan2022-Apr2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-01-01..2022-04-30' },
+  { label: 'PK May2022-Aug2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-05-01..2022-08-31' },
+  { label: 'PK Sep2022-Nov2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-09-01..2022-11-30' },
+  { label: 'PK Dec2022-Feb2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-12-01..2023-02-28' },
+  { label: 'PK Mar2023-Jun2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-03-01..2023-06-30' },
+  { label: 'PK Jul2023-Sep2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-07-01..2023-09-30' },
+  { label: 'PK Oct2023-Dec2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-10-01..2023-12-31' },
+  { label: 'PK Jan2024-Mar2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-01-01..2024-03-31' },
+  { label: 'PK Apr2024-Jul2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-04-01..2024-07-31' },
+  { label: 'PK Aug2024-Dec2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-08-01..2024-12-31' },
+  { label: 'PK 2025+',           q: 'location:pakistan type:user repos:>3 followers:>1 created:2025-01-01..2099-12-31' },
 ];
 
 const rateLimit = { remaining: Infinity, resetAt: 0 };
