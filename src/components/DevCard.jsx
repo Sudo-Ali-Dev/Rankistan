@@ -72,7 +72,7 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
               <div>
                 <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4">Bio_Data</h3>
                 <p className="text-sm text-on-surface-variant leading-relaxed font-body">
-                  {summary ? summary : (loadingSummaryUser === username ? "Generating AI Summary..." : dev.bio || "No biography available.")}
+                  {loadingSummaryUser === username ? "Generating AI Summary..." : (summary && summary !== 'error') ? summary : dev.bio || "No biography available."}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4">

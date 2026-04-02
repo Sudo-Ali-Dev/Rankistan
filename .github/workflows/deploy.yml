@@ -35,7 +35,7 @@ jobs:
 
       - name: Build
         env:
-          VITE_GROQ_KEY: ${{ secrets.VITE_GROQ_KEY }}
+          VITE_GROQ_KEY: ${{ secrets.GROQ_API_KEY_PAKDEVINDEX }}
         run: npm run build
 
       - name: Setup Pages
