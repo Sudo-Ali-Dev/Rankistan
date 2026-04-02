@@ -1,8 +1,327 @@
 {
-  "week_of": "",
-  "generated_at": "",
-  "digest_text": "",
-  "repos": [],
-  "volume": 0,
-  "archive": []
+  "week_of": "March 27 - April 02, 2026",
+  "generated_at": "2026-04-02T04:57:07.764Z",
+  "digest_text": "This week, Pakistani developers have been hard at work, pushing a wide range of exciting projects to GitHub. In the realm of Artificial Intelligence and Machine Learning, several developers have shared their personal projects and learning journeys. For instance, Mirza Yasir Abdullah Baig has created a personal space to document his learnings in AI, ML, and Python programming, while Asadullah Shehbaz has built a chatbot application with LLM capabilities. Meanwhile, Toheed Asghar's NL2SQL project converts natural language questions into validated SQL queries using parallel discovery, generation, and validation agents.\n\nOn the web development front, several developers have shared their takes on to-do apps, with Zaheer Ahmedkhan's todo-app and ahmmikun's React-ToDo-List being notable examples. Hasnain Types has also been busy, pushing multiple projects including a modern SaaS platform for intelligent feedback collection, a weather forecasting app, and a travel and adventure landing page built with Next.js and React.\n\nIn the area of DevOps and software engineering, xraffay-dev's secure-ci-cd-pipeline project stands out, featuring a DevSecOps pipeline with GitHub Actions, matrix testing, and multi-stage Docker builds. Additionally, talhahakeem's C-Sharp.NET-Core-Repository-Pattern project demonstrates a clean and scalable implementation of the Repository Pattern in ASP.NET Core.\n\nOther notable projects include Abdullah-Zafarr's Attendance_Cheat_Code, which listens to Zoom/Meet audio and alarms when the user's name is called, and Sufi Inam ul Hassan's FitAI, a fully functional Android fitness app and home-workout tracker. With such a diverse range of projects, it's clear that Pakistan's open source developer community is thriving and pushing the boundaries of innovation.",
+  "repos": [
+    {
+      "owner": "mirzayasirabdullahbaig07",
+      "name": "MirzaYasirAbdullahBaig07",
+      "description": "This repository is my personal space to document and share everything I learn as I dive deeper into the world of Artificial Intelligence, Machine Learning, and Python programming.",
+      "language": "Unknown",
+      "stars": 17,
+      "url": "https://github.com/mirzayasirabdullahbaig07/MirzaYasirAbdullahBaig07"
+    },
+    {
+      "owner": "mirzayasirabdullahbaig07",
+      "name": "LeetCode-75",
+      "description": "This repository contains my solutions to the LeetCode 75 curated problem list. The goal of this challenge is to build strong fundamentals in Data Structures & Algorithms commonly asked in technical interviews.",
+      "language": "Python",
+      "stars": 11,
+      "url": "https://github.com/mirzayasirabdullahbaig07/LeetCode-75"
+    },
+    {
+      "owner": "sufiinamulhassan",
+      "name": "LeetCode-Solutions",
+      "description": "This repository is a collection of LeetCode Problem Solutions for the beginners.",
+      "language": "Python",
+      "stars": 7,
+      "url": "https://github.com/sufiinamulhassan/LeetCode-Solutions"
+    },
+    {
+      "owner": "abdulrehman705",
+      "name": "SoftwareEnginering",
+      "description": "Software Engineering",
+      "language": "JavaScript",
+      "stars": 4,
+      "url": "https://github.com/abdulrehman705/SoftwareEnginering"
+    },
+    {
+      "owner": "ahmmikun",
+      "name": "ahmmikun",
+      "description": "Config files for my GitHub profile.",
+      "language": "Unknown",
+      "stars": 3,
+      "url": "https://github.com/ahmmikun/ahmmikun"
+    },
+    {
+      "owner": "AsadullahShehbaz",
+      "name": "VidMind-AI-Powered-YouTube-Video-Q-A",
+      "description": "This is chatbot application that includes chat features and document reader with LLM",
+      "language": "Python",
+      "stars": 3,
+      "url": "https://github.com/AsadullahShehbaz/VidMind-AI-Powered-YouTube-Video-Q-A"
+    },
+    {
+      "owner": "ZaheerAhmedkhan65",
+      "name": "todo-app",
+      "description": "A simple to-do app.",
+      "language": "Dart",
+      "stars": 1,
+      "url": "https://github.com/ZaheerAhmedkhan65/todo-app"
+    },
+    {
+      "owner": "ahmmikun",
+      "name": "corvit-web-dev-assignment",
+      "description": "Include all Html and Css assignment",
+      "language": "HTML",
+      "stars": 0,
+      "url": "https://github.com/ahmmikun/corvit-web-dev-assignment"
+    },
+    {
+      "owner": "ahmmikun",
+      "name": "react-counter-app",
+      "description": "A counter that stops on 5",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/ahmmikun/react-counter-app"
+    },
+    {
+      "owner": "ahmmikun",
+      "name": "React-ToDo-List",
+      "description": "A simple react todo list",
+      "language": "CSS",
+      "stars": 0,
+      "url": "https://github.com/ahmmikun/React-ToDo-List"
+    },
+    {
+      "owner": "hasnaintypes",
+      "name": "clarity-saas",
+      "description": "A modern SaaS platform for intelligent feedback collection with AI-powered processing, multi-language support, and advanced analytics. Built with Next.js 14 and TypeScript.",
+      "language": "TypeScript",
+      "stars": 0,
+      "url": "https://github.com/hasnaintypes/clarity-saas"
+    },
+    {
+      "owner": "hasnaintypes",
+      "name": "forecast-pro",
+      "description": "Minimal weather at a glance  today compared to yesterday.",
+      "language": "TypeScript",
+      "stars": 0,
+      "url": "https://github.com/hasnaintypes/forecast-pro"
+    },
+    {
+      "owner": "hasnaintypes",
+      "name": "hilink-ui",
+      "description": "Modern responsive travel & adventure landing page built with Next.js, React, and Tailwind CSS.",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/hasnaintypes/hilink-ui"
+    },
+    {
+      "owner": "hasnaintypes",
+      "name": "trackit-app",
+      "description": "TrackIt is an AI-powered personal and group finance manager built on the T3 stack. Track expenses, manage budgets, split bills, and get smart insights with real-time sync, secure auth, and Stripe integration.",
+      "language": "TypeScript",
+      "stars": 0,
+      "url": "https://github.com/hasnaintypes/trackit-app"
+    },
+    {
+      "owner": "hasnaintypes",
+      "name": "vaulta-sdk",
+      "description": "TypeScript SDK for uploading files to the Vaulta API. Supports Node.js, Next.js, and browser environments. Simple, secure, and fast file storage integration for your apps.",
+      "language": "TypeScript",
+      "stars": 0,
+      "url": "https://github.com/hasnaintypes/vaulta-sdk"
+    },
+    {
+      "owner": "devhassan17",
+      "name": "mollie_recurring_payments",
+      "description": "New Module to Support Mollie's Official Module to Enable Recurring Payments.",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/devhassan17/mollie_recurring_payments"
+    },
+    {
+      "owner": "Abdullah-Zafarr",
+      "name": "Attendance_Cheat_Code",
+      "description": "Built because online classes are unwatchable but attendance still matters. Listens to your Zoom/Meet audio and alarms you when your name gets called.",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/Abdullah-Zafarr/Attendance_Cheat_Code"
+    },
+    {
+      "owner": "sufiinamulhassan",
+      "name": "FitAI",
+      "description": "A fully functional Android Fitness App and Home-Workout Tracker featuring a real-time Admin CMS, dynamic exercise execution timers, and Cloud Firestore synchronization. Built natively in Java.",
+      "language": "Java",
+      "stars": 0,
+      "url": "https://github.com/sufiinamulhassan/FitAI"
+    },
+    {
+      "owner": "xraffay-dev",
+      "name": "secure-ci-cd-pipeline",
+      "description": "DevSecOps pipeline with GitHub Actions featuring matrix testing, Trivy CVE scanning, CodeQL SAST, multi-stage Docker builds, GHCR registry, tag-gated prod deploys to Render & Slack failure alerting.",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/xraffay-dev/secure-ci-cd-pipeline"
+    },
+    {
+      "owner": "faisal03-develop",
+      "name": "islam_nursey_farm",
+      "description": "Islam Nursery Farm ERP",
+      "language": "TypeScript",
+      "stars": 0,
+      "url": "https://github.com/faisal03-develop/islam_nursey_farm"
+    },
+    {
+      "owner": "alibro005",
+      "name": "alibro005",
+      "description": "Config files for my GitHub profile.",
+      "language": "Unknown",
+      "stars": 0,
+      "url": "https://github.com/alibro005/alibro005"
+    },
+    {
+      "owner": "MAhmad25",
+      "name": "CS_Concepts_Zone",
+      "description": "A place where CS students and self-taught devs write about the things that actually helped them — DSA patterns, OS concepts, DBMS internals, Networks, and interview questions explained like a human being wrote them.",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/MAhmad25/CS_Concepts_Zone"
+    },
+    {
+      "owner": "MAhmad25",
+      "name": "Leetcode-Problems",
+      "description": "Why are you like this?",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/MAhmad25/Leetcode-Problems"
+    },
+    {
+      "owner": "ZaheerAhmedkhan65",
+      "name": "customer-support-chatbot",
+      "description": "Customer Support Chatbot Platform",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/ZaheerAhmedkhan65/customer-support-chatbot"
+    },
+    {
+      "owner": "Ch-Saqib",
+      "name": "agentfactory",
+      "description": "Build Digital FTEs that work 24/7. Your domain expertise—whether in sales, legal, finance, or healthcare—becomes an autonomous AI agent that never sleeps.",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/Ch-Saqib/agentfactory"
+    },
+    {
+      "owner": "ToheedAsghar",
+      "name": "NL2SQL",
+      "description": "Multi-agent NL→SQL pipeline built on LangGraph. Converts natural language questions into validated SQL queries using parallel discovery, generation, and validation agents. Supports multi-model mixing (GPT-4o + Gemini) via OpenRouter. Tested on Spider dataset.",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/ToheedAsghar/NL2SQL"
+    },
+    {
+      "owner": "Abd-Abdullah83",
+      "name": "100-days-of-cpp",
+      "description": "A 100-day coding challenge documenting daily C++ programs covering  OOP, data structures, algorithms, and mathematics. Each day includes  a clean, well-commented implementation. By Abdullah— Data  Science student at FAST NUCES, Lahore.",
+      "language": "C++",
+      "stars": 0,
+      "url": "https://github.com/Abd-Abdullah83/100-days-of-cpp"
+    },
+    {
+      "owner": "abdullahejazjanjua",
+      "name": "variational-autoencoder",
+      "description": "This repository contains the implementation of VAEs from scratch in pytorch trained on CelebA dataset.",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/abdullahejazjanjua/variational-autoencoder"
+    },
+    {
+      "owner": "AbdulTawabJuly",
+      "name": "gemini-cli",
+      "description": "An open-source AI agent that brings the power of Gemini directly into your terminal.",
+      "language": "TypeScript",
+      "stars": 0,
+      "url": "https://github.com/AbdulTawabJuly/gemini-cli"
+    },
+    {
+      "owner": "abdullahdarofficial",
+      "name": "abdullahdarofficial",
+      "description": "I'm an AI Engineer specializing in building production-grade intelligent systems. I design and deploy LLM applications, RAG pipelines, AI agents, and recommendation engines that transform data into scalable, real-world solutions.",
+      "language": "Unknown",
+      "stars": 0,
+      "url": "https://github.com/abdullahdarofficial/abdullahdarofficial"
+    },
+    {
+      "owner": "talhahakeem",
+      "name": "C-Sharp.NET-Core-Repository-Pattern",
+      "description": "A clean and scalable implementation of the Repository Pattern in ASP.NET Core. Demonstrates Decoupling, Dependency Injection, and Unit of Work for efficient data access.",
+      "language": "C#",
+      "stars": 0,
+      "url": "https://github.com/talhahakeem/C-Sharp.NET-Core-Repository-Pattern"
+    },
+    {
+      "owner": "miantalha45",
+      "name": "fory",
+      "description": "A blazingly fast multi-language serialization framework powered by JIT and zero-copy.",
+      "language": "Java",
+      "stars": 0,
+      "url": "https://github.com/miantalha45/fory"
+    },
+    {
+      "owner": "MuhammadShayan08",
+      "name": "-DataForge-ML-Studio",
+      "description": "DataForge ML Studio is an advanced machine learning platform designed for data scientists and developers to build, train, and deploy predictive models seamlessly. With an intuitive interface and powerful tools, it simplifies the process of transforming raw data into actionable insights.",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/MuhammadShayan08/-DataForge-ML-Studio"
+    },
+    {
+      "owner": "ahmedrazasahoo",
+      "name": "hrms",
+      "description": "personal",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/ahmedrazasahoo/hrms"
+    },
+    {
+      "owner": "Sudo-Ali-Dev",
+      "name": "ali-bot",
+      "description": "A personal AI chatbot modeled after Muhammad Ali (me) from Lahore, Pakistan. Built with Astro + Groq (Llama 3.3 70B).",
+      "language": "Astro",
+      "stars": 0,
+      "url": "https://github.com/Sudo-Ali-Dev/ali-bot"
+    },
+    {
+      "owner": "Sudo-Ali-Dev",
+      "name": "HypoSnitch",
+      "description": "🔬 HypoSnitch — Interactive binomial hypothesis testing app. Input your claim, sample size, and observed value to get step-by-step results: null distribution, p-value, and a plain-English verdict.",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/Sudo-Ali-Dev/HypoSnitch"
+    },
+    {
+      "owner": "Sudo-Ali-Dev",
+      "name": "Mehngai-Monitor",
+      "description": "Mehngai Monitor automates Lahore daily market price tracking by scraping official rate-list images, extracting clean data with OCR, and serving fast analytics for fruits, vegetables, and poultry.",
+      "language": "Python",
+      "stars": 0,
+      "url": "https://github.com/Sudo-Ali-Dev/Mehngai-Monitor"
+    },
+    {
+      "owner": "Sudo-Ali-Dev",
+      "name": "ml-journal",
+      "description": "Personal notes, experiments, and reflections on machine learning and AI.",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/Sudo-Ali-Dev/ml-journal"
+    },
+    {
+      "owner": "Sudo-Ali-Dev",
+      "name": "ml-sandbox",
+      "description": "A personal sandbox for practicing Machine Learning workflows. Contains end-to-end data preprocessing pipelines, exploratory data analysis (EDA), and foundational model training.",
+      "language": "Jupyter Notebook",
+      "stars": 0,
+      "url": "https://github.com/Sudo-Ali-Dev/ml-sandbox"
+    },
+    {
+      "owner": "Sudo-Ali-Dev",
+      "name": "pakdev-index",
+      "description": "The definitive index of Pakistani open source developers. Auto-updated daily via GitHub Actions.",
+      "language": "JavaScript",
+      "stars": 0,
+      "url": "https://github.com/Sudo-Ali-Dev/pakdev-index"
+    }
+  ]
 }
