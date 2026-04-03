@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 270" width="100%" height="100%">
+  <g transform="translate(18, 18)">
+    <rect x="0" y="30" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="0" y="90" width="24" height="24" rx="4" fill="#dff0ff" />
+    <rect x="0" y="150" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="180" y="0" width="24" height="24" rx="4" fill="#cde5ff" />
+    <rect x="180" y="120" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="180" y="210" width="24" height="24" rx="4" fill="#dff0ff" />
+    <rect x="30" y="210" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="90" y="0" width="24" height="24" rx="4" fill="#dff0ff" />
+    <rect x="150" y="210" width="24" height="24" rx="4" fill="#cde5ff" />
+
+    <rect x="30" y="30" width="24" height="24" rx="4" fill="#a2c9ff" />
+    <rect x="60" y="30" width="24" height="24" rx="4" fill="#b8d8ff" />
+    <rect x="90" y="30" width="24" height="24" rx="4" fill="#a2c9ff" />
+    <rect x="120" y="30" width="24" height="24" rx="4" fill="#a2c9ff" />
+
+    <rect x="30" y="60" width="24" height="24" rx="4" fill="#b8d8ff" />
+    <rect x="60" y="60" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="90" y="60" width="24" height="24" rx="4" fill="#dff0ff" />
+    <rect x="120" y="60" width="24" height="24" rx="4" fill="#b8d8ff" />
+
+    <rect x="30" y="90" width="24" height="24" rx="4" fill="#a2c9ff" />
+    <rect x="60" y="90" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="90" y="90" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="120" y="90" width="24" height="24" rx="4" fill="#a2c9ff" />
+
+    <rect x="30" y="120" width="24" height="24" rx="4" fill="#a2c9ff" />
+    <rect x="60" y="120" width="24" height="24" rx="4" fill="#b8d8ff" />
+    <rect x="90" y="120" width="24" height="24" rx="4" fill="#a2c9ff" />
+    <rect x="120" y="120" width="24" height="24" rx="4" fill="#b8d8ff" />
+
+    <rect x="30" y="150" width="24" height="24" rx="4" fill="#b8d8ff" />
+    <rect x="60" y="150" width="24" height="24" rx="4" fill="#dff0ff" />
+    <rect x="90" y="150" width="24" height="24" rx="4" fill="#a2c9ff" />
+    <rect x="120" y="150" width="24" height="24" rx="4" fill="#eef7ff" />
+
+    <rect x="30" y="180" width="24" height="24" rx="4" fill="#a2c9ff" />
+    <rect x="60" y="180" width="24" height="24" rx="4" fill="#eef7ff" />
+    <rect x="90" y="180" width="24" height="24" rx="4" fill="#cde5ff" />
+    <rect x="120" y="180" width="24" height="24" rx="4" fill="#a2c9ff" />
+  </g>
+</svg>
