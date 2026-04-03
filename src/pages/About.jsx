@@ -215,7 +215,7 @@ export default function About() {
             <div className="p-6 bg-surface">
               <div className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4">Request Path</div>
               <div className="relative pl-8">
-                <span className="absolute left-1 top-1 bottom-1 w-px bg-outline-variant"></span>
+                <span className="absolute left-[11px] top-1 bottom-1 w-px bg-outline-variant"></span>
                 <div className="space-y-3">
                   {AI_SUMMARY_STEPS.map((item) => (
                     <div key={item.step} className="relative border border-outline-variant/60 bg-surface-container-lowest px-4 py-3 hover:bg-surface-container-low transition-colors">
