@@ -1,37 +1,12 @@
 name: Update Leaderboard
 
 on:
-  schedule:
-    - cron: "0 19 * * *"
-    - cron: "0 20 * * *"
-    - cron: "0 21 * * *"
-    - cron: "0 22 * * *"
-    - cron: "0 23 * * *"
-    - cron: "0 0 * * *"
-    - cron: "0 1 * * *"
-    - cron: "0 2 * * *"
-    - cron: "0 3 * * *"
-    - cron: "0 4 * * *"
-    - cron: "0 5 * * *"
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
-    - cron: "0 8 * * *"
-    - cron: "0 9 * * *"
-    - cron: "0 10 * * *"
-    - cron: "0 11 * * *"
-    - cron: "0 12 * * *"
-    - cron: "0 13 * * *"
-    - cron: "0 14 * * *"
-    - cron: "0 15 * * *"
-    - cron: "0 16 * * *"
-    - cron: "0 17 * * *"
-    - cron: "0 18 * * *"
   workflow_dispatch:
     inputs:
       batch:
-        description: "Batch index (0-23)"
+        description: "Batch index (0-23), leave empty to auto-detect from current hour"
         required: false
-        default: "0"
+        default: ""
 
 permissions:
   contents: write
@@ -60,37 +35,13 @@ jobs:
       - name: Determine batch index
         id: batch
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "index=${{ github.event.inputs.batch }}" >> "$GITHUB_OUTPUT"
+          INPUT_BATCH="${{ github.event.inputs.batch }}"
+          if [ -n "$INPUT_BATCH" ]; then
+            echo "index=$INPUT_BATCH" >> "$GITHUB_OUTPUT"
           else
-            SCHEDULE="${{ github.event.schedule }}"
-            case "$SCHEDULE" in
-              "0 19 * * *") echo "index=0"  >> "$GITHUB_OUTPUT" ;;
-              "0 20 * * *") echo "index=1"  >> "$GITHUB_OUTPUT" ;;
-              "0 21 * * *") echo "index=2"  >> "$GITHUB_OUTPUT" ;;
-              "0 22 * * *") echo "index=3"  >> "$GITHUB_OUTPUT" ;;
-              "0 23 * * *") echo "index=4"  >> "$GITHUB_OUTPUT" ;;
-              "0 0 * * *")  echo "index=5"  >> "$GITHUB_OUTPUT" ;;
-              "0 1 * * *")  echo "index=6"  >> "$GITHUB_OUTPUT" ;;
-              "0 2 * * *")  echo "index=7"  >> "$GITHUB_OUTPUT" ;;
-              "0 3 * * *")  echo "index=8"  >> "$GITHUB_OUTPUT" ;;
-              "0 4 * * *")  echo "index=9"  >> "$GITHUB_OUTPUT" ;;
-              "0 5 * * *")  echo "index=10" >> "$GITHUB_OUTPUT" ;;
-              "0 6 * * *")  echo "index=11" >> "$GITHUB_OUTPUT" ;;
-              "0 7 * * *")  echo "index=12" >> "$GITHUB_OUTPUT" ;;
-              "0 8 * * *")  echo "index=13" >> "$GITHUB_OUTPUT" ;;
-              "0 9 * * *")  echo "index=14" >> "$GITHUB_OUTPUT" ;;
-              "0 10 * * *") echo "index=15" >> "$GITHUB_OUTPUT" ;;
-              "0 11 * * *") echo "index=16" >> "$GITHUB_OUTPUT" ;;
-              "0 12 * * *") echo "index=17" >> "$GITHUB_OUTPUT" ;;
-              "0 13 * * *") echo "index=18" >> "$GITHUB_OUTPUT" ;;
-              "0 14 * * *") echo "index=19" >> "$GITHUB_OUTPUT" ;;
-              "0 15 * * *") echo "index=20" >> "$GITHUB_OUTPUT" ;;
-              "0 16 * * *") echo "index=21" >> "$GITHUB_OUTPUT" ;;
-              "0 17 * * *") echo "index=22" >> "$GITHUB_OUTPUT" ;;
-              "0 18 * * *") echo "index=23" >> "$GITHUB_OUTPUT" ;;
-              *)            echo "index=0"  >> "$GITHUB_OUTPUT" ;;
-            esac
+            HOUR=$(date -u +%-H)
+            INDEX=$(( (HOUR + 5) % 24 ))
+            echo "index=$INDEX" >> "$GITHUB_OUTPUT"
           fi
           echo "Batch index: $(grep index "$GITHUB_OUTPUT" | tail -1)"
 
