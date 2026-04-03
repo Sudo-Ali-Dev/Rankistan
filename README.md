@@ -70,9 +70,17 @@ node scripts/run-all.js --incremental 0
 npm run dev
 ```
 
-## GitHub Actions Schedule
+## Scheduling
 
-The pipeline runs **every hour, 24 batches per day** (PKT):
+The pipeline runs **every hour, 24 batches per day**, triggered by an external cron service ([cron-job.org](https://cron-job.org)) that dispatches the GitHub Actions workflow via the API. This is more reliable than GitHub's built-in cron scheduler, which can delay or skip runs during peak load.
+
+### How It Works
+
+1. **cron-job.org** sends a `POST` to the GitHub `workflow_dispatch` API every hour
+2. The workflow auto-detects which batch to run from the current UTC hour: `batch = (UTC_HOUR + 5) % 24`
+3. Batch 0 aligns with **12:00 AM PKT**, batch 1 with 1:00 AM PKT, and so on
+
+### Batch Schedule (PKT)
 
 | PKT | Batch | Description |
 |---|---|---|
@@ -101,7 +109,9 @@ The pipeline runs **every hour, 24 batches per day** (PKT):
 | 10:00 PM | `batch-22` | PK accounts created Aug 2024–Dec 2024 |
 | 11:00 PM | `batch-23` | PK accounts created 2025+ |
 
-You can also trigger any batch manually via **Actions → "Update Leaderboard" → Run workflow** with a batch index input.
+### Manual Trigger
+
+You can trigger any batch manually via **Actions → "Update Leaderboard" → Run workflow** with a specific batch index, or leave it empty to auto-detect from the current hour.
 
 ## Project Structure
 
