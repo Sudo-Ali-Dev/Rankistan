@@ -145,10 +145,12 @@ export default function Leaderboard({ searchTerm = '' }) {
   }
 
   return (
-    <main className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+    <main className="min-h-screen relative overflow-hidden">
+      <div className="absolute inset-0 grid-lines pointer-events-none"></div>
+      <div className="max-w-7xl mx-auto p-4 md:p-8 relative z-10">
       <div className="mb-12">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-outline-variant pb-6">
-          <div>
+          <div className="border-l-4 border-primary pl-6">
             <div className="text-tertiary font-mono text-xs mb-2 tracking-widest flex items-center gap-2">
               <span className="w-2 h-2 bg-tertiary inline-block animate-pulse"></span>
               SYSTEM_STATUS: LIVE_SYNC
@@ -193,7 +195,7 @@ export default function Leaderboard({ searchTerm = '' }) {
           <div className="text-center py-20 font-mono text-error">{error}</div>
       ) : (
         <>
-          <div className="border border-outline-variant overflow-hidden">
+          <div className="border border-outline-variant overflow-hidden bg-surface-container-lowest">
             <div className="hidden md:grid grid-cols-12 bg-surface-container-lowest text-outline font-mono text-[10px] uppercase tracking-widest py-4 px-6 border-b border-outline-variant">
               <div className="col-span-1">Rank</div>
               <div className="col-span-4">Developer Instance</div>
@@ -250,6 +252,7 @@ export default function Leaderboard({ searchTerm = '' }) {
           )}
         </>
       )}
+      </div>
     </main>
   );
 }

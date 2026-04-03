@@ -31,6 +31,12 @@ export default function Header({ activeTab, onChangeTab, searchTerm, onSearchCha
           >
             Register
           </button>
+          <button 
+            onClick={() => onChangeTab('about')}
+            className={`${activeTab === 'about' ? 'text-[#a2c9ff] border-b-2 border-[#a2c9ff] pb-1' : 'text-[#8b919d] hover:text-[#a2c9ff]'} transition-colors duration-50`}
+          >
+            About
+          </button>
         </div>
       </div>
       <div className="flex items-center gap-4">

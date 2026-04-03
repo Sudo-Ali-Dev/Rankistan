@@ -1,14 +1,15 @@
 # PakDev Index
 
-A daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by city (parsed from profile locations) on a Pakistan SVG, and **Register** for profile checks.
+A daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by city (parsed from profile locations) on a interactive map of Pakistan, **Register** for profile checks, and **About** explaining the pipeline, scoring, and scheduling.
 
 ## Frontend
 
 | Tab | Description |
 |---|---|
-| **Leaderboard** | Ranked list from `public/data.json` with search |
-| **Map** | Pakistan outline with per-city counts; click a city on the map or in the sidebar to see developers in that bucket |
+| **Leaderboard** | Ranked list from `public/data.json` with search, filters, sort, CSV export, and pagination |
+| **Map** | Pakistan outline with per-city counts; city breakdown; click a city to list developers for that bucket |
 | **Register** | Validate a GitHub profile against pipeline criteria |
+| **About** | How the index works: scoring, activity filters, hourly batches, and FAQs |
 
 The map assigns each developer to a city using substring matching on the `location` field (e.g. “Lahore, Pakistan”). Entries that do not match a known city are grouped under **Other / Unresolved**.
 
@@ -134,11 +135,12 @@ scripts/
 public/
   data.json             # Final leaderboard (served to frontend)
 src/
-  App.jsx               # Main app shell (Leaderboard / Map / Register tabs)
+  App.jsx               # Main app shell (Leaderboard / Map / Register / About tabs)
   pages/
     Leaderboard.jsx     # Developer rankings
     DevMap.jsx          # Pakistan map + city breakdown + per-city table
     Register.jsx        # Profile validation
+    About.jsx           # User-facing docs (pipeline, scoring, scheduling)
 ```
 
 ## Secrets Required
@@ -153,6 +155,7 @@ src/
 - [x] Leaderboard — Developer rankings with daily incremental updates
 - [x] Developer Map — City distribution and per-city developer list
 - [x] Registration — Profile validation against pipeline criteria
+- [x] About — On-site documentation for scoring, filters, and scheduling
 - [ ] Weekly Digest — AI-powered weekly summary of ecosystem trends
 - [ ] Archives — Browse previous weekly digest reports
 - [ ] Report Detail — Detailed view of an archived weekly report

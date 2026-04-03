@@ -156,54 +156,52 @@ export default function DevMap() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div className="font-mono text-tertiary animate-pulse">LOADING_GEO_DATA...</div>
+      <main className="min-h-screen relative overflow-hidden">
+        <div className="absolute inset-0 grid-lines pointer-events-none"></div>
+        <div className="flex items-center justify-center h-96">
+          <span className="font-mono text-sm text-tertiary animate-pulse uppercase tracking-widest">Loading Geo Data...</span>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen relative overflow-hidden">
+      <div className="absolute inset-0 grid-lines pointer-events-none"></div>
       {/* Hero */}
-      <section className="relative border-b border-outline-variant bg-surface-container-lowest overflow-hidden">
-        <div className="absolute inset-0 opacity-10 pointer-events-none grid-line-y"></div>
-        <div className="max-w-7xl mx-auto px-6 py-12 relative z-10">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 px-3 py-1">
-                <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
-                <span className="font-mono text-[10px] tracking-widest text-primary uppercase">
-                  Geo_Scan // Active_Nodes
-                </span>
-              </div>
-              <h1 className="text-5xl md:text-7xl font-headline font-bold tracking-tighter leading-none crt-glow">
-                DEVELOPER <span className="text-primary">MAP</span>
-              </h1>
+      <div className="max-w-6xl mx-auto px-6 pt-12 pb-10 relative z-10">
+        <div className="border-l-4 border-primary pl-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+          <div>
+            <h1 className="font-headline text-5xl font-extrabold tracking-tighter uppercase text-on-surface mb-2">
+              Developer <span className="text-primary">Map</span>
+            </h1>
+            <p className="font-mono text-sm text-outline max-w-xl uppercase tracking-widest">
+              Geographic distribution of active Pakistani developers across major cities.
+            </p>
+          </div>
+          <div className="flex gap-6">
+            <div className="text-right">
+              <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Total_Devs</div>
+              <div className="text-2xl font-headline font-bold text-tertiary">{totalDevs.toLocaleString()}</div>
             </div>
-            <div className="flex gap-8 border border-outline-variant p-4 bg-surface-container-high/50 backdrop-blur-md">
-              <div>
-                <div className="text-[10px] font-mono text-outline uppercase mb-1">Total_Devs</div>
-                <div className="text-2xl font-headline font-bold text-tertiary">{totalDevs.toLocaleString()}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-mono text-outline uppercase mb-1">Cities_Mapped</div>
-                <div className="text-2xl font-headline font-bold text-primary">{cityStats.filter(c => c.city !== 'other').length}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-mono text-outline uppercase mb-1">Unresolved</div>
-                <div className="text-2xl font-headline font-bold text-outline">{cityStats.find(c => c.city === 'other')?.count || 0}</div>
-              </div>
+            <div className="text-right">
+              <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Cities</div>
+              <div className="text-2xl font-headline font-bold text-primary">{cityStats.filter(c => c.city !== 'other').length}</div>
+            </div>
+            <div className="text-right">
+              <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Unresolved</div>
+              <div className="text-2xl font-headline font-bold text-outline">{cityStats.find(c => c.city === 'other')?.count || 0}</div>
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
       {/* Map + City List */}
-      <section className="border-b border-outline-variant">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12">
+      <div className="max-w-[1440px] mx-auto px-6 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 border border-outline-variant mb-12">
           {/* Map */}
-          <div className="lg:col-span-7 p-6">
-            <div className="relative border border-outline-variant bg-surface-container-lowest overflow-hidden">
+          <div className="lg:col-span-7 p-6 bg-surface-container-lowest border-r border-outline-variant">
+            <div className="relative overflow-hidden">
               <div className="absolute inset-0 opacity-10 pointer-events-none grid-line-x"></div>
               <div className="absolute inset-0 opacity-10 pointer-events-none grid-line-y"></div>
               <svg viewBox="0 0 660 605" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
@@ -285,13 +283,13 @@ export default function DevMap() {
           </div>
 
           {/* City List */}
-          <div className="lg:col-span-5 border-t lg:border-t-0 lg:border-l border-outline-variant p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-headline text-sm font-bold tracking-tighter uppercase flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-sm">location_city</span>
-                CITY_BREAKDOWN
-              </h3>
-              <span className="font-mono text-[10px] text-outline">{cityStats.length} LOCATIONS</span>
+          <div className="lg:col-span-5 border-t lg:border-t-0 p-6 bg-surface">
+            <div className="flex items-center justify-between mb-5">
+              <label className="font-mono text-xs text-tertiary uppercase tracking-tighter flex items-center gap-2">
+                <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
+                City Breakdown
+              </label>
+              <span className="font-mono text-[10px] text-outline">{cityStats.length} Locations</span>
             </div>
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
               {cityStats.map(({ city, count, totalScore, topDev }, idx) => {
@@ -320,7 +318,7 @@ export default function DevMap() {
                           {String(idx + 1).padStart(2, '0')}
                         </span>
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color.fill }}></span>
-                        <span className="font-headline text-sm font-bold uppercase tracking-tight">
+                        <span className="font-headline text-sm font-bold uppercase tracking-tighter">
                           {city === 'other' ? 'Other / Unresolved' : city}
                         </span>
                         {coords && (
@@ -360,20 +358,20 @@ export default function DevMap() {
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
       {/* Developer Table */}
       {selectedCity && devsByCity[selectedCity] && (
-        <section ref={tableRef} className="border-b border-outline-variant">
-          <div className="max-w-7xl mx-auto p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-headline text-sm font-bold tracking-tighter uppercase flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-sm">group</span>
-                {selectedCity === 'other' ? 'OTHER / UNRESOLVED' : selectedCity.toUpperCase()}_DEVELOPERS
-                <span className="font-mono text-[10px] text-outline font-normal ml-2">
+        <div className="max-w-6xl mx-auto px-6 pb-12 relative z-10">
+          <div ref={tableRef} className="border border-outline-variant bg-surface-container-lowest">
+            <div className="p-4 border-b border-outline-variant bg-surface-container-high flex items-center justify-between">
+              <span className="font-mono text-xs uppercase tracking-widest flex items-center gap-2">
+                <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
+                {selectedCity === 'other' ? 'Other / Unresolved' : selectedCity.toUpperCase()} Developers
+                <span className="font-mono text-[10px] text-outline font-normal">
                   [{devsByCity[selectedCity].length} active]
                 </span>
-              </h3>
+              </span>
               <button
                 onClick={() => setSelectedCity(null)}
                 className="font-mono text-[10px] text-outline hover:text-primary transition-colors flex items-center gap-1"
@@ -382,73 +380,74 @@ export default function DevMap() {
                 CLOSE
               </button>
             </div>
-            <div className="border border-outline-variant overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-surface-container-high border-b border-outline-variant">
-                      <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 w-12">#</th>
-                      <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Developer</th>
-                      <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden md:table-cell">Location</th>
-                      <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Score</th>
-                      <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden sm:table-cell">Events_30d</th>
-                      <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Stars</th>
-                      <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Repos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {devsByCity[selectedCity].map((dev, i) => (
-                      <tr
-                        key={dev.username}
-                        className="border-b border-outline-variant/30 hover:bg-surface-container-high/50 transition-colors"
-                      >
-                        <td className="px-4 py-3 font-mono text-[10px] text-outline">{i + 1}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-surface-container-high/50 border-b border-outline-variant">
+                    <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 w-12">#</th>
+                    <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Developer</th>
+                    <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden md:table-cell">Location</th>
+                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Score</th>
+                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden sm:table-cell">Events_30d</th>
+                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Stars</th>
+                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Repos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {devsByCity[selectedCity].map((dev, i) => (
+                    <tr
+                      key={dev.username}
+                      className="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors"
+                    >
+                      <td className="px-4 py-3 font-mono text-[10px] text-outline">{i + 1}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 border border-outline-variant grayscale hover:grayscale-0 transition-all overflow-hidden">
                             <img
                               src={dev.avatar_url || `https://github.com/${dev.username}.png?size=32`}
                               alt={dev.username}
-                              className="w-7 h-7 border border-outline-variant grayscale hover:grayscale-0 transition-all"
+                              className="w-full h-full object-cover"
                             />
-                            <div>
-                              <a
-                                href={`https://github.com/${dev.username}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="font-mono text-xs text-primary hover:underline"
-                              >
-                                @{dev.username}
-                              </a>
-                              {dev.name && (
-                                <div className="text-[10px] text-outline truncate max-w-[160px]">{dev.name}</div>
-                              )}
-                            </div>
                           </div>
-                        </td>
-                        <td className="px-4 py-3 text-[10px] text-outline font-mono truncate max-w-[180px] hidden md:table-cell">
-                          {dev.location || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs font-bold text-on-surface">
-                          {(dev.score || 0).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-tertiary hidden sm:table-cell">
-                          {dev.events_30d || 0}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
-                          {(dev.total_stars || 0).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
-                          {dev.public_repos || 0}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                          <div>
+                            <a
+                              href={`https://github.com/${dev.username}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-headline font-bold text-xs text-primary uppercase tracking-tight hover:underline"
+                            >
+                              {dev.username}
+                            </a>
+                            {dev.name && (
+                              <div className="font-mono text-[10px] text-outline uppercase tracking-tighter truncate max-w-[160px]">{dev.name}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[10px] text-outline truncate max-w-[180px] hidden md:table-cell">
+                        {dev.location || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-bold text-on-surface">
+                        {(dev.score || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-tertiary hidden sm:table-cell">
+                        {dev.events_30d || 0}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
+                        {(dev.total_stars || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
+                        {dev.public_repos || 0}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </section>
+        </div>
       )}
+
     </main>
   );
 }
