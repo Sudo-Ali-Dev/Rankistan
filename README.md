@@ -1,6 +1,16 @@
 # PakDev Index
 
-A daily leaderboard tracking active Pakistani developers on GitHub.
+A daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by city (parsed from profile locations) on a Pakistan SVG, and **Register** for profile checks.
+
+## Frontend
+
+| Tab | Description |
+|---|---|
+| **Leaderboard** | Ranked list from `public/data.json` with search |
+| **Map** | Pakistan outline with per-city counts; click a city on the map or in the sidebar to see developers in that bucket |
+| **Register** | Validate a GitHub profile against pipeline criteria |
+
+The map assigns each developer to a city using substring matching on the `location` field (e.g. “Lahore, Pakistan”). Entries that do not match a known city are grouped under **Other / Unresolved**.
 
 ## How It Works
 
@@ -35,7 +45,7 @@ To maximize coverage within GitHub's API limits, the discovery phase splits sear
 PK 2000-Jun2014 → PK Jul2014-Jan2016 → ... → PK Aug2024-Dec2024 → PK 2025+
 ```
 
-Each batch targets ~800-950 developers (under the 1,000-result API cap). One batch runs per hour via GitHub Actions, completing a full cycle every 24 hours. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are removed and replaced with fresh data.
+Each batch targets ~800-950 developers (under the 1,000-result API cap). One batch runs per hour (triggered by [cron-job.org](https://cron-job.org) via `workflow_dispatch`), completing a full cycle every 24 hours. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are removed and replaced with fresh data.
 
 ### Incremental Per-Batch Updates
 
@@ -124,9 +134,11 @@ scripts/
 public/
   data.json             # Final leaderboard (served to frontend)
 src/
-  App.jsx               # Main app shell with tab routing
+  App.jsx               # Main app shell (Leaderboard / Map / Register tabs)
   pages/
     Leaderboard.jsx     # Developer rankings
+    DevMap.jsx          # Pakistan map + city breakdown + per-city table
+    Register.jsx        # Profile validation
 ```
 
 ## Secrets Required
@@ -134,10 +146,12 @@ src/
 | Secret | Purpose |
 |---|---|
 | `GITHUB_TOKEN` | Auto-provisioned by Actions for API access |
+| `GROQ_API_KEY_PAKDEVINDEX` | Optional: Groq API for digest / AI features in CI build (`VITE_GROQ_KEY`) |
 
 ## TODO
 
 - [x] Leaderboard — Developer rankings with daily incremental updates
+- [x] Developer Map — City distribution and per-city developer list
 - [x] Registration — Profile validation against pipeline criteria
 - [ ] Weekly Digest — AI-powered weekly summary of ecosystem trends
 - [ ] Archives — Browse previous weekly digest reports
