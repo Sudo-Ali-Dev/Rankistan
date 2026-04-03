@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CACHE_KEYS, cache } from '../utils/cache';
+import { findCityKey, normalizeLocationForDisplay } from '../utils/location';
 
 const PROVINCES = [
   { id: 'PK-BA', d: 'm 326.52,241.3 7.34,-0.28 1.12,0.6 3.33,-2.61 1.52,-2.84 5.76,-0.93 -1.14,3.85 2.77,1.78 -1.42,3.64 1.29,0.84 2.49,-1.99 0.32,0.39 -0.82,6.83 -0.21,9.79 1.51,0.54 1.73,1.78 1.14,6.48 0.86,-0.61 1.15,-3.61 2.78,-0.31 2.83,-2.43 0.73,1.05 0.18,7.95 -1,6.39 0.97,2.91 0,0 -0.48,8.6 0.05,0.66 0.99,0.65 -0.12,1.48 -2.48,0.46 -0.41,2.63 -1.52,0.17 -0.39,1.56 -1.78,0.13 -0.47,0.66 -0.33,2.27 0.86,1.9 -4.46,7.74 -0.17,3.26 -1.3,3.1 1.25,0.67 0.17,2.17 1.22,-1.34 0.98,-0.2 1.2,0.45 0.02,1.26 -1.06,1.94 -2.22,2.24 0.02,3.14 -4.9,10.97 -2.42,1.66 -1.23,2.29 -4.37,1.29 -1.19,1.51 0.06,4.94 -1.32,4.64 3.72,1.52 0.34,1.15 -0.76,1.56 1.55,2.29 1.64,-1.16 0.66,0.9 -1.73,8.31 -2.28,1.29 -2.51,3.9 -2.8,2.59 -0.34,2.92 1.27,1.99 -1.96,4.62 -2.51,3.79 -3.39,1.9 0.13,1.23 1.88,3.01 0,0 -22.99,0.95 -6.73,-0.53 -5.39,0.88 -1.53,1.26 -2.13,3.41 -4.28,1.97 -11.67,9.28 -2.08,3.46 -2.69,0.68 -3.78,2.28 -3.8,1.28 -9.49,1.45 -0.7,0.65 -0.99,4.66 -1.49,2.14 -2.14,1.68 -1.06,3.7 -2.06,2.36 -0.5,5.13 -1.59,4.03 -0.09,1.95 1.16,12.61 -0.59,4.52 0.73,4.61 -0.63,3.89 0.86,5.52 11.06,19.35 -0.91,7.05 0.55,3.11 -0.3,2.74 -1.9,3.54 -0.49,2.63 -3.29,2.61 -0.64,2.63 -1.9,0.89 -2.46,4.34 0.18,3.49 -1.19,2.86 -2.26,1.51 -1.86,2.48 -0.13,2.66 -3.16,3.47 -2.95,0.41 -3.8,2.5 -2.19,2.57 0,0 -0.67,0.01 -0.68,-1.78 0.96,-0.82 0.41,-4.03 -0.43,-1.52 1.32,-1.7 0.51,-1.57 -0.25,-1.3 -2.58,-3.13 -4.88,-4.03 -0.02,-0.91 0.98,-0.02 -0.21,-0.97 -0.52,0.34 0.3,-0.86 0.24,0.28 0.63,-0.72 -0.97,-0.8 0.06,-1.35 -1.29,-1.02 -2.21,-0.55 -1.3,0.24 -0.46,-0.39 0.3,-1.03 -0.47,-0.26 -0.48,0.92 -0.63,-0.37 0.67,-0.9 -0.47,-0.85 -2.12,-0.78 -2.55,0.43 -1.21,1.64 2.92,0.38 0.95,-0.34 0.29,0.88 1.21,0.01 1.76,1.87 2.15,-0.63 1.48,0.31 0.08,2.17 -1.45,0.13 1.44,0.81 -0.16,0.57 -0.94,0.07 -5.46,-2.45 -2.74,-0.32 -6.81,0.85 -5.46,1.39 -5.34,-0.18 -2.21,1.54 -5.1,1.26 -6.97,-1.6 -1.68,0.78 -1.92,-0.51 -3.76,0.25 -0.91,0.47 -0.85,2.22 -1.26,0.53 -10.52,-0.96 -5.93,0.26 -2.91,0.66 -1.8,1.81 -0.13,2.53 1.33,-0.14 0.71,0.96 -3.85,1.2 -0.67,-0.96 1.55,-1.22 0.01,-0.58 -1.79,-1.85 -2.3,-0.48 -1.36,0.6 -0.16,0.71 -2.87,0.25 -1.9,-1.2 -4.67,-1.48 -0.14,-0.51 -5.17,-0.5 -0.05,-1.68 1.1,0.17 -1.83,-1.51 3.06,-0.04 -0.29,-0.6 1.4,-1.32 0.13,-0.77 -2.36,-0.57 -1.48,0.76 -3.31,-0.19 0.77,0.43 -0.03,0.59 -1.83,0.76 0.99,1.31 0.67,-0.79 1.15,-0.12 1.18,2.46 -0.71,1.05 -6.33,-0.65 -7.54,-1.86 -4.71,0.72 -2.99,1.8 -0.7,1.68 -0.01,1.88 1.09,0.7 -0.42,0.87 -14.31,-2.23 -1.36,0.17 -0.41,0.89 -2.89,0.97 -8.2,-1.76 -10.12,-0.69 -2.18,0.44 -0.63,0.92 0.58,0.6 -3.22,0.71 -1.67,1.3 -0.71,2.38 0.46,0.63 1.71,-0.05 -0.39,0.46 -4.48,-0.42 2.27,-0.68 -0.42,-2.3 -2.16,-1.57 -3.21,-0.4 -2.6,0.61 -1.55,1.18 -0.3,1.09 0.82,0.46 -0.07,0.97 0.86,0.81 -7.11,-0.38 -1.78,0.77 0.29,0.6 -0.68,1.7 -2.9,0.96 -1.82,-0.33 0.15,-2.13 1.28,-0.8 -0.43,-1.46 -3.51,-1.95 -3.49,-0.54 1.3,-0.45 1.75,-4.36 0.97,-15.21 1.01,-1.36 -0.65,-1.35 -0.03,-3.47 3.08,-0.11 0.45,-0.7 2.61,-17.55 0.89,-0.8 3.38,-0.94 3.98,-2.01 2.32,-0.06 0.44,-3.14 5.81,1.36 0.34,-1.22 -1.03,-1.11 -0.32,-1.43 1.01,-0.05 1.01,-1.26 -0.5,-0.95 0.39,-1.1 3.77,-0.64 1.2,-1.24 6.72,-0.73 2.04,-1.35 2.34,-0.15 0.6,-0.8 1.62,-0.59 8.01,-0.05 2.54,0.68 4.55,-0.42 1.18,-3.9 -0.29,-4.55 3.45,-1.34 -0.95,-2.33 -0.03,-6.66 2.38,-2.41 -0.7,-1.74 -4.45,-2.7 -4.86,0.36 -4.14,1.78 -2.84,-1.08 -2.2,0.21 -1.48,-0.95 -0.06,-0.74 1.98,-2.32 -0.97,-1.52 1.86,-5.42 -1.38,-14.76 -1.15,-7.54 -0.84,-2.37 1.1,-7.7 -0.18,-2.98 -7.72,0.96 -6.79,-7.14 -4.66,-1.97 -2.18,-0.1 -2.68,-0.95 -2.12,0.11 -2.8,-1 -9.25,-5.8 -4.76,-5.72 -6.83,-10.41 -0.04,-2.15 -0.94,-1.06 -0.32,-1.47 -2.12,-0.95 0.5,-2.56 -1.75,-1.22 -1.16,-2.83 0.57,-2.91 -6.96,-6.8 -11.34,-14.83 39.62,13.03 3.16,1.63 15.13,5.24 3.29,0.51 24.55,-2.93 7.09,0.03 2.91,-0.9 11.22,-0.62 11.78,2.24 4.83,2.74 1.74,0.1 1.32,-1.54 -0.35,-1.66 0.93,-1.22 2.09,-0.75 1.06,-1.2 2.21,0.03 4.6,-1.41 0.01,-1 1.59,-0.53 5.58,-0.41 11.04,1.08 1.71,-0.47 3.58,1.43 28.35,-8.44 -0.02,1.1 3.43,-1.89 4.77,-0.95 0.15,-0.63 10.22,-2.8 0.9,-0.97 -0.59,-0.66 3.18,-3.53 0.18,-0.61 -4.77,-4.19 0.77,-2.21 1.74,-1.41 -0.25,-1.26 2.04,-5.36 0.15,-4.06 1.03,-2.12 -0.92,-0.8 0.78,-0.88 -0.48,-0.99 -2.51,-1.25 -0.18,-0.68 1.03,-4.69 2.46,-5.05 -0.99,-1.36 1.18,-2.35 1.5,-0.68 2.08,-2.95 -0.99,-0.08 0,-0.64 5.28,-1.12 1.52,-1.46 0.85,-1.98 1.64,-1.11 1.7,-5.83 -0.4,-0.91 2.42,-0.05 1.63,-2.31 2.6,-1.44 4.29,-0.69 -0.25,0.82 1.38,0.29 -1.08,2.37 1.84,1.39 1.58,-0.5 2.18,0.21 5.64,1.25 7.43,-1.91 0.36,-0.17 -1.33,-0.47 3.97,-1.53 1.77,-0.15 3.35,-1.97 2.15,-0.33 1.05,-1.31 -0.72,-1.95 -1.18,-0.67 -4.14,0.64 -1.4,-1.18 -0.1,-1.97 -1.59,-2.63 1.59,-0.2 0.51,1.33 4.7,-0.04 5.09,-4.69 4.21,-0.96 3.24,-2.13 1.56,-2.51 0.58,-0.94 2.33,-3.68 0.33,0.89 3.17,0.59 -0.32,0.73 1.38,1.28 5.23,-0.02 0.44,-0.27 5.3,-2.93 2.4,2.25 2.69,0.38 0.59,3.31 2.19,1.61 1.22,2.31 1.68,0.57 2.65,-0.33 1.25,-1.85 2.78,0.86 0.41,-1.06 3.34,-2.4 3.08,-6.57 1.3,-0.64 3.54,-3.58 z' },
@@ -13,57 +14,112 @@ const PROVINCES = [
 ];
 
 const CITY_COORDS = {
-  karachi:    { x: 237, y: 549, code: 'KHI', label: 'right' },
-  lahore:     { x: 521, y: 249, code: 'LHE', label: 'right' },
-  islamabad:  { x: 470, y: 153, code: 'ISB', label: 'left' },
-  peshawar:   { x: 414, y: 138, code: 'PSH', label: 'left' },
-  quetta:     { x: 236, y: 310, code: 'QTA', label: 'left' },
-  multan:     { x: 410, y: 309, code: 'MUL', label: 'left' },
-  faisalabad: { x: 472, y: 254, code: 'FSD', label: 'left' },
-  rawalpindi: { x: 471, y: 157, code: 'RWP', label: 'right' },
-  hyderabad:  { x: 289, y: 525, code: 'HYD', label: 'right' },
-  sahiwal:    { x: 470, y: 290, code: 'SWL', label: 'right' },
-  bahawalpur: { x: 420, y: 355, code: 'BWP', label: 'right' },
-  gujranwala: { x: 520, y: 225, code: 'GRW', label: 'right' },
-  sialkot:    { x: 540, y: 215, code: 'SKT', label: 'right' },
-  abbottabad: { x: 470, y: 120, code: 'ATD', label: 'right' },
-  mardan:     { x: 430, y: 130, code: 'MDN', label: 'left' },
-  sukkur:     { x: 320, y: 440, code: 'SKR', label: 'right' },
+  karachi             : { x: 243, y: 549, code: 'KHI', label: 'right' },
+  hub                 : { x: 237, y: 542, code: 'HUB', label: 'right' },
+  hyderabad           : { x: 294, y: 526, code: 'HYD', label: 'right' },
+  kotri               : { x: 292, y: 527, code: 'KOT', label: 'right' },
+  jamshoro            : { x: 291, y: 524, code: 'JMS', label: 'right' },
+  dadu                : { x: 270, y: 467, code: 'DAD', label: 'right' },
+  nawabshah           : { x: 295, y: 488, code: 'NWS', label: 'right' },
+  hala                : { x: 290, y: 448, code: 'HLA', label: 'right' },
+  tando_allahyar      : { x: 308, y: 522, code: 'TAY', label: 'right' },
+  tando_muhammad_khan : { x: 301, y: 537, code: 'TMK', label: 'right' },
+  mirpur_khas         : { x: 319, y: 520, code: 'MPK', label: 'right' },
+  badin               : { x: 313, y: 558, code: 'BDN', label: 'right' },
+  umerkot             : { x: 347, y: 526, code: 'UMK', label: 'right' },
+  sukkur              : { x: 311, y: 424, code: 'SKR', label: 'right' },
+  khairpur            : { x: 306, y: 432, code: 'KHP', label: 'right' },
+  ghotki              : { x: 328, y: 411, code: 'GHT', label: 'right' },
+  shikarpur           : { x: 302, y: 413, code: 'SKP', label: 'right' },
+  larkana             : { x: 286, y: 430, code: 'LRK', label: 'right' },
+  jacobabad           : { x: 294, y: 398, code: 'JCB', label: 'right' },
+  ormara              : { x: 148, y: 531, code: 'ORM', label: 'right' },
+  gwadar              : { x:  60, y: 537, code: 'GWD', label: 'right' },
+  turbat              : { x:  88, y: 500, code: 'TRB', label: 'right' },
+  khuzdar             : { x: 224, y: 420, code: 'KZD', label: 'right' },
+  chaman              : { x: 213, y: 282, code: 'CHM', label: 'right' },
+  quetta              : { x: 236, y: 314, code: 'QTA', label: 'right' },
+  islamabad           : { x: 467, y: 159, code: 'ISB', label: 'right' },
+  rawalpindi          : { x: 466, y: 164, code: 'RWP', label: 'right' },
+  wah_cantonment      : { x: 456, y: 157, code: 'WAH', label: 'right' },
+  attock              : { x: 439, y: 156, code: 'ATK', label: 'right' },
+  chakwal             : { x: 460, y: 193, code: 'CKW', label: 'right' },
+  jhelum              : { x: 493, y: 193, code: 'JLM', label: 'right' },
+  kamra               : { x: 441, y: 152, code: 'KMR', label: 'right' },
+  haripur             : { x: 461, y: 146, code: 'HRP', label: 'right' },
+  abbottabad          : { x: 472, y: 139, code: 'ATD', label: 'right' },
+  mansehra            : { x: 471, y: 131, code: 'MNH', label: 'right' },
+  gilgit              : { x: 513, y:  61, code: 'GIL', label: 'left' },
+  skardu              : { x: 565, y:  89, code: 'KDU', label: 'left' },
+  muzaffarabad        : { x: 482, y: 129, code: 'MZD', label: 'right' },
+  mirpur              : { x: 494, y: 183, code: 'MIR', label: 'right' },
+  kotli               : { x: 499, y: 169, code: 'KTL', label: 'right' },
+  rawalakot           : { x: 494, y: 152, code: 'RWT', label: 'right' },
+  bhimber             : { x: 507, y: 191, code: 'BHR', label: 'left' },
+  peshawar            : { x: 409, y: 146, code: 'PSH', label: 'right' },
+  charsadda           : { x: 416, y: 139, code: 'CHD', label: 'right' },
+  mardan              : { x: 427, y: 137, code: 'MDN', label: 'right' },
+  nowshera            : { x: 424, y: 145, code: 'NOW', label: 'right' },
+  swabi               : { x: 443, y: 140, code: 'SWB', label: 'right' },
+  swat                : { x: 409, y: 132, code: 'SWT', label: 'right' },
+  chitral             : { x: 415, y:  65, code: 'CTR', label: 'right' },
+  kohat               : { x: 404, y: 164, code: 'KHT', label: 'right' },
+  bannu               : { x: 372, y: 191, code: 'BNU', label: 'right' },
+  dera_ismail_khan    : { x: 385, y: 242, code: 'DIK', label: 'right' },
+  lahore              : { x: 518, y: 253, code: 'LHE', label: 'left' },
+  kasur               : { x: 523, y: 273, code: 'KSR', label: 'left' },
+  sheikhupura         : { x: 505, y: 247, code: 'SHK', label: 'left' },
+  gujranwala          : { x: 512, y: 227, code: 'GRW', label: 'left' },
+  hafizabad           : { x: 493, y: 231, code: 'HFD', label: 'right' },
+  gujrat              : { x: 507, y: 209, code: 'GRT', label: 'left' },
+  mandi_bahauddin     : { x: 485, y: 208, code: 'MBD', label: 'right' },
+  sialkot             : { x: 525, y: 212, code: 'SKT', label: 'left' },
+  narowal             : { x: 539, y: 229, code: 'NRW', label: 'left' },
+  wazirabad           : { x: 509, y: 214, code: 'WZD', label: 'left' },
+  faisalabad          : { x: 470, y: 259, code: 'FSD', label: 'right' },
+  chiniot             : { x: 466, y: 246, code: 'CHT', label: 'right' },
+  jhang               : { x: 440, y: 266, code: 'JHG', label: 'right' },
+  toba_tek_singh      : { x: 447, y: 279, code: 'TTS', label: 'right' },
+  sargodha            : { x: 454, y: 230, code: 'SGD', label: 'right' },
+  khushab             : { x: 441, y: 221, code: 'KSB', label: 'right' },
+  mianwali            : { x: 409, y: 209, code: 'MWL', label: 'right' },
+  bhakkar             : { x: 392, y: 251, code: 'BHK', label: 'right' },
+  pirmahal            : { x: 446, y: 288, code: 'PRH', label: 'right' },
+  sahiwal             : { x: 472, y: 292, code: 'SWL', label: 'right' },
+  pakpattan           : { x: 483, y: 306, code: 'PKP', label: 'right' },
+  okara               : { x: 485, y: 286, code: 'OKR', label: 'right' },
+  arifwala            : { x: 471, y: 309, code: 'ARW', label: 'right' },
+  raja_jang           : { x: 516, y: 268, code: 'RJG', label: 'left' },
+  multan              : { x: 409, y: 313, code: 'MUL', label: 'right' },
+  khanewal            : { x: 427, y: 309, code: 'KNW', label: 'right' },
+  vehari              : { x: 443, y: 320, code: 'VEH', label: 'right' },
+  lodhran             : { x: 416, y: 342, code: 'LDN', label: 'right' },
+  bahawalpur          : { x: 417, y: 348, code: 'BWP', label: 'right' },
+  rahim_yar_khan      : { x: 366, y: 392, code: 'RYK', label: 'right' },
+  sadiqabad           : { x: 359, y: 397, code: 'SDQ', label: 'right' },
+  muzaffargarh        : { x: 398, y: 319, code: 'MZG', label: 'right' },
+  layyah              : { x: 388, y: 280, code: 'LYY', label: 'right' },
+  kot_addu            : { x: 389, y: 302, code: 'KAD', label: 'right' },
+  dera_ghazi_khan     : { x: 377, y: 321, code: 'DGK', label: 'right' },
+  taunsa_sharif       : { x: 385, y: 300, code: 'TSF', label: 'right' },
+  rajanpur            : { x: 366, y: 362, code: 'RJP', label: 'right' },
 };
-
-const CITY_ALIASES = {
-  karachi: ['karachi', 'khi', 'khi.', 'krachi'],
-  lahore: ['lahore', 'lhr', 'lhe'],
-  islamabad: ['islamabad', 'isb', 'islmabad'],
-  peshawar: ['peshawar', 'psh', 'peshwar'],
-  quetta: ['quetta', 'qta'],
-  multan: ['multan', 'mtn', 'mul'],
-  faisalabad: ['faisalabad', 'fsd', 'lyallpur'],
-  rawalpindi: ['rawalpindi', 'rwp', 'pindi'],
-  hyderabad: ['hyderabad', 'hyd'],
-  sahiwal: ['sahiwal'],
-  bahawalpur: ['bahawalpur', 'bwp'],
-  gujranwala: ['gujranwala', 'grw'],
-  sialkot: ['sialkot', 'skt'],
-  abbottabad: ['abbottabad', 'atd'],
-  mardan: ['mardan'],
-  sukkur: ['sukkur'],
-};
-
-const ALIAS_MAP = {};
-for (const [city, aliases] of Object.entries(CITY_ALIASES)) {
-  for (const alias of aliases) {
-    ALIAS_MAP[alias] = city;
-  }
-}
 
 function parseCity(location) {
-  if (!location) return 'other';
-  const lower = location.toLowerCase().replace(/[.,\-]/g, ' ').trim();
-  for (const alias of Object.keys(ALIAS_MAP)) {
-    if (lower.includes(alias)) return ALIAS_MAP[alias];
+  const cityKey = findCityKey(location);
+  if (!cityKey || !CITY_COORDS[cityKey]) {
+    return 'other';
   }
-  return 'other';
+
+  return cityKey;
+}
+
+function formatCityLabel(cityKey) {
+  if (cityKey === 'other') {
+    return 'Pakistan';
+  }
+
+  return normalizeLocationForDisplay(cityKey);
 }
 
 const DOT_COLORS = {
@@ -153,6 +209,17 @@ export default function DevMap() {
 
   const totalDevs = data?.leaderboard?.length || 0;
   const maxCount = cityStats.length > 0 ? cityStats[0].count : 1;
+  const MAP_VIEWBOX_WIDTH = 660;
+  const MAP_VIEWBOX_HEIGHT = 605;
+  const LABEL_MARGIN = 4;
+  const LABEL_HEIGHT = 18;
+
+  const renderCityStats = useMemo(() => {
+    if (!hoveredCity) return cityStats;
+    const hovered = cityStats.find((item) => item.city === hoveredCity);
+    if (!hovered) return cityStats;
+    return [...cityStats.filter((item) => item.city !== hoveredCity), hovered];
+  }, [cityStats, hoveredCity]);
 
   if (loading) {
     return (
@@ -221,12 +288,13 @@ export default function DevMap() {
                 {[120, 240, 360, 480].map(y => (
                   <line key={`gy-${y}`} x1="0" y1={y} x2="660" y2={y} stroke="#414752" strokeWidth="0.3" strokeDasharray="4 4" />
                 ))}
-                {cityStats.map(({ city, count }) => {
+                {renderCityStats.map(({ city, count }) => {
                   const coords = CITY_COORDS[city];
                   if (!coords) return null;
                   const color = DOT_COLORS[city] || DOT_COLORS._default;
                   const radius = Math.max(5, Math.min(18, 5 + (count / maxCount) * 13));
                   const isHovered = hoveredCity === city;
+                  const showInfoCard = isHovered;
                   return (
                     <g
                       key={city}
@@ -245,25 +313,36 @@ export default function DevMap() {
                         className="transition-all duration-200"
                       />
                       <circle cx={coords.x} cy={coords.y} r="2.5" fill="#fff" opacity="0.9" />
-                      {(() => {
+                      {showInfoCard && (() => {
                         const labelW = Math.max(54, coords.code.length * 7 + String(count).length * 7 + 16);
-                        const isLeft = coords.label === 'left';
-                        const rx = isLeft ? coords.x - radius - 5 - labelW : coords.x + radius + 5;
-                        const tx = isLeft ? coords.x - radius - 5 - labelW + 4 : coords.x + radius + 9;
+                        const leftX = coords.x - radius - 5 - labelW;
+                        const rightX = coords.x + radius + 5;
+                        let rx = coords.label === 'left' ? leftX : rightX;
+
+                        if (rx < LABEL_MARGIN) {
+                          rx = rightX;
+                        }
+                        if (rx + labelW > MAP_VIEWBOX_WIDTH - LABEL_MARGIN) {
+                          rx = leftX;
+                        }
+
+                        rx = Math.max(LABEL_MARGIN, Math.min(MAP_VIEWBOX_WIDTH - LABEL_MARGIN - labelW, rx));
+                        const ry = Math.max(LABEL_MARGIN, Math.min(MAP_VIEWBOX_HEIGHT - LABEL_MARGIN - LABEL_HEIGHT, coords.y - 9));
+                        const tx = rx + 4;
                         return (
                           <>
                             <rect
-                              x={rx} y={coords.y - 9}
+                              x={rx} y={ry}
                               width={labelW}
                               height="18" rx="0"
-                              fill={isHovered ? '#262a31' : '#1c2026'}
-                              stroke={isHovered ? color.fill : '#414752'}
+                              fill="#262a31"
+                              stroke={color.fill}
                               strokeWidth="0.5"
                               className="transition-all duration-200"
                             />
                             <text
-                              x={tx} y={coords.y + 3}
-                              fill={isHovered ? color.fill : '#dfe2eb'}
+                              x={tx} y={ry + 12}
+                              fill={color.fill}
                               fontSize="9" fontFamily="JetBrains Mono, monospace"
                               className="transition-colors duration-200"
                             >
@@ -319,7 +398,7 @@ export default function DevMap() {
                         </span>
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color.fill }}></span>
                         <span className="font-headline text-sm font-bold uppercase tracking-tighter">
-                          {city === 'other' ? 'Other / Unresolved' : city}
+                          {formatCityLabel(city)}
                         </span>
                         {coords && (
                           <span className="font-mono text-[9px] text-outline">[{coords.code}]</span>
@@ -367,7 +446,7 @@ export default function DevMap() {
             <div className="p-4 border-b border-outline-variant bg-surface-container-high flex items-center justify-between">
               <span className="font-mono text-xs uppercase tracking-widest flex items-center gap-2">
                 <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
-                {selectedCity === 'other' ? 'Other / Unresolved' : selectedCity.toUpperCase()} Developers
+                {formatCityLabel(selectedCity).toUpperCase()} Developers
                 <span className="font-mono text-[10px] text-outline font-normal">
                   [{devsByCity[selectedCity].length} active]
                 </span>
@@ -425,7 +504,7 @@ export default function DevMap() {
                         </div>
                       </td>
                       <td className="px-4 py-3 font-mono text-[10px] text-outline truncate max-w-[180px] hidden md:table-cell">
-                        {dev.location || '—'}
+                        {normalizeLocationForDisplay(dev.location)}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-xs font-bold text-on-surface">
                         {(dev.score || 0).toLocaleString()}
