@@ -11,7 +11,7 @@ A daily leaderboard tracking active Pakistani developers on GitHub. The site inc
 | **Register** | Validate a GitHub profile against pipeline criteria |
 | **About** | How the index works: scoring, activity filters, hourly batches, and FAQs |
 
-The map assigns each developer to a city using substring matching on the `location` field (e.g. “Lahore, Pakistan”). Entries that do not match a known city are grouped under **Other / Unresolved**.
+The map assigns each developer to a city using a deterministic normalization strategy in `src/utils/location.js`. It does token-aware country detection, alias-based city matching (including common spellings and local variants), and safe fallback handling for unresolved locations.
 
 ## How It Works
 
@@ -58,6 +58,18 @@ Every developer entry in `data.json` is tagged with a `batch_index`. When batch 
 4. Deduplicate by username (latest batch wins), re-sort, re-rank, and cap
 
 This means developers from batch 23 stay on the leaderboard all day until batch 23 re-runs and refreshes them. No downtime, no daily wipe.
+
+### Location + Map Strategy
+
+The frontend location system is deterministic and does not use AI for location inference.
+
+1. Normalize raw profile text (case folding, punctuation cleanup, whitespace normalization).
+2. Detect Pakistani locations using exact country tokens (for example `pakistan`, `pk`) and a curated city alias dictionary.
+3. Map aliases to canonical city keys (for example `lahore`, `rawalpindi`, `dera_ghazi_khan`) so display/search/map all use one source of truth.
+4. Use conservative fallback behavior:
+  - If country is present but city is unknown, display **Pakistan**.
+  - If no country token exists, infer only a minimal cleaned candidate for display; otherwise fall back to **Pakistan**.
+5. Plot map nodes from geocoded city coordinates projected onto the Pakistan SVG viewbox, then clamp hover cards inside map bounds and render hovered cards on top of nearby nodes for readability.
 
 ### Scoring Formula
 
