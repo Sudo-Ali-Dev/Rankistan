@@ -141,6 +141,8 @@ export default function DevMap() {
   const [hoveredCity, setHoveredCity] = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
   const tableRef = useRef(null);
+  const cityListRef = useRef(null);
+  const cityRowRefs = useRef({});
 
   const handleHoverCity = useCallback((city) => {
     setHoveredCity(prev => (prev === city ? prev : city));
@@ -183,6 +185,25 @@ export default function DevMap() {
     }
     load();
   }, []);
+
+  useEffect(() => {
+    if (!hoveredCity) return;
+
+    const listEl = cityListRef.current;
+    const rowEl = cityRowRefs.current[hoveredCity];
+    if (!listEl || !rowEl) return;
+
+    const rowTop = rowEl.offsetTop;
+    const rowBottom = rowTop + rowEl.offsetHeight;
+    const viewportTop = listEl.scrollTop;
+    const viewportBottom = viewportTop + listEl.clientHeight;
+    const gutter = 12;
+
+    if (rowTop < viewportTop + gutter || rowBottom > viewportBottom - gutter) {
+      const centeredTop = Math.max(0, rowTop - (listEl.clientHeight - rowEl.offsetHeight) / 2);
+      listEl.scrollTo({ top: centeredTop, behavior: 'smooth' });
+    }
+  }, [hoveredCity]);
 
   const cityStats = useMemo(() => {
     if (!data?.leaderboard) return [];
@@ -504,7 +525,7 @@ export default function DevMap() {
               </label>
               <span className="font-mono text-[10px] text-outline">{cityStats.length} Places</span>
             </div>
-            <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
+            <div ref={cityListRef} className="space-y-2 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
               {cityStats.map(({ city, count, totalScore, topDev }, idx) => {
                 const coords = CITY_COORDS[city];
                 const color = DOT_COLORS[city] || DOT_COLORS._default;
@@ -514,6 +535,13 @@ export default function DevMap() {
                 return (
                   <div
                     key={city}
+                    ref={(el) => {
+                      if (el) {
+                        cityRowRefs.current[city] = el;
+                      } else {
+                        delete cityRowRefs.current[city];
+                      }
+                    }}
                     className={`border p-3 transition-all duration-200 cursor-pointer ${
                       isSelected
                         ? 'border-primary bg-primary/10'
