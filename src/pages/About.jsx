@@ -346,10 +346,10 @@ export default function About() {
                   className="w-full text-left px-6 py-4 flex items-center justify-between hover:bg-surface-container-low transition-colors bg-surface-container-lowest"
                 >
                   <span className="flex items-center gap-3">
-                    <span className="font-mono text-[10px] text-outline w-6">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="font-mono text-[10px] text-outline w-6 shrink-0">{String(i + 1).padStart(2, '0')}</span>
                     <span className="font-headline text-sm font-bold tracking-tight">{item.q}</span>
                   </span>
-                  <span className={`material-symbols-outlined text-outline text-sm transition-transform duration-200 ${openFaq === i ? 'rotate-45' : ''}`}>add</span>
+                  <span className={`material-symbols-outlined text-outline text-sm shrink-0 transition-transform duration-200 ${openFaq === i ? 'rotate-45' : ''}`}>add</span>
                 </button>
                 {openFaq === i && (
                   <div className="px-6 pb-4 pt-2 bg-surface-container-lowest border-t border-outline-variant/30">
