@@ -1,17 +1,27 @@
 # Rankistan
 
-A daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by city (parsed from profile locations) on a interactive map of Pakistan, **Register** for profile checks, and **About** explaining the pipeline, scoring, and scheduling.
+An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by normalized profile locations on an interactive map of Pakistan, **Register** for profile checks, and **About** documentation for pipeline logic, scoring, and scheduling.
+
+## Contents
+
+- [Frontend](#frontend)
+- [How It Works](#how-it-works)
+- [Running Locally](#running-locally)
+- [Scheduling](#scheduling)
+- [Project Structure](#project-structure)
+- [Groq Key Security](#groq-key-security)
+- [TODO](#todo)
 
 ## Frontend
 
 | Tab | Description |
 |---|---|
 | **Leaderboard** | Ranked list from `public/data.json` with search, filters, sort, CSV export, and pagination |
-| **Map** | Pakistan outline with per-city counts; city breakdown; click a city to list developers for that bucket |
+| **Map** | Pakistan outline with per-place counts; place breakdown; hover a node to sync-highlight and auto-scroll that place in the list; click a place to list developers for that bucket |
 | **Register** | Validate a GitHub profile against pipeline criteria |
 | **About** | How the index works: scoring, activity filters, hourly batches, and FAQs |
 
-The map assigns each developer to a city using a deterministic normalization strategy in `src/utils/location.js`. It does token-aware country detection, alias-based city matching (including common spellings and local variants), and safe fallback handling for unresolved locations.
+The map assigns each developer to a canonical place key using a deterministic normalization strategy in `src/utils/location.js`. It does token-aware country detection, alias-based city matching (including common spellings and local variants), and safe fallback handling for unresolved locations.
 
 ## How It Works
 
@@ -89,8 +99,8 @@ The frontend location system is deterministic and does not use AI for location i
 2. Detect Pakistani locations using exact country tokens (for example `pakistan`, `pk`) and a curated city alias dictionary.
 3. Map aliases to canonical city keys (for example `lahore`, `rawalpindi`, `dera_ghazi_khan`) so display/search/map all use one source of truth.
 4. Use conservative fallback behavior:
-  - If country is present but city is unknown, display **Pakistan**.
-  - If no country token exists, infer only a minimal cleaned candidate for display; otherwise fall back to **Pakistan**.
+  - If country is present but city is unknown, display **Pakistan - Place Unspecified**.
+  - If no country token exists, infer only a minimal cleaned candidate for display; otherwise fall back to **Pakistan - Place Unspecified**.
 5. Plot map nodes from geocoded city coordinates projected onto the Pakistan SVG viewbox, then clamp hover cards inside map bounds and render hovered cards on top of nearby nodes for readability.
 
 ### Scoring Formula
@@ -119,7 +129,7 @@ npm run dev
 
 The pipeline runs **every hour, 24 batches per day**, triggered by an external cron service ([cron-job.org](https://cron-job.org)) that dispatches the GitHub Actions workflow via the API. This is more reliable than GitHub's built-in cron scheduler, which can delay or skip runs during peak load.
 
-### How It Works
+### Scheduler Flow
 
 1. **cron-job.org** sends a `POST` to the GitHub `workflow_dispatch` API every hour
 2. The workflow auto-detects which batch to run from the current UTC hour: `batch = (UTC_HOUR + 5) % 24`
@@ -175,35 +185,25 @@ src/
   App.jsx               # Main app shell (Leaderboard / Map / Register / About tabs)
   pages/
     Leaderboard.jsx     # Developer rankings
-    DevMap.jsx          # Pakistan map + city breakdown + per-city table
+    DevMap.jsx          # Pakistan map + place breakdown + per-place table
     Register.jsx        # Profile validation
     About.jsx           # User-facing docs (pipeline, scoring, scheduling)
 ```
 
 ## Groq Key Security
 
-I originally generated profile summaries in the browser. That meant the Groq key had to be embedded in client code, which makes it publicly visible.
+Summary generation runs behind a Cloudflare Worker (`cloudflare/worker.js`) at `/api/dev-summary`, so the Groq key is not exposed in the frontend bundle.
 
-To fix that, summary generation now runs behind a Cloudflare Worker (`cloudflare/worker.js`) at `/api/dev-summary`.
+### Security Model
 
-What changed:
+- Frontend sends developer metadata and receives summary text.
+- `GROQ_API_KEY` is stored only in Worker secrets.
+- Worker enforces CORS and basic per-IP rate limiting.
+- Frontend calls the public Worker endpoint via `VITE_SUMMARY_API_URL`.
 
-- Frontend sends only developer metadata and receives summary text.
-- Groq key is stored only in Worker secrets (never in client bundle).
-- Worker adds CORS and basic rate limiting around the summary endpoint.
+### Trade-off
 
-Why Cloudflare Worker:
-
-- The frontend is static (GitHub Pages), so it needs a small server layer for secure secret handling.
-- Worker keeps API key usage isolated from UI code.
-- It reduces abuse risk while keeping the same user-facing summary feature.
-
-Reality check:
-
-- This is still not bulletproof security.
-- Moving the key to a Worker hides it from browser source code, but it does not make abuse impossible.
-- I know this trade-off and accept it for this project because I am using a free-quota key and doing this for fun.
-- I do not want to redesign the whole architecture just to harden this one feature.
+This setup meaningfully reduces key exposure risk for a static frontend, but it is not fully abuse-proof.
 
 Configuration model:
 
@@ -215,7 +215,7 @@ Configuration model:
 ## TODO
 
 - [x] Leaderboard — Developer rankings with daily incremental updates
-- [x] Developer Map — City distribution and per-city developer list
+- [x] Developer Map — Place distribution and per-place developer list
 - [x] Registration — Profile validation against pipeline criteria
 - [x] About — On-site documentation for scoring, filters, and scheduling
 - [ ] Weekly Digest — AI-powered weekly summary of ecosystem trends
