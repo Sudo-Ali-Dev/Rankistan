@@ -3,6 +3,7 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import Leaderboard from './pages/Leaderboard';
 import Register from './pages/Register';
+import DevMap from './pages/DevMap';
 
 function App() {
   const [activeTab, setActiveTab] = useState('leaderboard');
@@ -17,6 +18,7 @@ function App() {
       <Header activeTab={activeTab} onChangeTab={handleChangeTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
       {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} />}
       {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
+      {activeTab === 'map' && <DevMap />}
       <Footer />
     </>
   );

@@ -20,6 +20,12 @@ export default function Header({ activeTab, onChangeTab, searchTerm, onSearchCha
             Leaderboard
           </button>
           <button 
+            onClick={() => onChangeTab('map')}
+            className={`${activeTab === 'map' ? 'text-[#a2c9ff] border-b-2 border-[#a2c9ff] pb-1' : 'text-[#8b919d] hover:text-[#a2c9ff]'} transition-colors duration-50`}
+          >
+            Map
+          </button>
+          <button 
             onClick={() => onChangeTab('register')}
             className={`${activeTab === 'register' ? 'text-[#a2c9ff] border-b-2 border-[#a2c9ff] pb-1' : 'text-[#8b919d] hover:text-[#a2c9ff]'} transition-colors duration-50`}
           >
