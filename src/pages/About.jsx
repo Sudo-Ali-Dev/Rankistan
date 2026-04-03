@@ -32,7 +32,7 @@ const FAQ = [
   { q: 'What is the "new account penalty"?', a: 'If your GitHub account is less than 6 months old, your final score is halved (multiplied by 0.5). This prevents newly created accounts from dominating the board.' },
   { q: 'How does the Developer Map work?', a: 'The map parses each developer\'s GitHub profile location string and maps it to a known Pakistani city using substring matching. Profiles that can\'t be matched go into "Other / Unresolved".' },
   { q: 'Can I register manually?', a: 'Yes — use the Register tab to enter a GitHub username. It validates the profile against all pipeline criteria and shows you exactly which thresholds you pass or fail.' },
-  { q: 'Is this open source?', a: 'Yes. The full codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/pakdev-index.' },
+  { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/pakdev-index.' },
 ];
 
 export default function About() {
@@ -46,7 +46,7 @@ export default function About() {
         {/* Hero */}
         <div className="mb-12 border-l-4 border-primary pl-6">
           <h1 className="font-headline text-5xl font-extrabold tracking-tighter uppercase text-on-surface mb-2">
-            About <span className="text-primary">PakDev Index</span>
+            About <span className="text-primary">Rankistan</span>
           </h1>
           <p className="font-mono text-sm text-outline max-w-xl uppercase tracking-widest">
             System documentation for the Pakistani developer tracking infrastructure.
@@ -60,7 +60,7 @@ export default function About() {
             <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest">System_Overview</span>
           </div>
           <p className="font-body text-sm text-on-surface-variant leading-relaxed max-w-3xl">
-            PakDev Index is an automated leaderboard that discovers, tracks, and ranks active Pakistani developers on GitHub.
+            Rankistan is an automated leaderboard that discovers, tracks, and ranks active Pakistani developers on GitHub.
             The pipeline runs every hour — scanning profiles, measuring real activity, and updating the board.
             No manual submissions. No vanity metrics. Just code.
           </p>

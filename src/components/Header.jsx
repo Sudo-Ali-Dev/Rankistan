@@ -10,7 +10,7 @@ export default function Header({ activeTab, onChangeTab, searchTerm, onSearchCha
           onClick={() => onChangeTab('leaderboard')} 
           className="text-xl font-bold tracking-tighter text-[#a2c9ff] uppercase font-['Space_Grotesk'] hover:opacity-80 transition-opacity"
         >
-          PakDev Index
+          Rankistan
         </button>
         <div className="hidden md:flex gap-6 font-['Space_Grotesk'] tracking-tight">
           <button 

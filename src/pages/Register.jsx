@@ -291,7 +291,7 @@ export default function Register({ onChangeTab }) {
                   />
                 </div>
                 <p className="mt-4 font-mono text-[10px] text-outline leading-relaxed uppercase">
-                  By proceeding, you authorize PakDev Index to fetch your public contributions and profile metadata.
+                  By proceeding, you authorize Rankistan to fetch your public contributions and profile metadata.
                 </p>
               </div>
 

@@ -1,4 +1,4 @@
-# PakDev Index
+# Rankistan
 
 A daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by city (parsed from profile locations) on a interactive map of Pakistan, **Register** for profile checks, and **About** explaining the pipeline, scoring, and scheduling.
 

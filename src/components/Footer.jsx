@@ -3,7 +3,7 @@ export default function Footer() {
     <footer className="bg-surface-container-lowest border-t border-outline-variant w-full mt-12">
       <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row justify-between items-center gap-6 font-mono text-[10px] uppercase tracking-widest text-outline-variant">
         <div className="flex items-center gap-2">
-          <span>&copy; 2026 PAKDEV INDEX</span>
+          <span>&copy; 2026 RANKISTAN</span>
           <span className="hidden md:inline">//</span>
           <span className="hidden md:inline">BUILT BY <a href="https://sudo-ali-dev.github.io/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">MUHAMMAD ALI</a> </span>
         </div>
