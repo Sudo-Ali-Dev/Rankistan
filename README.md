@@ -17,6 +17,16 @@ The map assigns each developer to a city using a deterministic normalization str
 
 The pipeline discovers developers from GitHub's location search across all of Pakistan, fetches their recent activity, and ranks them by a weighted score. Only genuinely active developers make the cut. The leaderboard is updated incrementally — each batch refreshes its slice of the leaderboard every day.
 
+### Daily Scanner Layer
+
+Rankistan operates as a rolling daily scanner rather than a one-shot leaderboard rebuild.
+
+1. Scan 40,000+ Pakistani developer profiles spanning account creation years from 2000 to present.
+2. Re-evaluate 20,000+ candidates that show potential score movement from fresh profile/activity/repo signals.
+3. Apply strict ranking criteria and publish only developers who pass all gates.
+
+The scanner is distributed across 24 hourly batches, so the full ecosystem is refreshed continuously while keeping API usage within platform limits.
+
 ### Pipeline Stages
 
 | Stage | Script | Output |
@@ -58,6 +68,18 @@ Every developer entry in `data.json` is tagged with a `batch_index`. When batch 
 4. Deduplicate by username (latest batch wins), re-sort, re-rank, and cap
 
 This means developers from batch 23 stay on the leaderboard all day until batch 23 re-runs and refreshes them. No downtime, no daily wipe.
+
+### On-Demand AI Summary System
+
+AI summaries are generated only when a user expands a developer card.
+
+1. Card expansion triggers summary generation if the username is not already cached in memory.
+2. Frontend sends sanitized developer metadata to the Cloudflare Worker endpoint (`/api/dev-summary`) with timeout and retry controls.
+3. Worker enforces CORS and per-IP rate limits, sanitizes input again, and calls Groq using server-side secrets.
+4. Returned summary text is validated (minimum length and refusal checks), trimmed to display limits, and returned to the UI.
+5. Frontend caches the final summary by username so repeated expansions are instant.
+
+This design keeps summaries accurate and interactive while avoiding expensive bulk generation across the entire leaderboard.
 
 ### Location + Map Strategy
 
