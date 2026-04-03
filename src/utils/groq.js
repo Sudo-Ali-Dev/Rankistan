@@ -1,9 +1,6 @@
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
-const GROQ_MAX_TOKENS = 120;
-const GROQ_TEMPERATURE = 0.5;
-const GROQ_TIMEOUT_MS = 15000;
-const GROQ_RETRY_DELAY_MS = 3000;
+const SUMMARY_API_ROUTE = '/api/dev-summary';
+const SUMMARY_REQUEST_TIMEOUT_MS = 15000;
+const SUMMARY_RETRY_DELAY_MS = 3000;
 const MIN_SUMMARY_LENGTH = 30;
 const MAX_SUMMARY_LENGTH = 400;
 const ERROR_VALUE = 'error';
@@ -14,78 +11,73 @@ const REFUSAL_PREFIXES = [
   'as an ai'
 ];
 
-const SYSTEM_PROMPT = [
-  'You are writing a brief developer profile summary.',
-  'Write exactly 2 sentences describing this developer based on their GitHub activity.',
-  'Be specific - mention their main technologies and what kind of projects they build.',
-  'Do not use bullet points. Do not start with "This developer". Write in third person.',
-  'Use he/him or she/her pronouns based on the developer\'s name. Pay careful attention to the name — e.g. Muhammad, Ali, Ibrahim, Ahmed are male; Fatima, Ayesha, Noor (female name) are female.',
-  'If the gender is truly ambiguous, use "they/them".'
-].join(' ');
-
 const summaryCache = new Map();
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function normalizeName(dev) {
-  const name = typeof dev?.name === 'string' ? dev.name.trim() : '';
-  return name;
+function normalizeText(value, maxLength = 200) {
+  const text = value == null ? '' : String(value).trim();
+  return text.slice(0, maxLength);
 }
 
-function normalizeLanguages(dev) {
-  const langs = Array.isArray(dev?.top_languages)
-    ? dev.top_languages
-      .map((value) => (value == null ? '' : String(value).trim()))
-      .filter((value) => value.length > 0)
-    : [];
-
-  return langs.length > 0 ? langs.join(', ') : 'Not specified';
-}
-
-function formatRepoLine(repo) {
-  const name = String(repo?.name || 'unknown-repo').trim() || 'unknown-repo';
-  const language = repo?.language == null || String(repo.language).trim() === ''
-    ? 'Unknown'
-    : String(repo.language).trim();
-  const description = typeof repo?.description === 'string' ? repo.description.trim() : '';
-
-  if (description) {
-    return `- ${name}: ${description} (${language})`;
+function normalizeLanguages(languages) {
+  if (!Array.isArray(languages)) {
+    return [];
   }
 
-  return `- ${name} (${language})`;
+  return languages
+    .map((value) => normalizeText(value, 40))
+    .filter((value) => value.length > 0)
+    .slice(0, 8);
 }
 
-function formatTopProjects(dev) {
-  const repos = Array.isArray(dev?.top_repos) ? dev.top_repos : [];
-  if (repos.length === 0) {
-    return 'No public repos';
+function normalizeTopRepos(repos) {
+  if (!Array.isArray(repos)) {
+    return [];
   }
 
-  const lines = repos.map(formatRepoLine);
-  return lines.join('\n');
+  return repos.slice(0, 8).map((repo) => ({
+    name: normalizeText(repo?.name, 120),
+    description: normalizeText(repo?.description, 260),
+    language: normalizeText(repo?.language, 40),
+    stars: Number.isFinite(Number(repo?.stars)) ? Number(repo.stars) : 0,
+    url: normalizeText(repo?.url, 220)
+  }));
 }
 
-function buildUserPrompt(dev) {
-  const username = String(dev?.username || '').trim();
-  const name = normalizeName(dev);
+function buildDevPayload(dev) {
+  return {
+    username: normalizeText(dev?.username, 80),
+    name: normalizeText(dev?.name, 120),
+    location: normalizeText(dev?.location, 120),
+    top_languages: normalizeLanguages(dev?.top_languages),
+    total_stars: Number.isFinite(Number(dev?.total_stars)) ? Number(dev.total_stars) : 0,
+    events_30d: Number.isFinite(Number(dev?.events_30d)) ? Number(dev.events_30d) : 0,
+    top_repos: normalizeTopRepos(dev?.top_repos)
+  };
+}
 
-  const displayIdentity = name ? `${name} (@${username})` : `@${username}`;
-  const lines = [`Developer: ${displayIdentity}`];
-
-  if (typeof dev?.location === 'string' && dev.location.trim()) {
-    lines[0] = `${lines[0]} from ${dev.location.trim()}`;
+function resolveSummaryApiUrl() {
+  const configuredBase = normalizeText(import.meta.env.VITE_SUMMARY_API_URL, 260);
+  if (!configuredBase) {
+    return SUMMARY_API_ROUTE;
   }
 
-  lines.push(`Top languages: ${normalizeLanguages(dev)}`);
-  lines.push(`Total stars: ${Number.isFinite(Number(dev?.total_stars)) ? Number(dev.total_stars) : 0}`);
-  lines.push(`Recent activity (last 30 days): ${Number.isFinite(Number(dev?.events_30d)) ? Number(dev.events_30d) : 0} events`);
-  lines.push('Top projects:');
-  lines.push(formatTopProjects(dev));
+  const normalized = configuredBase.replace(/\/+$/, '');
 
-  return lines.join('\n');
+  // Accept either origin-only values (https://worker.workers.dev)
+  // or full endpoint values (https://worker.workers.dev/api/dev-summary).
+  if (normalized.endsWith(SUMMARY_API_ROUTE)) {
+    return normalized;
+  }
+
+  if (normalized.endsWith('/api')) {
+    return `${normalized}/dev-summary`;
+  }
+
+  return `${normalized}${SUMMARY_API_ROUTE}`;
 }
 
 function truncateSummary(text) {
@@ -125,40 +117,30 @@ function validateSummary(text) {
   return truncateSummary(trimmed);
 }
 
-async function callGroqOnce(dev, apiKey) {
+async function callSummaryApiOnce(dev) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), SUMMARY_REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(GROQ_API_URL, {
+    const response = await fetch(resolveSummaryApiUrl(), {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        max_tokens: GROQ_MAX_TOKENS,
-        temperature: GROQ_TEMPERATURE,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt(dev) }
-        ]
-      }),
+      body: JSON.stringify({ dev: buildDevPayload(dev) }),
       signal: controller.signal
     });
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Groq API error ${response.status}: ${body}`);
+      throw new Error(`Summary API error ${response.status}: ${body}`);
     }
 
     const payload = await response.json();
-    const text = payload?.choices?.[0]?.message?.content;
-    return validateSummary(text);
+    return validateSummary(payload?.summary);
   } catch (error) {
     if (error?.name === 'AbortError') {
-      throw new Error(`Groq request timed out after ${GROQ_TIMEOUT_MS}ms.`);
+      throw new Error(`Summary request timed out after ${SUMMARY_REQUEST_TIMEOUT_MS}ms.`);
     }
 
     throw error;
@@ -178,23 +160,16 @@ async function generateDeveloperSummary(dev) {
     return summaryCache.get(username);
   }
 
-  const apiKey = import.meta.env.VITE_GROQ_KEY;
-  if (!apiKey) {
-    console.warn('Module 7: VITE_GROQ_KEY is missing from build');
-    summaryCache.set(username, ERROR_VALUE);
-    return ERROR_VALUE;
-  }
-
   try {
-    const summary = await callGroqOnce(dev, apiKey);
+    const summary = await callSummaryApiOnce(dev);
     summaryCache.set(username, summary);
     return summary;
   } catch (firstError) {
     console.warn(`Module 7: attempt 1 failed for ${username}: ${firstError.message}`);
-    await sleep(GROQ_RETRY_DELAY_MS);
+    await sleep(SUMMARY_RETRY_DELAY_MS);
 
     try {
-      const summary = await callGroqOnce(dev, apiKey);
+      const summary = await callSummaryApiOnce(dev);
       summaryCache.set(username, summary);
       return summary;
     } catch (secondError) {
@@ -210,23 +185,20 @@ function clearSummaryCache() {
 }
 
 export {
-  GROQ_API_URL,
-  GROQ_MODEL,
-  GROQ_MAX_TOKENS,
-  GROQ_TEMPERATURE,
-  GROQ_TIMEOUT_MS,
-  GROQ_RETRY_DELAY_MS,
+  SUMMARY_API_ROUTE,
+  SUMMARY_REQUEST_TIMEOUT_MS,
+  SUMMARY_RETRY_DELAY_MS,
   MIN_SUMMARY_LENGTH,
   MAX_SUMMARY_LENGTH,
   ERROR_VALUE,
   REFUSAL_PREFIXES,
-  SYSTEM_PROMPT,
   summaryCache,
   sleep,
-  buildUserPrompt,
+  buildDevPayload,
+  resolveSummaryApiUrl,
   truncateSummary,
   validateSummary,
-  callGroqOnce,
+  callSummaryApiOnce,
   generateDeveloperSummary,
   clearSummaryCache
 };

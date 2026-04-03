@@ -132,6 +132,9 @@ scripts/
   score.js              # Scoring algorithm
   write-leaderboard.js  # Final leaderboard output
   run-all.js            # Pipeline orchestrator (--incremental N)
+cloudflare/
+  worker.js             # Cloudflare Worker summary API endpoint
+  wrangler.toml         # Worker deployment config
 public/
   data.json             # Final leaderboard (served to frontend)
 src/
@@ -143,12 +146,37 @@ src/
     About.jsx           # User-facing docs (pipeline, scoring, scheduling)
 ```
 
-## Secrets Required
+## Groq Key Security
 
-| Secret | Purpose |
-|---|---|
-| `GITHUB_TOKEN` | Auto-provisioned by Actions for API access |
-| `GROQ_API_KEY_PAKDEVINDEX` | Optional: Groq API for digest / AI features in CI build (`VITE_GROQ_KEY`) |
+I originally generated profile summaries in the browser. That meant the Groq key had to be embedded in client code, which makes it publicly visible.
+
+To fix that, summary generation now runs behind a Cloudflare Worker (`cloudflare/worker.js`) at `/api/dev-summary`.
+
+What changed:
+
+- Frontend sends only developer metadata and receives summary text.
+- Groq key is stored only in Worker secrets (never in client bundle).
+- Worker adds CORS and basic rate limiting around the summary endpoint.
+
+Why Cloudflare Worker:
+
+- The frontend is static (GitHub Pages), so it needs a small server layer for secure secret handling.
+- Worker keeps API key usage isolated from UI code.
+- It reduces abuse risk while keeping the same user-facing summary feature.
+
+Reality check:
+
+- This is still not bulletproof security.
+- Moving the key to a Worker hides it from browser source code, but it does not make abuse impossible.
+- I know this trade-off and accept it for this project because I am using a free-quota key and doing this for fun.
+- I do not want to redesign the whole architecture just to harden this one feature.
+
+Configuration model:
+
+- `GROQ_API_KEY`: Worker secret only.
+- `VITE_SUMMARY_API_URL`: public frontend pointer to Worker origin.
+- `SUMMARY_ALLOWED_ORIGIN`: allowed frontend origin for Worker CORS.
+- `GROQ_API_KEY_PAKDEVINDEX`: still used by CI digest generation (`scripts/generate-digest.js`).
 
 ## TODO
 

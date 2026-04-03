@@ -1,0 +1,6 @@
+name = "rankistan-summary-api"
+main = "worker.js"
+compatibility_date = "2026-04-03"
+
+[vars]
+SUMMARY_ALLOWED_ORIGIN = "https://rankistan.dev"

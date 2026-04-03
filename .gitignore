@@ -1,4 +1,7 @@
 .env
+cloudflare/.dev.vars
+cloudflare/.wrangler/
+cloudflare/.wrangler
 node_modules/
 PkDevIndex-brain.md
 public/test-*.json
@@ -6,4 +9,7 @@ public/score-test*.json
 *test*
 *Test*
 dist/
-public/raw_batch_*.json
+public/raw_batch_*.json
+src/pages/WeeklyDigest.jsx
+src/pages/Archives.jsx
+src/pages/ReportDetail.jsx

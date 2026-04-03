@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cf:dev": "npx wrangler dev --config cloudflare/wrangler.toml",
+    "cf:deploy": "npx wrangler deploy --config cloudflare/wrangler.toml"
   },
   "dependencies": {
     "react": "^19.2.4",

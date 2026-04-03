@@ -1,0 +1,2 @@
+GROQ_API_KEY=replace-with-your-groq-key
+SUMMARY_ALLOWED_ORIGIN=http://localhost:5173
