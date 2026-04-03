@@ -116,7 +116,7 @@ function parseCity(location) {
 
 function formatCityLabel(cityKey) {
   if (cityKey === 'other') {
-    return 'Pakistan';
+    return 'Pakistan - Place Unspecified';
   }
 
   return normalizeLocationForDisplay(cityKey);
@@ -395,7 +395,7 @@ export default function DevMap() {
               Developer <span className="text-primary">Map</span>
             </h1>
             <p className="font-mono text-sm text-outline max-w-xl uppercase tracking-widest">
-              Geographic distribution of active Pakistani developers across major cities.
+              Geographic distribution of active Pakistani developers across major places.
             </p>
           </div>
           <div className="flex gap-6">
@@ -404,11 +404,11 @@ export default function DevMap() {
               <div className="text-2xl font-headline font-bold text-tertiary">{totalDevs.toLocaleString()}</div>
             </div>
             <div className="text-right">
-              <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Cities</div>
+              <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Places</div>
               <div className="text-2xl font-headline font-bold text-primary">{cityStats.filter(c => c.city !== 'other').length}</div>
             </div>
             <div className="text-right">
-              <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Unresolved</div>
+              <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Unspecified</div>
               <div className="text-2xl font-headline font-bold text-outline">{cityStats.find(c => c.city === 'other')?.count || 0}</div>
             </div>
           </div>
@@ -500,9 +500,9 @@ export default function DevMap() {
             <div className="flex items-center justify-between mb-5">
               <label className="font-mono text-xs text-tertiary uppercase tracking-tighter flex items-center gap-2">
                 <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
-                City Breakdown
+                Place Breakdown
               </label>
-              <span className="font-mono text-[10px] text-outline">{cityStats.length} Locations</span>
+              <span className="font-mono text-[10px] text-outline">{cityStats.length} Places</span>
             </div>
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin">
               {cityStats.map(({ city, count, totalScore, topDev }, idx) => {
