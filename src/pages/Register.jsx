@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CACHE_KEYS, cache } from '../utils/cache';
 
 const PAK_LOCATIONS = ['pakistan', 'pk'];
@@ -14,6 +14,7 @@ const CRITERIA = {
 };
 
 const RECENT_SYNC_LIMIT = 10;
+const RECENT_SYNC_BASE_HEIGHT_CSS = 'calc(7 * 4.75rem)';
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
@@ -60,6 +61,41 @@ export default function Register({ onChangeTab }) {
   });
   const [profileData, setProfileData] = useState(null);
   const [recentDevs, setRecentDevs] = useState([]);
+  const statusPanelRef = useRef(null);
+  const [statusPanelOffset, setStatusPanelOffset] = useState(0);
+
+  useEffect(() => {
+    if (status !== 'complete' || !statusPanelRef.current) {
+      setStatusPanelOffset(0);
+      return;
+    }
+
+    const node = statusPanelRef.current;
+
+    const updateStatusPanelHeight = () => {
+      const styles = window.getComputedStyle(node);
+      const marginTop = Number.parseFloat(styles.marginTop || '0') || 0;
+      const panelHeight = node.getBoundingClientRect().height;
+      setStatusPanelOffset(Math.ceil(panelHeight + marginTop));
+    };
+
+    updateStatusPanelHeight();
+
+    let resizeObserver;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(updateStatusPanelHeight);
+      resizeObserver.observe(node);
+    }
+
+    window.addEventListener('resize', updateStatusPanelHeight);
+
+    return () => {
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('resize', updateStatusPanelHeight);
+    };
+  }, [status]);
+
+  const recentSyncHeight = `calc(${RECENT_SYNC_BASE_HEIGHT_CSS} + ${statusPanelOffset}px)`;
 
   useEffect(() => {
     async function loadRecent() {
@@ -322,7 +358,7 @@ export default function Register({ onChangeTab }) {
             </div>
 
             {status === 'complete' && (
-              <div className="mt-8 font-mono text-xs text-tertiary border border-tertiary/30 bg-tertiary/10 p-4 animate-pulse">
+              <div ref={statusPanelRef} className="mt-8 font-mono text-xs text-tertiary border border-tertiary/30 bg-tertiary/10 p-4 animate-pulse">
                 &gt; Profile Validated.<br />
                 &gt; All criteria passed.<br />
                 &gt; Awaiting standard cron synchronization.<br />
@@ -331,7 +367,7 @@ export default function Register({ onChangeTab }) {
             )}
           </div>
 
-          <div className="lg:col-span-7 bg-surface p-0 flex flex-col">
+          <div className="lg:col-span-7 bg-surface p-0 flex flex-col min-h-0">
             <div className="p-6 border-b border-outline-variant bg-surface-container-high flex justify-between items-center">
               <span className="font-mono text-xs uppercase tracking-widest flex items-center gap-2">
                 <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
@@ -340,7 +376,10 @@ export default function Register({ onChangeTab }) {
               <span className="font-mono text-[10px] text-outline uppercase">Uptime: 99.9%</span>
             </div>
 
-            <div className="overflow-y-auto max-h-[calc(7*4.75rem)] bg-surface-container-lowest pr-2 scrollbar-thin">
+            <div
+              className="overflow-y-auto bg-surface-container-lowest pr-2 scrollbar-thin transition-[height] duration-150"
+              style={{ height: recentSyncHeight }}
+            >
               {recentDevs.length === 0 && (
                 <div className="p-8 text-center text-outline-variant font-mono text-xs uppercase animate-pulse">
                   Awaiting stream segments...
@@ -372,7 +411,7 @@ export default function Register({ onChangeTab }) {
                 </div>
               ))}
             </div>
-            <div className="mt-auto p-4 bg-surface-container-highest border-t border-outline-variant text-center">
+            <div className="p-4 bg-surface-container-highest border-t border-outline-variant text-center">
               <button onClick={() => onChangeTab?.('leaderboard')} className="font-mono text-[10px] text-primary uppercase tracking-widest hover:underline">View All Node Connections</button>
             </div>
           </div>
