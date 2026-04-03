@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DevCard from '../components/DevCard';
 import { CACHE_KEYS, cache } from '../utils/cache';
+import { normalizeLocationForDisplay } from '../utils/location';
 import { enrichLeaderboardWithTags, getAvailableTags } from '../utils/tags';
 import { generateDeveloperSummary } from '../utils/groq';
 
@@ -104,8 +105,9 @@ export default function Leaderboard({ searchTerm = '' }) {
         const username = (dev.username || '').toLowerCase();
         const name = (dev.name || '').toLowerCase();
         const location = (dev.location || '').toLowerCase();
+        const cleanLocation = normalizeLocationForDisplay(dev.location).toLowerCase();
         const langs = (dev.top_languages || []).join(' ').toLowerCase();
-        return username.includes(q) || name.includes(q) || location.includes(q) || langs.includes(q);
+        return username.includes(q) || name.includes(q) || location.includes(q) || cleanLocation.includes(q) || langs.includes(q);
       });
     }
 
@@ -196,11 +198,11 @@ export default function Leaderboard({ searchTerm = '' }) {
       ) : (
         <>
           <div className="border border-outline-variant overflow-hidden bg-surface-container-lowest">
-            <div className="hidden md:grid grid-cols-12 bg-surface-container-lowest text-outline font-mono text-[10px] uppercase tracking-widest py-4 px-6 border-b border-outline-variant">
+            <div className="hidden md:grid grid-cols-12 md:gap-x-4 bg-surface-container-lowest text-outline font-mono text-[10px] uppercase tracking-widest py-4 px-6 border-b border-outline-variant">
               <div className="col-span-1">Rank</div>
               <div className="col-span-4">Developer Instance</div>
-              <div className="col-span-2">Location</div>
-              <div className="col-span-3">Tech Stack</div>
+              <div className="col-span-2 md:-ml-2 md:pr-2">Location</div>
+              <div className="col-span-3 md:pl-1">Tech Stack</div>
               <div className="col-span-1 text-right">Score</div>
               <div className="col-span-1 text-right">Action</div>
             </div>

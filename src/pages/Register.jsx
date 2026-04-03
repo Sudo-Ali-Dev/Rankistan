@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CACHE_KEYS, cache } from '../utils/cache';
-
-const PAK_LOCATIONS = ['pakistan', 'pk'];
+import { isLikelyPakistaniLocation, normalizeLocationForDisplay } from '../utils/location';
 
 const MEANINGFUL_EVENTS = new Set(['PushEvent', 'PullRequestEvent', 'IssuesEvent', 'ReleaseEvent']);
 
@@ -102,7 +101,15 @@ export default function Register({ onChangeTab }) {
       let localRegs = [];
       try {
         const stored = localStorage.getItem('pakdev_pending_nodes');
-        if (stored) localRegs = JSON.parse(stored);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            localRegs = parsed.map((dev) => ({
+              ...dev,
+              location: normalizeLocationForDisplay(dev?.location)
+            }));
+          }
+        }
       } catch (e) { /* ignored */ }
 
       let lb = [];
@@ -119,7 +126,7 @@ export default function Register({ onChangeTab }) {
         avatar: d.avatar_url,
         username: d.username || d.login,
         role: d.bio || 'Systems Engineer',
-        location: d.location || 'Pakistan',
+        location: normalizeLocationForDisplay(d.location),
         stack: d.top_languages?.[0] || (d.public_repos > 50 ? 'Senior' : 'Mid-Level'),
         timeAgo: `${(index + 1) * 14}m ago`,
         isNew: false,
@@ -159,8 +166,7 @@ export default function Register({ onChangeTab }) {
       const data = await res.json();
       setProfileData(data);
 
-      const loc = (data.location || '').toLowerCase();
-      const isValidLocation = PAK_LOCATIONS.some((p) => loc.includes(p));
+      const isValidLocation = isLikelyPakistaniLocation(data.location);
       const hasEnoughRepos = (data.public_repos || 0) > 3;
       const hasEnoughFollowers = (data.followers || 0) > 1;
       const ageDays = daysSince(data.created_at);
@@ -180,7 +186,7 @@ export default function Register({ onChangeTab }) {
       const profileFailed = !isValidLocation || !hasEnoughRepos || !hasEnoughFollowers || !isOldEnough;
       if (profileFailed) {
         const reasons = [];
-        if (!isValidLocation) reasons.push(`Location '${data.location || 'not set'}' must contain 'Pakistan' (e.g. 'Lahore, Pakistan')`);
+        if (!isValidLocation) reasons.push(`Location '${data.location || 'not set'}' must be a Pakistani city or include 'Pakistan'`);
         if (!hasEnoughRepos) reasons.push(`Only ${data.public_repos} public repos (need >3)`);
         if (!hasEnoughFollowers) reasons.push(`Only ${data.followers} followers (need >1)`);
         if (!isOldEnough) reasons.push(`Account is ${ageDays}d old (need >=${CRITERIA.MIN_ACCOUNT_AGE_DAYS}d)`);
@@ -227,7 +233,7 @@ export default function Register({ onChangeTab }) {
         avatar: data.avatar_url,
         username: data.login,
         role: data.bio || 'Systems Engineer',
-        location: data.location || 'Unknown',
+        location: normalizeLocationForDisplay(data.location),
         stack: data.public_repos > 50 ? 'Senior' : 'Mid-Level',
         timeAgo: 'Just Now',
         isNew: true,
@@ -333,7 +339,7 @@ export default function Register({ onChangeTab }) {
                     {renderCheckIcon(checks.exists)} <span>Active GitHub account</span>
                   </li>
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.location)} <span>Location includes Pakistan</span>
+                    {renderCheckIcon(checks.location)} <span>Pakistani location detected (city or country)</span>
                   </li>
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
                     {renderCheckIcon(checks.repos)} <span>More than 3 public repositories</span>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { normalizeLocationForDisplay } from '../utils/location';
 
 export default function DevCard({ dev, onGenerateSummary, summary, loadingSummaryUser }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -18,11 +19,12 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
 
   const username = dev?.username || '';
   const avatar = dev?.avatar || `https://avatars.githubusercontent.com/${username}`;
+  const cleanLocation = normalizeLocationForDisplay(dev?.location);
   
   return (
     <div className="border-b border-outline-variant">
       {/* Main Row Info */}
-      <div className="grid grid-cols-1 md:grid-cols-12 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors">
+      <div className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors">
         <div className="col-span-1 mb-2 md:mb-0">
           <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
             {String(dev.rank).padStart(3, '0')}
@@ -38,13 +40,13 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
             <div className="font-mono text-xs text-outline truncate">{dev.name || `github.com/${username}`}</div>
           </div>
         </div>
-        <div className="col-span-2 mb-4 md:mb-0">
-          <div className="flex items-center gap-2 text-on-surface-variant font-mono text-sm">
+        <div className="col-span-2 mb-4 md:mb-0 md:-ml-2 md:pr-2 min-w-0">
+          <div className="flex items-start gap-2 text-on-surface-variant font-mono text-sm min-w-0">
             <span className="material-symbols-outlined text-sm">location_on</span>
-            {dev.location || "Pakistan"}
+            <span className="min-w-0 break-words leading-snug">{cleanLocation}</span>
           </div>
         </div>
-        <div className="col-span-3 mb-4 md:mb-0 flex flex-wrap gap-2">
+        <div className="col-span-3 mb-4 md:mb-0 md:pl-1 flex flex-wrap gap-2 min-w-0">
           {Array.isArray(dev.tags) && dev.tags.slice(0, 3).map((tag, idx) => {
              const colors = tagsColors[idx % tagsColors.length];
              return (
