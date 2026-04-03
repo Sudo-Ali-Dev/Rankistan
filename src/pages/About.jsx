@@ -24,13 +24,66 @@ const PIPELINE_STEPS = [
   { step: '06', title: 'DEPLOY', icon: 'rocket_launch', desc: 'Build the frontend and deploy to GitHub Pages. Leaderboard, map, and all pages update automatically.' },
 ];
 
+const SCANNER_METRICS = [
+  {
+    value: '40,000+',
+    label: 'Profiles Scanned',
+    desc: 'Full daily sweep from account-year 2000 to the present, split across 24 hourly batches.'
+  },
+  {
+    value: '20,000+',
+    label: 'Candidates Re-Evaluated',
+    desc: 'Profiles with potential score movement are rescored from fresh events, stars, followers, and repos.'
+  },
+  {
+    value: 'Strict',
+    label: 'Ranking Gate',
+    desc: 'Only developers that pass all activity thresholds survive into final ranking and publishing.'
+  }
+];
+
+const AI_SUMMARY_STEPS = [
+  {
+    step: '01',
+    title: 'Expand Trigger',
+    lane: 'CLIENT',
+    desc: 'Summary generation starts only when a user expands a developer card and no cached summary exists.'
+  },
+  {
+    step: '02',
+    title: 'Frontend Request',
+    lane: 'CLIENT',
+    desc: 'The client sanitizes developer metadata and sends it to the summary Worker endpoint with timeout and retry control.'
+  },
+  {
+    step: '03',
+    title: 'Worker Guardrails',
+    lane: 'EDGE',
+    desc: 'Cloudflare Worker applies CORS, per-IP rate limiting, payload sanitization, and keeps API keys server-side.'
+  },
+  {
+    step: '04',
+    title: 'Groq Generation',
+    lane: 'MODEL',
+    desc: 'Worker calls Groq with a structured prompt to produce a concise two-sentence technical profile summary.'
+  },
+  {
+    step: '05',
+    title: 'Validation + Cache',
+    lane: 'EDGE',
+    desc: 'Summary text is validated, trimmed, and cached per username so repeated card opens are fast and cheap.'
+  }
+];
+
 const FAQ = [
   { q: 'How often is the leaderboard updated?', a: 'Every hour. An external cron service triggers the GitHub Actions workflow 24 times per day — one batch per hour. A full cycle through all developers completes in 24 hours.' },
   { q: 'Why am I not on the leaderboard?', a: 'You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. Your GitHub profile must also include "Pakistan" in the location field.' },
   { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
   { q: 'Why is my score lower than expected?', a: 'Stars are capped at 2,000 for scoring purposes. Accounts younger than 6 months receive a 0.5× penalty on their entire score. The score also weighs recent 30-day activity heavily (3× multiplier).' },
   { q: 'What is the "new account penalty"?', a: 'If your GitHub account is less than 6 months old, your final score is halved (multiplied by 0.5). This prevents newly created accounts from dominating the board.' },
-  { q: 'How does the Developer Map work?', a: 'The map parses each developer\'s GitHub profile location string and maps it to a known Pakistani city using substring matching. Profiles that can\'t be matched go into "Other / Unresolved".' },
+  { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It scans 40,000+ profiles, re-evaluates 20,000+ candidates for score changes, then applies strict activity gates before ranking.' },
+  { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
+  { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
   { q: 'Can I register manually?', a: 'Yes — use the Register tab to enter a GitHub username. It validates the profile against all pipeline criteria and shows you exactly which thresholds you pass or fail.' },
   { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/pakdev-index.' },
 ];
@@ -46,7 +99,7 @@ export default function About() {
         {/* Hero */}
         <div className="mb-12 border-l-4 border-primary pl-6">
           <h1 className="font-headline text-5xl font-extrabold tracking-tighter text-on-surface mb-2">
-            About <span className="text-primary font-normal tracking-normal ml-2 inline-block align-middle -translate-y-[0.1em] text-[0.94em]" style={{ fontFamily: "'Waltograph', 'Space Grotesk', sans-serif" }}>Rankistan</span>
+            About <span className="text-primary font-normal tracking-normal ml-2 inline-block align-middle -translate-y-[0.16em] text-[1.08em]" style={{ fontFamily: "'Waltograph', 'Space Grotesk', sans-serif" }}>Rankistan</span>
           </h1>
           <p className="font-mono text-sm text-outline max-w-xl uppercase tracking-widest">
             System documentation for the Pakistani developer tracking infrastructure.
@@ -61,7 +114,8 @@ export default function About() {
           </div>
           <p className="font-body text-sm text-on-surface-variant leading-relaxed max-w-3xl">
             Rankistan is an automated leaderboard that discovers, tracks, and ranks active Pakistani developers on GitHub.
-            The pipeline runs every hour — scanning profiles, measuring real activity, and updating the board.
+            The pipeline runs every hour as a rolling daily scanner across historical and modern GitHub accounts.
+            It inspects 40,000+ profiles, rechecks 20,000+ for score movement, and publishes only developers that pass strict ranking gates.
             No manual submissions. No vanity metrics. Just code.
           </p>
         </div>
@@ -89,6 +143,94 @@ export default function About() {
                 <p className="font-body text-xs text-outline leading-relaxed">{s.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Scanner Scale */}
+        <div className="mb-12 border border-outline-variant bg-surface-container-lowest p-8">
+          <div className="flex items-center gap-3 mb-5">
+            <span className="material-symbols-outlined text-primary">travel_explore</span>
+            <h2 className="font-headline text-xl font-bold tracking-tighter uppercase">Scanner Pipeline</h2>
+            <span className="font-mono text-[10px] text-outline uppercase tracking-widest">// Daily Full Cycle</span>
+          </div>
+          <p className="font-body text-sm text-on-surface-variant leading-relaxed max-w-4xl">
+            Rankistan runs as a high-volume daily scanner from account-year 2000 to present.
+            It does broad discovery first, then selective rescoring, then strict eligibility gating before publishing.
+            The process is intentionally heavy so ranking changes reflect real developer activity, not one-time spikes.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+            {SCANNER_METRICS.map((metric) => (
+              <div key={metric.label} className="border border-outline-variant bg-surface p-4">
+                <div className="font-headline text-2xl font-bold text-primary mb-1">{metric.value}</div>
+                <div className="font-mono text-[10px] text-tertiary uppercase tracking-widest mb-2">{metric.label}</div>
+                <p className="font-body text-xs text-outline leading-relaxed">{metric.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* AI Summary System */}
+        <div className="mb-12 border border-outline-variant bg-surface overflow-hidden">
+          <div className="px-6 py-6 border-b border-outline-variant bg-surface-container-low">
+            <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-tertiary">auto_awesome</span>
+                <h2 className="font-headline text-xl font-bold tracking-tighter uppercase text-on-surface">AI Summary System</h2>
+              </div>
+              <span className="font-mono text-[10px] text-outline uppercase tracking-widest">// On Demand</span>
+            </div>
+
+            <p className="font-body text-sm text-on-surface-variant leading-relaxed max-w-4xl mb-4">
+              AI summaries are not precomputed in bulk. They are generated only when a user expands a developer card,
+              then cached so future views are fast. This keeps costs controlled while still providing contextual intelligence.
+            </p>
+
+            <div className="flex flex-wrap gap-2">
+              <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest border border-outline-variant px-2 py-1 bg-surface">Triggered on card expand</span>
+              <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest border border-outline-variant px-2 py-1 bg-surface">Worker guarded</span>
+              <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest border border-outline-variant px-2 py-1 bg-surface">Cached per username</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr]">
+            <aside className="border-b lg:border-b-0 lg:border-r border-outline-variant bg-surface-container-lowest p-5">
+              <span className="font-mono text-[10px] text-outline uppercase tracking-widest">Execution Profile</span>
+              <div className="mt-4 space-y-2">
+                <div className="border border-outline-variant/50 bg-surface px-3 py-2">
+                  <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Mode</div>
+                  <div className="font-headline text-sm font-bold text-on-surface mt-1">On-Demand Only</div>
+                </div>
+                <div className="border border-outline-variant/50 bg-surface px-3 py-2">
+                  <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Guardrails</div>
+                  <div className="font-headline text-sm font-bold text-on-surface mt-1">Rate Limited</div>
+                </div>
+                <div className="border border-outline-variant/50 bg-surface px-3 py-2">
+                  <div className="font-mono text-[10px] text-outline uppercase tracking-widest">Output</div>
+                  <div className="font-headline text-sm font-bold text-on-surface mt-1">2-Sentence Summary</div>
+                </div>
+              </div>
+            </aside>
+
+            <div className="p-6 bg-surface">
+              <div className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4">Request Path</div>
+              <div className="relative pl-8">
+                <span className="absolute left-1 top-1 bottom-1 w-px bg-outline-variant"></span>
+                <div className="space-y-3">
+                  {AI_SUMMARY_STEPS.map((item) => (
+                    <div key={item.step} className="relative border border-outline-variant/60 bg-surface-container-lowest px-4 py-3 hover:bg-surface-container-low transition-colors">
+                      <span className="absolute -left-[26px] top-5 w-2.5 h-2.5 rounded-full bg-tertiary border-2 border-surface"></span>
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="font-mono text-[10px] text-on-primary bg-primary px-2 py-0.5">{item.step}</span>
+                        <span className="font-headline text-sm font-bold uppercase tracking-tight text-on-surface">{item.title}</span>
+                        <span className="font-mono text-[9px] text-outline border border-outline-variant px-2 py-0.5 tracking-widest bg-surface">{item.lane}</span>
+                      </div>
+                      <p className="font-body text-xs text-outline leading-relaxed">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
