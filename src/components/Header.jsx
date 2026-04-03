@@ -8,9 +8,20 @@ export default function Header({ activeTab, onChangeTab, searchTerm, onSearchCha
       <div className="flex items-center gap-8">
         <button 
           onClick={() => onChangeTab('leaderboard')} 
-          className="text-xl font-bold tracking-tighter text-[#a2c9ff] uppercase font-['Space_Grotesk'] hover:opacity-80 transition-opacity"
+          aria-label="Rankistan"
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
         >
-          Rankistan
+          <img
+            src="/favicon.svg"
+            alt="Rankistan logo"
+            className="w-9 h-9 object-contain"
+          />
+          <span
+            className="text-[#a2c9ff] text-[1.7rem] md:text-[2rem] leading-none"
+            style={{ fontFamily: "'Waltograph', 'Space Grotesk', sans-serif" }}
+          >
+            Rankistan
+          </span>
         </button>
         <div className="hidden md:flex gap-6 font-['Space_Grotesk'] tracking-tight">
           <button 
