@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { CACHE_KEYS, cache } from '../utils/cache';
 import { findCityKey, normalizeLocationForDisplay } from '../utils/location';
 
@@ -142,6 +142,14 @@ export default function DevMap() {
   const [selectedCity, setSelectedCity] = useState(null);
   const tableRef = useRef(null);
 
+  const handleHoverCity = useCallback((city) => {
+    setHoveredCity(prev => (prev === city ? prev : city));
+  }, []);
+
+  const clearHoveredCity = useCallback(() => {
+    setHoveredCity(prev => (prev === null ? prev : null));
+  }, []);
+
   function handleSelectCity(city) {
     setSelectedCity(prev => {
       const next = prev === city ? null : city;
@@ -214,12 +222,156 @@ export default function DevMap() {
   const LABEL_MARGIN = 4;
   const LABEL_HEIGHT = 18;
 
-  const renderCityStats = useMemo(() => {
-    if (!hoveredCity) return cityStats;
-    const hovered = cityStats.find((item) => item.city === hoveredCity);
-    if (!hovered) return cityStats;
-    return [...cityStats.filter((item) => item.city !== hoveredCity), hovered];
-  }, [cityStats, hoveredCity]);
+  const mapNodes = useMemo(() => {
+    if (cityStats.length === 0) return [];
+
+    return cityStats
+      .map(({ city, count }) => {
+        const coords = CITY_COORDS[city];
+        if (!coords) return null;
+        const color = DOT_COLORS[city] || DOT_COLORS._default;
+        const radius = Math.max(5, Math.min(18, 5 + (count / maxCount) * 13));
+        return { city, count, coords, color, radius };
+      })
+      .filter(Boolean);
+  }, [cityStats, maxCount]);
+
+  const mapNodeByCity = useMemo(() => {
+    const nodeMap = {};
+    for (const node of mapNodes) {
+      nodeMap[node.city] = node;
+    }
+    return nodeMap;
+  }, [mapNodes]);
+
+  const hoveredMapNode = useMemo(() => {
+    if (!hoveredCity) return null;
+    return mapNodeByCity[hoveredCity] || null;
+  }, [hoveredCity, mapNodeByCity]);
+
+  const hoveredLabel = useMemo(() => {
+    if (!hoveredMapNode) return null;
+
+    const { coords, radius, count, color } = hoveredMapNode;
+    const labelW = Math.max(54, coords.code.length * 7 + String(count).length * 7 + 16);
+    const leftX = coords.x - radius - 5 - labelW;
+    const rightX = coords.x + radius + 5;
+    let rx = coords.label === 'left' ? leftX : rightX;
+
+    if (rx < LABEL_MARGIN) {
+      rx = rightX;
+    }
+    if (rx + labelW > MAP_VIEWBOX_WIDTH - LABEL_MARGIN) {
+      rx = leftX;
+    }
+
+    rx = Math.max(LABEL_MARGIN, Math.min(MAP_VIEWBOX_WIDTH - LABEL_MARGIN - labelW, rx));
+    const ry = Math.max(LABEL_MARGIN, Math.min(MAP_VIEWBOX_HEIGHT - LABEL_MARGIN - LABEL_HEIGHT, coords.y - 9));
+
+    return {
+      x: rx,
+      y: ry,
+      width: labelW,
+      textX: rx + 4,
+      textY: ry + 12,
+      text: `${coords.code}:${count}`,
+      stroke: color.fill,
+      fill: color.fill,
+    };
+  }, [hoveredMapNode]);
+
+  const selectedCityTable = useMemo(() => {
+    if (!selectedCity || !devsByCity[selectedCity]) return null;
+
+    return (
+      <div className="max-w-6xl mx-auto px-6 pb-12 relative z-10">
+        <div ref={tableRef} className="border border-outline-variant bg-surface-container-lowest">
+          <div className="p-4 border-b border-outline-variant bg-surface-container-high flex items-center justify-between">
+            <span className="font-mono text-xs uppercase tracking-widest flex items-center gap-2">
+              <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
+              {formatCityLabel(selectedCity).toUpperCase()} Developers
+              <span className="font-mono text-[10px] text-outline font-normal">
+                [{devsByCity[selectedCity].length} active]
+              </span>
+            </span>
+            <button
+              onClick={() => setSelectedCity(null)}
+              className="font-mono text-[10px] text-outline hover:text-primary transition-colors flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+              CLOSE
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surface-container-high/50 border-b border-outline-variant">
+                  <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 w-12">#</th>
+                  <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Developer</th>
+                  <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden md:table-cell">Location</th>
+                  <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Score</th>
+                  <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden sm:table-cell">Events_30d</th>
+                  <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Stars</th>
+                  <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Repos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {devsByCity[selectedCity].map((dev, i) => (
+                  <tr
+                    key={dev.username}
+                    className="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors"
+                  >
+                    <td className="px-4 py-3 font-mono text-[10px] text-outline">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 border border-outline-variant grayscale hover:grayscale-0 transition-all overflow-hidden">
+                          <img
+                            src={dev.avatar_url || `https://github.com/${dev.username}.png?size=32`}
+                            alt={dev.username}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        </div>
+                        <div>
+                          <a
+                            href={`https://github.com/${dev.username}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-headline font-bold text-xs text-primary uppercase tracking-tight hover:underline"
+                          >
+                            {dev.username}
+                          </a>
+                          {dev.name && (
+                            <div className="font-mono text-[10px] text-outline uppercase tracking-tighter truncate max-w-[160px]">{dev.name}</div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[10px] text-outline truncate max-w-[180px] hidden md:table-cell">
+                      {normalizeLocationForDisplay(dev.location)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs font-bold text-on-surface">
+                      {(dev.score || 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-tertiary hidden sm:table-cell">
+                      {dev.events_30d || 0}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
+                      {(dev.total_stars || 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
+                      {dev.public_repos || 0}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }, [selectedCity, devsByCity]);
 
   if (loading) {
     return (
@@ -288,18 +440,13 @@ export default function DevMap() {
                 {[120, 240, 360, 480].map(y => (
                   <line key={`gy-${y}`} x1="0" y1={y} x2="660" y2={y} stroke="#414752" strokeWidth="0.3" strokeDasharray="4 4" />
                 ))}
-                {renderCityStats.map(({ city, count }) => {
-                  const coords = CITY_COORDS[city];
-                  if (!coords) return null;
-                  const color = DOT_COLORS[city] || DOT_COLORS._default;
-                  const radius = Math.max(5, Math.min(18, 5 + (count / maxCount) * 13));
+                {mapNodes.map(({ city, count, coords, color, radius }) => {
                   const isHovered = hoveredCity === city;
-                  const showInfoCard = isHovered;
                   return (
                     <g
                       key={city}
-                      onMouseEnter={() => setHoveredCity(city)}
-                      onMouseLeave={() => setHoveredCity(null)}
+                      onMouseEnter={() => handleHoverCity(city)}
+                      onMouseLeave={clearHoveredCity}
                       onClick={() => handleSelectCity(city)}
                       className="cursor-pointer"
                     >
@@ -313,47 +460,34 @@ export default function DevMap() {
                         className="transition-all duration-200"
                       />
                       <circle cx={coords.x} cy={coords.y} r="2.5" fill="#fff" opacity="0.9" />
-                      {showInfoCard && (() => {
-                        const labelW = Math.max(54, coords.code.length * 7 + String(count).length * 7 + 16);
-                        const leftX = coords.x - radius - 5 - labelW;
-                        const rightX = coords.x + radius + 5;
-                        let rx = coords.label === 'left' ? leftX : rightX;
-
-                        if (rx < LABEL_MARGIN) {
-                          rx = rightX;
-                        }
-                        if (rx + labelW > MAP_VIEWBOX_WIDTH - LABEL_MARGIN) {
-                          rx = leftX;
-                        }
-
-                        rx = Math.max(LABEL_MARGIN, Math.min(MAP_VIEWBOX_WIDTH - LABEL_MARGIN - labelW, rx));
-                        const ry = Math.max(LABEL_MARGIN, Math.min(MAP_VIEWBOX_HEIGHT - LABEL_MARGIN - LABEL_HEIGHT, coords.y - 9));
-                        const tx = rx + 4;
-                        return (
-                          <>
-                            <rect
-                              x={rx} y={ry}
-                              width={labelW}
-                              height="18" rx="0"
-                              fill="#262a31"
-                              stroke={color.fill}
-                              strokeWidth="0.5"
-                              className="transition-all duration-200"
-                            />
-                            <text
-                              x={tx} y={ry + 12}
-                              fill={color.fill}
-                              fontSize="9" fontFamily="JetBrains Mono, monospace"
-                              className="transition-colors duration-200"
-                            >
-                              {coords.code}:{count}
-                            </text>
-                          </>
-                        );
-                      })()}
                     </g>
                   );
                 })}
+                {hoveredLabel && (
+                  <g pointerEvents="none">
+                    <rect
+                      x={hoveredLabel.x}
+                      y={hoveredLabel.y}
+                      width={hoveredLabel.width}
+                      height="18"
+                      rx="0"
+                      fill="#262a31"
+                      stroke={hoveredLabel.stroke}
+                      strokeWidth="0.5"
+                      className="transition-all duration-200"
+                    />
+                    <text
+                      x={hoveredLabel.textX}
+                      y={hoveredLabel.textY}
+                      fill={hoveredLabel.fill}
+                      fontSize="9"
+                      fontFamily="JetBrains Mono, monospace"
+                      className="transition-colors duration-200"
+                    >
+                      {hoveredLabel.text}
+                    </text>
+                  </g>
+                )}
                 <text x="10" y="598" fill="#8b919d" fontSize="9" fontFamily="JetBrains Mono, monospace">
                   DEV_GEO_DISTRIBUTION // PAK_REGION
                 </text>
@@ -387,8 +521,8 @@ export default function DevMap() {
                           ? 'border-primary bg-surface-container-high'
                           : 'border-outline-variant/50 bg-surface-container-low hover:border-outline-variant'
                     }`}
-                    onMouseEnter={() => setHoveredCity(city)}
-                    onMouseLeave={() => setHoveredCity(null)}
+                    onMouseEnter={() => handleHoverCity(city)}
+                    onMouseLeave={clearHoveredCity}
                     onClick={() => handleSelectCity(city)}
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -440,92 +574,7 @@ export default function DevMap() {
       </div>
 
       {/* Developer Table */}
-      {selectedCity && devsByCity[selectedCity] && (
-        <div className="max-w-6xl mx-auto px-6 pb-12 relative z-10">
-          <div ref={tableRef} className="border border-outline-variant bg-surface-container-lowest">
-            <div className="p-4 border-b border-outline-variant bg-surface-container-high flex items-center justify-between">
-              <span className="font-mono text-xs uppercase tracking-widest flex items-center gap-2">
-                <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
-                {formatCityLabel(selectedCity).toUpperCase()} Developers
-                <span className="font-mono text-[10px] text-outline font-normal">
-                  [{devsByCity[selectedCity].length} active]
-                </span>
-              </span>
-              <button
-                onClick={() => setSelectedCity(null)}
-                className="font-mono text-[10px] text-outline hover:text-primary transition-colors flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-sm">close</span>
-                CLOSE
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-surface-container-high/50 border-b border-outline-variant">
-                    <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 w-12">#</th>
-                    <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Developer</th>
-                    <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden md:table-cell">Location</th>
-                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3">Score</th>
-                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden sm:table-cell">Events_30d</th>
-                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Stars</th>
-                    <th className="text-right font-mono text-[10px] text-outline uppercase tracking-widest px-4 py-3 hidden lg:table-cell">Repos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {devsByCity[selectedCity].map((dev, i) => (
-                    <tr
-                      key={dev.username}
-                      className="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors"
-                    >
-                      <td className="px-4 py-3 font-mono text-[10px] text-outline">{i + 1}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 border border-outline-variant grayscale hover:grayscale-0 transition-all overflow-hidden">
-                            <img
-                              src={dev.avatar_url || `https://github.com/${dev.username}.png?size=32`}
-                              alt={dev.username}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div>
-                            <a
-                              href={`https://github.com/${dev.username}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-headline font-bold text-xs text-primary uppercase tracking-tight hover:underline"
-                            >
-                              {dev.username}
-                            </a>
-                            {dev.name && (
-                              <div className="font-mono text-[10px] text-outline uppercase tracking-tighter truncate max-w-[160px]">{dev.name}</div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[10px] text-outline truncate max-w-[180px] hidden md:table-cell">
-                        {normalizeLocationForDisplay(dev.location)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs font-bold text-on-surface">
-                        {(dev.score || 0).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-tertiary hidden sm:table-cell">
-                        {dev.events_30d || 0}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
-                        {(dev.total_stars || 0).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-outline hidden lg:table-cell">
-                        {dev.public_repos || 0}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+      {selectedCityTable}
 
     </main>
   );
