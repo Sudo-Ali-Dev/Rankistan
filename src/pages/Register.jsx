@@ -13,6 +13,8 @@ const CRITERIA = {
   MAX_INACTIVITY_GAP_DAYS: 30,
 };
 
+const RECENT_SYNC_LIMIT = 10;
+
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
 }
@@ -77,7 +79,7 @@ export default function Register({ onChangeTab }) {
         lb = Array.isArray(leaderboardPayload?.leaderboard) ? leaderboardPayload.leaderboard : [];
       } catch (e) { /* ignored */ }
 
-      const formattedLb = lb.slice(0, 4).map((d, index) => ({
+      const formattedLb = lb.slice(0, RECENT_SYNC_LIMIT).map((d, index) => ({
         avatar: d.avatar_url,
         username: d.username || d.login,
         role: d.bio || 'Systems Engineer',
@@ -87,7 +89,7 @@ export default function Register({ onChangeTab }) {
         isNew: false,
       }));
 
-      setRecentDevs([...localRegs, ...formattedLb].slice(0, 5));
+      setRecentDevs([...localRegs, ...formattedLb].slice(0, RECENT_SYNC_LIMIT));
     }
     loadRecent();
   }, []);
@@ -203,7 +205,7 @@ export default function Register({ onChangeTab }) {
         }
         setRecentDevs((prev) => {
           if (prev.find((p) => p.username.toLowerCase() === newReg.username.toLowerCase())) return prev;
-          return [newReg, ...prev].slice(0, 5);
+          return [newReg, ...prev].slice(0, RECENT_SYNC_LIMIT);
         });
       } catch (e) { /* ignored */ }
     } catch (e) {
@@ -338,7 +340,7 @@ export default function Register({ onChangeTab }) {
               <span className="font-mono text-[10px] text-outline uppercase">Uptime: 99.9%</span>
             </div>
 
-            <div className="overflow-y-auto max-h-[600px] bg-surface-container-lowest">
+            <div className="overflow-y-auto max-h-[calc(7*4.75rem)] bg-surface-container-lowest pr-2 scrollbar-thin">
               {recentDevs.length === 0 && (
                 <div className="p-8 text-center text-outline-variant font-mono text-xs uppercase animate-pulse">
                   Awaiting stream segments...
