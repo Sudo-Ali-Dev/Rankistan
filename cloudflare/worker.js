@@ -15,8 +15,8 @@ const SYSTEM_PROMPT = [
   'Write exactly 2 sentences describing this developer based on their GitHub activity.',
   'Be specific - mention their main technologies and what kind of projects they build.',
   'Do not use bullet points. Do not start with "This developer". Write in third person.',
-  'Use he/him or she/her pronouns when the name is clearly gendered.',
-  'If gender is ambiguous, use they/them.'
+  'Use he/him or she/her pronouns based on the developer\'s name. Pay careful attention to the name — e.g. Muhammad, Ali, Ibrahim, Ahmed, Shayan are male; Fatima, Ayesha, Noor (female name) are female.',
+  'If the gender is truly ambiguous, use "they/them".'
 ].join(' ');
 
 const rateLimitByIp = new Map();
@@ -141,14 +141,49 @@ function validateSummary(text) {
   return truncateSummary(trimmed);
 }
 
+function buildCorsHeaders(corsOrigin = '*') {
+  return {
+    'Access-Control-Allow-Origin': corsOrigin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  };
+}
+
+function resolveCorsOrigin(request, env) {
+  const configured = normalizeText(env.SUMMARY_ALLOWED_ORIGIN, 500);
+  if (!configured || configured === '*') {
+    return '*';
+  }
+
+  const allowedOrigins = configured
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+  if (allowedOrigins.length === 0) {
+    return '*';
+  }
+
+  const requestOrigin = normalizeText(request.headers.get('Origin'), 260);
+  if (!requestOrigin) {
+    return allowedOrigins[0];
+  }
+
+  return allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
+}
+
 function jsonResponse(body, status = 200, corsOrigin = '*') {
+  const headers = buildCorsHeaders(corsOrigin);
+
+  if (status === 204 || status === 205 || status === 304) {
+    return new Response(null, { status, headers });
+  }
+
   return new Response(JSON.stringify(body), {
     status,
     headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': corsOrigin,
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+      ...headers,
+      'Content-Type': 'application/json'
     }
   });
 }
@@ -224,7 +259,7 @@ async function callGroqOnce(dev, apiKey) {
 
 export default {
   async fetch(request, env) {
-    const corsOrigin = normalizeText(env.SUMMARY_ALLOWED_ORIGIN, 200) || '*';
+    const corsOrigin = resolveCorsOrigin(request, env);
     const url = new URL(request.url);
 
     if (request.method === 'OPTIONS') {

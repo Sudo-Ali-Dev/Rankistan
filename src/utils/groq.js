@@ -1,4 +1,5 @@
 const SUMMARY_API_ROUTE = '/api/dev-summary';
+const DEFAULT_SUMMARY_API_BASE = 'https://rankistan-summary-api.academics-ali.workers.dev';
 const SUMMARY_REQUEST_TIMEOUT_MS = 15000;
 const SUMMARY_RETRY_DELAY_MS = 3000;
 const MIN_SUMMARY_LENGTH = 30;
@@ -61,11 +62,9 @@ function buildDevPayload(dev) {
 
 function resolveSummaryApiUrl() {
   const configuredBase = normalizeText(import.meta.env.VITE_SUMMARY_API_URL, 260);
-  if (!configuredBase) {
-    return SUMMARY_API_ROUTE;
-  }
+  const base = configuredBase || DEFAULT_SUMMARY_API_BASE;
 
-  const normalized = configuredBase.replace(/\/+$/, '');
+  const normalized = base.replace(/\/+$/, '');
 
   // Accept either origin-only values (https://worker.workers.dev)
   // or full endpoint values (https://worker.workers.dev/api/dev-summary).
@@ -186,6 +185,7 @@ function clearSummaryCache() {
 
 export {
   SUMMARY_API_ROUTE,
+  DEFAULT_SUMMARY_API_BASE,
   SUMMARY_REQUEST_TIMEOUT_MS,
   SUMMARY_RETRY_DELAY_MS,
   MIN_SUMMARY_LENGTH,
