@@ -216,6 +216,46 @@ function isRateLimited(ip) {
   return false;
 }
 
+function parseKeyList(rawValue) {
+  if (typeof rawValue !== 'string') {
+    return [];
+  }
+
+  return rawValue
+    .split(/[\n,]/)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function getGroqApiKeys(env) {
+  const fromList = parseKeyList(env.GROQ_API_KEYS);
+  const singles = [env.GROQ_API_KEY, env.GROQ_API_KEY_PAKDEVINDEX]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value.length > 0);
+
+  const fromIndexedSecrets = Object.entries(env)
+    .filter(([key]) => /^gsk_key_\d+$/i.test(key) || /^groq_api_key_\d+$/i.test(key))
+    .map(([, value]) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value.length > 0);
+
+  return [...new Set([...fromList, ...singles, ...fromIndexedSecrets])];
+}
+
+function shouldTryNextKey(error) {
+  const status = Number(error?.status || 0);
+  const body = String(error?.body || '').toLowerCase();
+
+  if (status === 429 || status === 401) {
+    return true;
+  }
+
+  if (status === 403) {
+    return body.includes('rate') || body.includes('quota') || body.includes('limit') || body.includes('insufficient');
+  }
+
+  return false;
+}
+
 async function callGroqOnce(dev, apiKey) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
@@ -241,7 +281,10 @@ async function callGroqOnce(dev, apiKey) {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Groq API error ${response.status}: ${body}`);
+      const error = new Error(`Groq API error ${response.status}: ${body}`);
+      error.status = response.status;
+      error.body = body;
+      throw error;
     }
 
     const payload = await response.json();
@@ -255,6 +298,29 @@ async function callGroqOnce(dev, apiKey) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function callGroqWithKeyFallback(dev, apiKeys) {
+  let lastError;
+
+  for (let index = 0; index < apiKeys.length; index += 1) {
+    const key = apiKeys[index];
+
+    try {
+      return await callGroqOnce(dev, key);
+    } catch (error) {
+      lastError = error;
+      const canTryNext = shouldTryNextKey(error) && index < apiKeys.length - 1;
+
+      if (!canTryNext) {
+        break;
+      }
+
+      console.warn(`Groq key ${index + 1} failed (status ${error.status || 'n/a'}). Trying next key.`);
+    }
+  }
+
+  throw lastError || new Error('All Groq keys failed.');
 }
 
 export default {
@@ -293,13 +359,13 @@ export default {
       return jsonResponse({ error: 'Missing dev.username.' }, 400, corsOrigin);
     }
 
-    const apiKey = env.GROQ_API_KEY || env.GROQ_API_KEY_PAKDEVINDEX;
-    if (!apiKey) {
-      return jsonResponse({ error: 'Server is missing GROQ_API_KEY.' }, 500, corsOrigin);
+    const apiKeys = getGroqApiKeys(env);
+    if (apiKeys.length === 0) {
+      return jsonResponse({ error: 'Server is missing Groq keys (GROQ_API_KEYS or GROQ_API_KEY).' }, 500, corsOrigin);
     }
 
     try {
-      const summary = await callGroqOnce(dev, apiKey);
+      const summary = await callGroqWithKeyFallback(dev, apiKeys);
       return jsonResponse({ summary }, 200, corsOrigin);
     } catch (error) {
       console.error(`cloudflare worker failed for ${dev.username}: ${error.message}`);

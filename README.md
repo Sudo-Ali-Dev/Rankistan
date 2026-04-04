@@ -209,7 +209,9 @@ This setup meaningfully reduces key exposure risk for a static frontend, but it 
 
 Configuration model:
 
-- `GROQ_API_KEY`: Worker secret only.
+- **Recommended:** use `GROQ_API_KEYS` with comma/newline-separated keys for automatic fallback.
+- **If you only have one key:** use `GROQ_API_KEY`.
+- **Optional alternative (instead of list):** indexed secrets like `GROQ_API_KEY_1`, `GROQ_API_KEY_2` (and legacy names like `gsk_key_1`) are also supported.
 - `VITE_SUMMARY_API_URL`: public frontend pointer to Worker origin.
 - `SUMMARY_ALLOWED_ORIGIN`: allowed frontend origin for Worker CORS.
 - `GROQ_API_KEY_PAKDEVINDEX`: still used by CI digest generation (`scripts/generate-digest.js`).
