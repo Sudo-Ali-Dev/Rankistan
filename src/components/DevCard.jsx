@@ -20,6 +20,8 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
   const username = dev?.username || '';
   const avatar = dev?.avatar || `https://avatars.githubusercontent.com/${username}`;
   const cleanLocation = normalizeLocationForDisplay(dev?.location);
+  const linkedinUrl = typeof dev?.linkedin_url === 'string' ? dev.linkedin_url.trim() : '';
+  const hasLinkedin = linkedinUrl !== '';
   
   return (
     <div className="border-b border-outline-variant">
@@ -129,9 +131,27 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
                 <a href={`https://github.com/${username}`} target="_blank" rel="noreferrer" className="text-center bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase hover:text-primary transition-all active:translate-y-px">
                   View GitHub
                 </a>
-                <button className="bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase hover:text-primary transition-all active:translate-y-px">
-                  Contact Dev
-                </button>
+                {hasLinkedin ? (
+                  <a
+                    href={linkedinUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={linkedinUrl}
+                    className="text-center bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase hover:text-primary transition-all active:translate-y-px"
+                  >
+                    Contact Dev
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    title="This developer has not linked a LinkedIn profile on GitHub."
+                    className="text-center bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase text-outline opacity-60 cursor-not-allowed"
+                  >
+                    Contact Unavailable
+                  </button>
+                )}
                 <a href={`https://github.com/${username}`} target="_blank" rel="noreferrer" className="text-center bg-tertiary text-on-tertiary py-2.5 font-mono text-[10px] font-bold uppercase hover:bg-tertiary-fixed transition-all active:translate-y-px">
                   Follow Node
                 </a>

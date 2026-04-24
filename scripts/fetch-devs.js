@@ -414,6 +414,58 @@ function buildDigestRepos(reposActive7d, repos) {
   return digestRepos;
 }
 
+async function fetchUserSocials(username, token) {
+  try {
+    const socials = await githubRequest(
+      `/users/${encodeURIComponent(username)}/social_accounts?per_page=100`,
+      token,
+      { allow404: true }
+    );
+
+    if (!Array.isArray(socials)) {
+      return [];
+    }
+
+    return socials
+      .filter((entry) => entry && typeof entry.url === 'string' && entry.url.trim() !== '')
+      .map((entry) => ({
+        provider: typeof entry.provider === 'string' ? entry.provider.toLowerCase() : '',
+        url: entry.url.trim()
+      }));
+  } catch (error) {
+    // Socials are non-essential. Never fail a developer fetch because of this call.
+    console.warn(`Could not fetch socials for ${username}: ${error.message}`);
+    return [];
+  }
+}
+
+function extractLinkedinUrl(socials) {
+  if (!Array.isArray(socials) || socials.length === 0) {
+    return '';
+  }
+
+  const match = socials.find((entry) => {
+    if (!entry || typeof entry.url !== 'string') {
+      return false;
+    }
+    if (entry.provider === 'linkedin') {
+      return true;
+    }
+    return /(^|\.)linkedin\.com\//i.test(entry.url);
+  });
+
+  if (!match) {
+    return '';
+  }
+
+  const url = match.url.trim();
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  return `https://${url.replace(/^\/+/, '')}`;
+}
+
 function summarizeRepos(repos) {
   let totalStars = 0;
   const languageCounts = new Map();
@@ -486,6 +538,7 @@ async function fetchDeveloperActivity(username, token) {
   }
 
   const repos = await fetchAllUserRepos(username, token);
+  const socials = await fetchUserSocials(username, token);
 
   const recentEvents = extractRecentEvents(events, INACTIVE_DAYS_CUTOFF);
   const meaningfulLast30Days = filterMeaningfulEvents(extractRecentEvents(events, 30));
@@ -493,6 +546,7 @@ async function fetchDeveloperActivity(username, token) {
   const reposActive7d = extractReposPushedInLast7Days(recentEvents).map((repo) => repo.name);
   const topRepos = mapTopRepos(repos);
   const digestRepos = buildDigestRepos(reposActive7d, repos);
+  const linkedinUrl = extractLinkedinUrl(socials);
 
   const activityMetrics = computeActivityMetrics(recentEvents);
 
@@ -508,6 +562,7 @@ async function fetchDeveloperActivity(username, token) {
     total_stars: repoSummary.total_stars,
     top_repos: topRepos,
     top_languages: repoSummary.top_languages,
+    linkedin_url: linkedinUrl,
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
     total_contributions_60d: activityMetrics.total_contributions_60d,

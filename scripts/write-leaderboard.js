@@ -27,6 +27,7 @@ const OUTPUT_FIELDS = [
   'total_stars',
   'top_repos',
   'top_languages',
+  'linkedin_url',
   'tags',
   'score',
   'batch_index'
@@ -60,7 +61,8 @@ function stripInternalFields(entry) {
     ...entry,
     digest_repos: Array.isArray(entry?.digest_repos) ? entry.digest_repos : [],
     top_repos: Array.isArray(entry?.top_repos) ? entry.top_repos : [],
-    top_languages: Array.isArray(entry?.top_languages) ? entry.top_languages : []
+    top_languages: Array.isArray(entry?.top_languages) ? entry.top_languages : [],
+    linkedin_url: typeof entry?.linkedin_url === 'string' ? entry.linkedin_url : ''
   };
 
   for (const field of STRIP_FIELDS) {
