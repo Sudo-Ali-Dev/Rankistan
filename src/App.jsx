@@ -19,7 +19,7 @@ function App() {
     <>
       <Header activeTab={activeTab} onChangeTab={handleChangeTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
       <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-        {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} />}
+        {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} onSearchChange={setSearchTerm} />}
         {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
         {activeTab === 'map' && <DevMap />}
         {activeTab === 'about' && <About />}

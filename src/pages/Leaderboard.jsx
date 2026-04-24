@@ -34,7 +34,7 @@ function exportCSV(devs) {
   URL.revokeObjectURL(url);
 }
 
-export default function Leaderboard({ searchTerm = '' }) {
+export default function Leaderboard({ searchTerm = '', onSearchChange }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [selectedTag, setSelectedTag] = useState('All');
   const [loading, setLoading] = useState(true);
@@ -161,42 +161,60 @@ export default function Leaderboard({ searchTerm = '' }) {
               Top <span className="text-primary italic">Talent</span> Archive
             </h1>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <div className="bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs flex items-center gap-2 hover:bg-surface-container-highest transition-colors relative group cursor-pointer">
-              <span className="material-symbols-outlined text-sm">filter_list</span>
-              FILTER: {selectedTag.toUpperCase()}
-              <select
-                className="absolute inset-0 opacity-0 cursor-pointer w-full bg-surface-container-high text-on-surface"
-                value={selectedTag}
-                onChange={(e) => { setSelectedTag(e.target.value); }}
-                style={{ colorScheme: 'dark' }}
+          <div className="flex w-full min-w-0 flex-col items-stretch gap-2 sm:gap-2.5 md:w-auto md:items-end">
+            <div className="flex w-full flex-wrap items-stretch gap-2 md:w-auto md:flex-nowrap">
+              <div className="relative group flex flex-1 basis-0 min-w-0 items-center justify-center gap-2 cursor-pointer bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs hover:bg-surface-container-highest transition-colors md:flex-none md:basis-auto md:justify-start">
+                <span className="material-symbols-outlined text-sm">filter_list</span>
+                <span className="truncate">FILTER: {selectedTag.toUpperCase()}</span>
+                <select
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full bg-surface-container-high text-on-surface"
+                  value={selectedTag}
+                  onChange={(e) => { setSelectedTag(e.target.value); }}
+                  style={{ colorScheme: 'dark' }}
+                  aria-label="Filter by tag"
+                >
+                  {tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={handleSortCycle}
+                className="hidden md:flex bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs items-center gap-2 hover:bg-surface-container-highest transition-colors"
               >
-                {tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
-              </select>
+                <span className="material-symbols-outlined text-sm">sort</span>
+                SORT: {SORT_OPTIONS[sortIndex].label}
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCSV(filteredLeaderboard)}
+                className="md:hidden flex flex-1 basis-0 min-w-0 items-center justify-center gap-2 bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs hover:bg-surface-container-highest transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">download</span>
+                <span className="truncate">EXPORT CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCSV(filteredLeaderboard)}
+                className="hidden md:block bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all"
+              >
+                Export CSV
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleSortCycle}
-              className="hidden md:flex bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs items-center gap-2 hover:bg-surface-container-highest transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">sort</span>
-              SORT: {SORT_OPTIONS[sortIndex].label}
-            </button>
-            <button
-              type="button"
-              onClick={() => exportCSV(filteredLeaderboard)}
-              className="md:hidden bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs flex items-center gap-2 hover:bg-surface-container-highest transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">download</span>
-              EXPORT CSV
-            </button>
-            <button
-              type="button"
-              onClick={() => exportCSV(filteredLeaderboard)}
-              className="hidden md:block bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all"
-            >
-              Export CSV
-            </button>
+            {onSearchChange && (
+              <div className="relative w-full min-w-0 max-w-full lg:hidden">
+                <input
+                  className="w-full bg-surface-container-lowest border-b-2 border-outline-variant focus:border-tertiary focus:ring-0 text-sm font-mono py-2 pl-3 pr-10 placeholder:text-outline/50 transition-all text-on-surface"
+                  placeholder="Search developer..."
+                  type="search"
+                  value={searchTerm}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  autoComplete="off"
+                  enterKeyHint="search"
+                  aria-label="Search developers"
+                />
+                <span className="material-symbols-outlined pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-outline">search</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

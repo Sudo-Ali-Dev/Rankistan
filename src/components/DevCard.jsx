@@ -46,8 +46,8 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
             <span className="min-w-0 flex-1 break-words leading-snug">{cleanLocation}</span>
           </div>
         </div>
-        <div className="col-span-full grid w-full min-w-0 grid-cols-3 items-center gap-x-2 md:contents">
-          <div className="min-w-0 flex flex-nowrap items-center justify-start gap-1.5 self-center overflow-hidden md:col-span-3 md:pl-1 md:flex-wrap md:gap-2">
+        <div className="col-span-full flex w-full min-w-0 items-center gap-2 md:contents">
+          <div className="min-w-0 flex flex-1 flex-nowrap items-center justify-start gap-1.5 overflow-hidden md:col-span-3 md:pl-1 md:flex-wrap md:gap-2">
             {Array.isArray(dev.tags) && dev.tags.slice(0, 3).map((tag, idx) => {
                const colors = tagsColors[idx % tagsColors.length];
                return (
@@ -57,13 +57,15 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
                );
             })}
           </div>
-          <div className="flex justify-center md:col-span-1 md:justify-end md:text-right">
-            <div className="whitespace-nowrap text-center font-mono font-bold text-tertiary md:text-right">{dev.score?.toLocaleString() || 0}</div>
-          </div>
-          <div className="flex justify-end md:col-span-1">
-            <button type="button" onClick={toggleExpand} className="text-outline hover:text-primary transition-colors" aria-expanded={isExpanded} aria-label={isExpanded ? 'Collapse details' : 'Expand details'}>
-              <span className="material-symbols-outlined">{isExpanded ? 'expand_less' : 'unfold_more'}</span>
-            </button>
+          <div className="flex shrink-0 items-center gap-3 md:contents">
+            <div className="whitespace-nowrap text-left font-mono font-bold text-tertiary tabular-nums md:col-span-1 md:flex md:justify-end md:text-right">
+              {dev.score?.toLocaleString() || 0}
+            </div>
+            <div className="flex shrink-0 justify-end md:col-span-1">
+              <button type="button" onClick={toggleExpand} className="text-outline hover:text-primary transition-colors" aria-expanded={isExpanded} aria-label={isExpanded ? 'Collapse details' : 'Expand details'}>
+                <span className="material-symbols-outlined">{isExpanded ? 'expand_less' : 'unfold_more'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
