@@ -14,8 +14,13 @@ const SORT_OPTIONS = [
   { key: 'activity_desc', label: 'ACTIVITY', fn: (a, b) => (b.events_30d || 0) - (a.events_30d || 0) },
 ];
 
+/** Public leaderboard fields only. Do not add `linkedin_url` or other private contact / social URLs. */
+const CSV_EXPORT_COLUMNS = [
+  'rank', 'username', 'name', 'location', 'score', 'followers', 'public_repos', 'events_30d', 'total_stars', 'top_languages'
+];
+
 function exportCSV(devs) {
-  const headers = ['rank', 'username', 'name', 'location', 'score', 'followers', 'public_repos', 'events_30d', 'total_stars', 'top_languages'];
+  const headers = CSV_EXPORT_COLUMNS;
   const rows = devs.map((d) =>
     headers.map((h) => {
       const val = d[h];
