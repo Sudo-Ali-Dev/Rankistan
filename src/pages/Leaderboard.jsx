@@ -175,15 +175,25 @@ export default function Leaderboard({ searchTerm = '' }) {
               </select>
             </div>
             <button
+              type="button"
               onClick={handleSortCycle}
-              className="bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs flex items-center gap-2 hover:bg-surface-container-highest transition-colors"
+              className="hidden md:flex bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs items-center gap-2 hover:bg-surface-container-highest transition-colors"
             >
               <span className="material-symbols-outlined text-sm">sort</span>
               SORT: {SORT_OPTIONS[sortIndex].label}
             </button>
             <button
+              type="button"
               onClick={() => exportCSV(filteredLeaderboard)}
-              className="bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all"
+              className="md:hidden bg-surface-container-high border border-outline-variant px-4 py-2 font-mono text-xs flex items-center gap-2 hover:bg-surface-container-highest transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">download</span>
+              EXPORT CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => exportCSV(filteredLeaderboard)}
+              className="hidden md:block bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all"
             >
               Export CSV
             </button>

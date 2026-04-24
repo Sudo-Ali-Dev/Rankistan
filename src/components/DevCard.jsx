@@ -25,44 +25,46 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
     <div className="border-b border-outline-variant">
       {/* Main Row Info */}
       <div className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors">
-        <div className="col-span-1 mb-2 md:mb-0">
+        <div className="col-span-full md:col-span-1 mb-2 md:mb-0">
           <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
             {String(dev.rank).padStart(3, '0')}
           </span>
         </div>
-        <div className="col-span-4 flex items-center gap-4 mb-4 md:mb-0">
+        <div className="col-span-full md:col-span-4 flex items-center gap-4 mb-4 md:mb-0">
           <div className="relative shrink-0">
             <img alt={username} className="w-12 h-12 grayscale group-hover:grayscale-0 transition-all border border-outline-variant p-0.5 object-cover" src={avatar} />
             {dev.rank <= 3 && <div className="absolute -top-1 -right-1 w-3 h-3 bg-tertiary border-2 border-surface"></div>}
           </div>
-          <div className="overflow-hidden">
+          <div className="min-w-0 flex-1 overflow-hidden">
             <div className="font-headline font-bold text-lg leading-tight truncate">{username}</div>
             <div className="font-mono text-xs text-outline truncate">{dev.name || `github.com/${username}`}</div>
           </div>
         </div>
-        <div className="col-span-2 mb-4 md:mb-0 md:-ml-2 md:pr-2 min-w-0">
-          <div className="flex items-start gap-2 text-on-surface-variant font-mono text-sm min-w-0">
-            <span className="material-symbols-outlined text-sm">location_on</span>
-            <span className="min-w-0 break-words leading-snug">{cleanLocation}</span>
+        <div className="col-span-full md:col-span-2 mb-4 md:mb-0 md:-ml-2 md:pr-2 min-w-0 w-full">
+          <div className="flex items-start gap-2 text-on-surface-variant font-mono text-sm min-w-0 w-full">
+            <span className="material-symbols-outlined shrink-0 text-sm" aria-hidden>location_on</span>
+            <span className="min-w-0 flex-1 break-words leading-snug">{cleanLocation}</span>
           </div>
         </div>
-        <div className="col-span-3 mb-4 md:mb-0 md:pl-1 flex flex-wrap gap-2 min-w-0">
-          {Array.isArray(dev.tags) && dev.tags.slice(0, 3).map((tag, idx) => {
-             const colors = tagsColors[idx % tagsColors.length];
-             return (
-               <span key={tag} className={`${colors.bg} ${colors.text} text-[10px] font-mono px-2 py-0.5 border ${colors.border}`}>
-                 {tag.toUpperCase()}
-               </span>
-             );
-          })}
-        </div>
-        <div className="col-span-1 text-right mb-4 md:mb-0">
-          <div className="font-mono font-bold text-tertiary">{dev.score?.toLocaleString() || 0}</div>
-        </div>
-        <div className="col-span-1 text-right">
-          <button onClick={toggleExpand} className="text-outline hover:text-primary transition-colors">
-            <span className="material-symbols-outlined">{isExpanded ? 'expand_less' : 'unfold_more'}</span>
-          </button>
+        <div className="col-span-full grid w-full min-w-0 grid-cols-3 items-center gap-x-2 md:contents">
+          <div className="min-w-0 flex flex-nowrap items-center justify-start gap-1.5 self-center overflow-hidden md:col-span-3 md:pl-1 md:flex-wrap md:gap-2">
+            {Array.isArray(dev.tags) && dev.tags.slice(0, 3).map((tag, idx) => {
+               const colors = tagsColors[idx % tagsColors.length];
+               return (
+                 <span key={tag} className={`shrink-0 max-w-[min(100%,7.5rem)] truncate ${colors.bg} ${colors.text} text-[10px] font-mono px-1.5 py-0.5 border md:max-w-none md:px-2 ${colors.border} ${idx >= 2 ? 'hidden md:inline' : ''}`}>
+                   {tag.toUpperCase()}
+                 </span>
+               );
+            })}
+          </div>
+          <div className="flex justify-center md:col-span-1 md:justify-end md:text-right">
+            <div className="whitespace-nowrap text-center font-mono font-bold text-tertiary md:text-right">{dev.score?.toLocaleString() || 0}</div>
+          </div>
+          <div className="flex justify-end md:col-span-1">
+            <button type="button" onClick={toggleExpand} className="text-outline hover:text-primary transition-colors" aria-expanded={isExpanded} aria-label={isExpanded ? 'Collapse details' : 'Expand details'}>
+              <span className="material-symbols-outlined">{isExpanded ? 'expand_less' : 'unfold_more'}</span>
+            </button>
+          </div>
         </div>
       </div>
 

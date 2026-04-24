@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import Header from './components/Header';
+import MobileTabBar from './components/MobileTabBar';
 import Footer from './components/Footer';
 import Leaderboard from './pages/Leaderboard';
 import Register from './pages/Register';
@@ -17,11 +18,14 @@ function App() {
   return (
     <>
       <Header activeTab={activeTab} onChangeTab={handleChangeTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
-      {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} />}
-      {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
-      {activeTab === 'map' && <DevMap />}
-      {activeTab === 'about' && <About />}
-      <Footer />
+      <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+        {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} />}
+        {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
+        {activeTab === 'map' && <DevMap />}
+        {activeTab === 'about' && <About />}
+        <Footer />
+      </div>
+      <MobileTabBar activeTab={activeTab} onChangeTab={handleChangeTab} />
     </>
   );
 }
