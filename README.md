@@ -2,7 +2,7 @@
 
 An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by normalized profile locations on an interactive map of Pakistan, **Register** for profile checks, and **About** documentation for pipeline logic, scoring, and scheduling.
 
-> **Note:** The frontend is currently optimized for desktop. Mobile design is still under development.
+> **Note:** The frontend is currently optimized for desktop. Mobile design is still under development but usable.
 
 ## Contents
 
