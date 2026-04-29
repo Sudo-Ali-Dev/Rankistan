@@ -1,9 +1,10 @@
 const KEYWORD_DICT = {
   'AI/ML': [
+    'ai',
     'machine learning', 'deep learning', 'neural network',
     'language model', 'ml model', 'ai model', 'ai-powered', 'ai tool',
     'artificial intelligence', 'nlp', 'computer vision',
-    'transformer', 'classification', 'prediction',
+    'transformer', 'classification', 'prediction', 'predictor',
     'training', 'inference', 'dataset', 'llm'
   ],
   'Web Dev': [
@@ -59,11 +60,17 @@ function buildRegex(keyword) {
 
 function buildDeveloperCorpus(dev) {
   const topRepos = Array.isArray(dev?.top_repos) ? dev.top_repos : [];
+  const digestRepos = Array.isArray(dev?.digest_repos) ? dev.digest_repos : [];
   const topLangs = Array.isArray(dev?.top_languages) ? dev.top_languages : [];
 
   const parts = [
+    dev?.bio == null ? '' : String(dev.bio),
     ...topRepos.map((repo) => (repo?.name == null ? '' : String(repo.name))),
     ...topRepos.map((repo) => (repo?.description == null ? '' : String(repo.description))),
+    ...topRepos.map((repo) => (repo?.language == null ? '' : String(repo.language))),
+    ...digestRepos.map((repo) => (repo?.name == null ? '' : String(repo.name))),
+    ...digestRepos.map((repo) => (repo?.description == null ? '' : String(repo.description))),
+    ...digestRepos.map((repo) => (repo?.language == null ? '' : String(repo.language))),
     ...topLangs.map((language) => (language == null ? '' : String(language)))
   ];
 
