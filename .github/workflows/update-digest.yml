@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -65,7 +67,15 @@ jobs:
 
           git add public/data.json
           git commit -m "chore: update leaderboard (batch ${{ steps.batch.outputs.index }})"
-          git push
+
+          if git push origin HEAD:main; then
+            exit 0
+          fi
+
+          echo "Push rejected because main moved. Rebasing onto latest origin/main and retrying."
+          git fetch origin main
+          git pull --rebase origin main
+          git push origin HEAD:main
 
       - name: Install dependencies
         run: npm ci
