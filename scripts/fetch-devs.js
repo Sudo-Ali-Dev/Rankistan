@@ -30,7 +30,35 @@ const MEANINGFUL_EVENT_TYPES = new Set([
   'IssuesEvent',
   'ReleaseEvent'
 ]);
+const EVENT_WEIGHTS = {
+  ReleaseEvent:     5,
+  PullRequestEvent: 4,
+  PushEvent:        2,
+  IssuesEvent:      1.5
+};
 
+function pLimit(concurrency) {
+  let active = 0;
+  const queue = [];
+
+  const next = () => {
+    if (active >= concurrency || queue.length === 0) return;
+    active++;
+    const { fn, resolve, reject } = queue.shift();
+    fn().then(resolve, reject).finally(() => {
+      active--;
+      next();
+    });
+  };
+
+  return (fn) => new Promise((resolve, reject) => {
+    queue.push({ fn, resolve, reject });
+    next();
+  });
+}
+
+const USER_FETCH_CONCURRENCY = 6;
+const limit = pLimit(USER_FETCH_CONCURRENCY);
 const SEARCH_BATCHES = [
   { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
   { label: 'PK Jul2014-Jan2016', q: 'location:pakistan type:user repos:>3 followers:>1 created:2014-07-01..2016-01-31' },
@@ -524,21 +552,23 @@ async function fetchDeveloperActivity(username, token) {
     return null;
   }
 
-  const events = [];
-  for (let page = 1; page <= USER_EVENTS_MAX_PAGES; page += 1) {
-    const eventsResponse = await githubRequest(
-      `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=${page}`,
-      token
-    );
-    const pageEvents = Array.isArray(eventsResponse) ? eventsResponse : [];
-    events.push(...pageEvents);
-    if (pageEvents.length < USER_EVENTS_PER_PAGE) {
-      break;
-    }
-  }
-
-  const repos = await fetchAllUserRepos(username, token);
-  const socials = await fetchUserSocials(username, token);
+  const [events, repos, socials] = await Promise.all([
+    (async () => {
+      const ev = [];
+      for (let page = 1; page <= USER_EVENTS_MAX_PAGES; page++) {
+        const res = await githubRequest(
+          `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=${page}`,
+          token
+        );
+        const pageEvents = Array.isArray(res) ? res : [];
+        ev.push(...pageEvents);
+        if (pageEvents.length < USER_EVENTS_PER_PAGE) break;
+      }
+      return ev;
+    })(),
+    fetchAllUserRepos(username, token),
+    fetchUserSocials(username, token)
+  ]);
 
   const recentEvents = extractRecentEvents(events, INACTIVE_DAYS_CUTOFF);
   const meaningfulLast30Days = filterMeaningfulEvents(extractRecentEvents(events, 30));
@@ -619,32 +649,29 @@ async function fetchPakistaniDevelopers(options = {}) {
   let skippedProfile = 0;
   let skippedError = 0;
 
-  for (let index = 0; index < allUsernames.length; index += 1) {
-    const username = allUsernames[index];
-    if (index % 50 === 0) {
-      console.log(
-        `[fetch ${index + 1}/${allUsernames.length}] ${username} ` +
-        `(rate limit: ${rateLimit.remaining} remaining)`
-      );
-    }
-
-    try {
-      const developer = await fetchDeveloperActivity(username, token);
-      if (developer) {
-        fetchedDevelopers.push(developer);
-      } else {
-        skippedProfile += 1;
+  const tasks = allUsernames.map((username, index) =>
+    limit(async () => {
+      if (index % 50 === 0) {
+        console.log(
+          `[fetch ${index + 1}/${allUsernames.length}] ${username} ` +
+          `(rate limit: ${rateLimit.remaining} remaining)`
+        );
       }
-    } catch (error) {
-      skippedError += 1;
-      console.error(`Skipping ${username}: ${error.message}`);
-    }
+      try {
+        const developer = await fetchDeveloperActivity(username, token);
+        if (developer) {
+          fetchedDevelopers.push(developer);
+        } else {
+          skippedProfile++;
+        }
+      } catch (error) {
+        skippedError++;
+        console.error(`Skipping ${username}: ${error.message}`);
+      }
+    })
+  );
 
-    if (index < allUsernames.length - 1) {
-      await sleep(randomDelayMs(USER_CALL_DELAY_MIN_MS, USER_CALL_DELAY_MAX_MS));
-    }
-  }
-
+  await Promise.all(tasks);
   console.log(
     `Fetch complete: ${fetchedDevelopers.length} valid profiles, ` +
     `${skippedProfile} skipped (empty/fake), ${skippedError} errors`
