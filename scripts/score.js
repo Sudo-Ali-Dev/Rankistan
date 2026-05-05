@@ -12,7 +12,8 @@ const WEIGHTS = {
   publicRepos: 0.5
 };
 
-const STAR_WEIGHT = 2;  
+const STAR_WEIGHT = 2;
+const FALLBACK_ACTIVITY_WEIGHT = 3.125;
 const SIX_MONTHS_DAYS = 180;
 const MAX_STARS_FOR_SCORING = 2000;
 
@@ -64,7 +65,7 @@ function calculateDeveloperScore(developer) {
       (ec.issues   || 0) * WEIGHTS.issue;
   } else {
     const events30d = sanitizeScoreField(developer, 'events_30d');
-    activityScore = events30d * WEIGHTS.push;
+    activityScore = events30d * FALLBACK_ACTIVITY_WEIGHT;
   }
 
   const baseScore =

@@ -575,7 +575,7 @@ async function fetchDeveloperActivity(username, token) {
     linkedin_url: linkedinUrl,
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
-    event_counts_30d: activityMetrics.event_counts_30d, 
+    event_counts_30d: activityMetrics.event_counts_30d,
     total_contributions_60d: activityMetrics.total_contributions_60d,
     longest_gap_days: activityMetrics.longest_gap_days,
     repos_active_7d: reposActive7d,

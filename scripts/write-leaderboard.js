@@ -10,7 +10,7 @@ const STRIP_FIELDS = new Set([
   'repos_active_7d',
   'following',
   'age_penalty_applied',
-  'event_counts_30d' 
+  'event_counts_30d'
 ]);
 
 const OUTPUT_FIELDS = [
