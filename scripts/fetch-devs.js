@@ -111,9 +111,20 @@ function daysSince(date) {
 function computeActivityMetrics(rawEvents) {
   const now = Date.now();
   const CUTOFF_MS = INACTIVE_DAYS_CUTOFF * 24 * 60 * 60 * 1000;
+  const CUTOFF_30D_MS = 30 * 24 * 60 * 60 * 1000;
 
   const meaningful = (rawEvents || []).filter((e) => MEANINGFUL_EVENT_TYPES.has(e.type));
   const totalContributions = meaningful.length;
+
+  // Per-type counts for last 30 days
+  const event_counts_30d = { pushes: 0, prs: 0, issues: 0, releases: 0 };
+  for (const e of meaningful) {
+    if (now - new Date(e.created_at).getTime() > CUTOFF_30D_MS) continue;
+    if (e.type === 'PushEvent')        event_counts_30d.pushes++;
+    if (e.type === 'PullRequestEvent') event_counts_30d.prs++;
+    if (e.type === 'IssuesEvent')      event_counts_30d.issues++;
+    if (e.type === 'ReleaseEvent')     event_counts_30d.releases++;
+  }
 
   const timestamps = meaningful
     .map((e) => new Date(e.created_at).getTime())
@@ -124,19 +135,18 @@ function computeActivityMetrics(rawEvents) {
 
   if (timestamps.length > 0) {
     longestGapDays = 0;
-
     for (let i = 1; i < timestamps.length; i += 1) {
       const gap = Math.floor((timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60 * 24));
       longestGapDays = Math.max(longestGapDays, gap);
     }
-
     const gapToNow = Math.floor((now - timestamps[timestamps.length - 1]) / (1000 * 60 * 60 * 24));
     longestGapDays = Math.max(longestGapDays, gapToNow);
   }
 
   return {
     total_contributions_60d: totalContributions,
-    longest_gap_days: longestGapDays
+    longest_gap_days: longestGapDays,
+    event_counts_30d
   };
 }
 
@@ -565,6 +575,7 @@ async function fetchDeveloperActivity(username, token) {
     linkedin_url: linkedinUrl,
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
+    event_counts_30d: activityMetrics.event_counts_30d, 
     total_contributions_60d: activityMetrics.total_contributions_60d,
     longest_gap_days: activityMetrics.longest_gap_days,
     repos_active_7d: reposActive7d,
