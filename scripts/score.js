@@ -4,12 +4,15 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const WEIGHTS = {
-  stars: 2,
-  events30d: 3,
-  followers: 1,
+  release:     5,
+  pr:          4,
+  push:        2,
+  issue:       1.5,
+  followers:   1,
   publicRepos: 0.5
 };
 
+const STAR_WEIGHT = 2;  
 const SIX_MONTHS_DAYS = 180;
 const MAX_STARS_FOR_SCORING = 2000;
 
@@ -44,22 +47,36 @@ function sanitizeScoreField(developer, field) {
 }
 
 function calculateDeveloperScore(developer) {
-  const stars = sanitizeScoreField(developer, 'total_stars');
-  const events30d = sanitizeScoreField(developer, 'events_30d');
-  const followers = sanitizeScoreField(developer, 'followers');
+  const stars       = sanitizeScoreField(developer, 'total_stars');
+  const followers   = sanitizeScoreField(developer, 'followers');
   const publicRepos = sanitizeScoreField(developer, 'public_repos');
 
   const cappedStars = Math.min(stars, MAX_STARS_FOR_SCORING);
 
-  const baseScore =
-    cappedStars * WEIGHTS.stars +
-    events30d * WEIGHTS.events30d +
-    followers * WEIGHTS.followers +
-    publicRepos * WEIGHTS.publicRepos;
+  // Use split counts if available, fall back to flat events_30d for old cached data
+  let activityScore;
+  const ec = developer.event_counts_30d;
+  if (ec && typeof ec === 'object') {
+    activityScore =
+      (ec.releases || 0) * WEIGHTS.release +
+      (ec.prs      || 0) * WEIGHTS.pr      +
+      (ec.pushes   || 0) * WEIGHTS.push    +
+      (ec.issues   || 0) * WEIGHTS.issue;
+  } else {
+    const events30d = sanitizeScoreField(developer, 'events_30d');
+    activityScore = events30d * WEIGHTS.push;
+  }
 
-  const accountAgeDays = daysSince(developer.created_at);
-  const isNewAccount = accountAgeDays < SIX_MONTHS_DAYS;
+  const baseScore =
+    cappedStars   * STAR_WEIGHT          +
+    activityScore                        +
+    followers     * WEIGHTS.followers    +
+    publicRepos   * WEIGHTS.publicRepos;
+
+  const accountAgeDays    = daysSince(developer.created_at);
+  const isNewAccount      = accountAgeDays < SIX_MONTHS_DAYS;
   const penaltyMultiplier = isNewAccount ? 0.5 : 1;
+
   const finalScore = Number.isFinite(baseScore)
     ? Math.round(baseScore * penaltyMultiplier)
     : 0;
@@ -68,10 +85,7 @@ function calculateDeveloperScore(developer) {
     console.warn(`NaN score for ${developer?.username || 'unknown'}; setting score to 0.`);
   }
 
-  return {
-    score: finalScore,
-    age_penalty_applied: isNewAccount
-  };
+  return { score: finalScore, age_penalty_applied: isNewAccount };
 }
 
 function scoreDevelopers(rawDevelopers) {
