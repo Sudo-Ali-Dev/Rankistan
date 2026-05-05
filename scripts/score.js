@@ -16,7 +16,7 @@ const STAR_WEIGHT = 2;
 // 3.125 is the exact average of the new individual weights (5 + 4 + 2 + 1.5 = 12.5 / 4)
 const FALLBACK_ACTIVITY_WEIGHT = 3.125;
 const SIX_MONTHS_DAYS = 180;
-const MAX_STARS_FOR_SCORING = 2000;
+const MAX_STARS_FOR_SCORING = 250;
 
 function daysSince(date) {
   if (!date) {
