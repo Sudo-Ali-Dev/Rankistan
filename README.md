@@ -110,13 +110,13 @@ The frontend location system is deterministic and does not use AI for location i
 ```
 base_score = (stars × 2) + (activity_score) + (followers × 1) + (public_repos × 0.5)
 
-**Activity Score Breakdown**
+Activity Score Breakdown:
 Recent events in the last 30 days are scored by activity type:
-- **Releases:** 5 points each
-- **Pull Requests:** 4 points each
-- **Pushes:** 2 points each
-- **Issues:** 1.5 points each
-*(Fallback: 3.125 points per event for older cached data)*
+- Releases: 5 points each
+- Pull Requests: 4 points each
+- Pushes: 2 points each
+- Issues: 1.5 points each
+(Fallback: 3.125 points per event for older cached data)
 ```
 
 - Stars are capped at 2,000 to prevent outlier dominance
