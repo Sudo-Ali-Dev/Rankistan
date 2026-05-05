@@ -109,8 +109,11 @@ The frontend location system is deterministic and does not use AI for location i
 
 ```
 base_score = (stars × 2) + (activity_score) + (followers × 1) + (public_repos × 0.5)
+```
 
-Activity Score Breakdown:
+> **Note on Stars**: Stars are capped at **250** per developer (contributing a maximum of **500 points**). Since Rankistan aims to measure active open-source contributions and development work, the previous cap (2000 stars = 4000 points) was causing stars to overpower the score, making the leaderboard less balanced and unfairly overshadowing developers who actively commit, push, and review code.
+
+**Activity Score Breakdown**
 Recent events in the last 30 days are scored by activity type:
 - Releases: 5 points each
 - Pull Requests: 4 points each
