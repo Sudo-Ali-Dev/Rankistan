@@ -122,7 +122,7 @@ Recent events in the last 30 days are scored by activity type:
 (Fallback: 3.125 points per event for older cached data)
 ```
 
-- Stars are capped at 2,000 to prevent outlier dominance
+- Stars are capped at 250 to prevent outlier dominance
 - Accounts younger than 6 months receive a 0.5× penalty
 
 ## Running Locally
