@@ -17,6 +17,7 @@ const STAR_WEIGHT = 2;
 const FALLBACK_ACTIVITY_WEIGHT = 3.125;
 const SIX_MONTHS_DAYS = 180;
 const MAX_STARS_FOR_SCORING = 250;
+const MAX_FOLLOWERS_FOR_SCORING = 500;
 
 function daysSince(date) {
   if (!date) {
@@ -54,6 +55,7 @@ function calculateDeveloperScore(developer) {
   const publicRepos = sanitizeScoreField(developer, 'public_repos');
 
   const cappedStars = Math.min(stars, MAX_STARS_FOR_SCORING);
+  const cappedFollowers = Math.min(followers, MAX_FOLLOWERS_FOR_SCORING);
 
   // Use split counts if available, fall back to flat events_30d for old cached data
   let activityScore;
@@ -70,10 +72,10 @@ function calculateDeveloperScore(developer) {
   }
 
   const baseScore =
-    cappedStars   * STAR_WEIGHT          +
-    activityScore                        +
-    followers     * WEIGHTS.followers    +
-    publicRepos   * WEIGHTS.publicRepos;
+    cappedStars       * STAR_WEIGHT          +
+    activityScore                            +
+    cappedFollowers   * WEIGHTS.followers    +
+    publicRepos       * WEIGHTS.publicRepos;
 
   const accountAgeDays    = daysSince(developer.created_at);
   const isNewAccount      = accountAgeDays < SIX_MONTHS_DAYS;
