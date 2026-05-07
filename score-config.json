@@ -1,0 +1,15 @@
+{
+  "WEIGHTS": {
+    "release": 5,
+    "pr": 4,
+    "push": 2,
+    "issue": 1.5,
+    "followers": 1,
+    "publicRepos": 0.5
+  },
+  "STAR_WEIGHT": 2,
+  "FALLBACK_ACTIVITY_WEIGHT": 3.125,
+  "SIX_MONTHS_DAYS": 180,
+  "MAX_STARS_FOR_SCORING": 250,
+  "MAX_FOLLOWERS_FOR_SCORING": 500
+}
