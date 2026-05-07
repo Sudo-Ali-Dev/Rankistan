@@ -14,6 +14,16 @@ const SORT_OPTIONS = [
   { key: 'activity_desc', label: 'ACTIVITY', fn: (a, b) => (b.events_30d || 0) - (a.events_30d || 0) },
 ];
 
+function formatRefreshDate(value) {
+  if (!value) return 'Unknown';
+  return new Date(value).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatRefreshTime(value) {
+  if (!value) return 'Unknown';
+  return new Date(value).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' });
+}
+
 /** Public leaderboard fields only. Do not add `linkedin_url` or other private contact / social URLs. */
 const CSV_EXPORT_COLUMNS = [
   'rank', 'username', 'name', 'location', 'score', 'followers', 'public_repos', 'events_30d', 'total_stars', 'top_languages'
@@ -231,9 +241,9 @@ export default function Leaderboard({ searchTerm = '', onSearchChange }) {
       ) : (
         <>
           <div className="mb-6 border border-outline-variant bg-surface-container-lowest p-4 grid grid-cols-1 md:grid-cols-4 gap-2 font-mono text-[11px] uppercase tracking-wider">
-            <div className="text-outline">Last Refresh: <span className="text-on-surface">{meta?.lastUpdated ? new Date(meta.lastUpdated).toLocaleString() : 'Unknown'}</span></div>
+            <div className="text-outline">Last Refresh: <span className="text-on-surface">{formatRefreshDate(meta?.lastUpdated)}</span></div>
             <div className="text-outline">Batch Running: <span className="text-on-surface">#{String(meta?.currentBatch ?? 0).padStart(2, '0')}</span></div>
-            <div className="text-outline">Next Refresh: <span className="text-on-surface">{meta?.nextRefreshIso ? new Date(meta.nextRefreshIso).toLocaleTimeString() : 'Unknown'}</span></div>
+            <div className="text-outline">Next Refresh: <span className="text-on-surface">{formatRefreshTime(meta?.nextRefreshIso)}</span></div>
             <div className="text-outline">Indexed Devs: <span className="text-on-surface">{Number(meta?.totalDevs || filteredLeaderboard.length).toLocaleString()}</span></div>
           </div>
           <div className="mb-6 border border-outline-variant bg-surface-container-low p-4">

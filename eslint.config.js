@@ -11,6 +11,11 @@ export default [
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true
+        }
+      },
       globals: globals.browser
     },
     plugins: {
@@ -24,11 +29,18 @@ export default [
     }
   },
   {
-    files: ['scripts/**/*.js', 'cloudflare/**/*.js'],
+    files: ['scripts/**/*.js', 'cloudflare/**/*.js', 'tailwind.config.js', 'postcss.config.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
-      globals: globals.node
+      globals: {
+        ...globals.node,
+        require: 'readonly'
+      }
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-useless-escape': 'warn'
     }
   }
 ];

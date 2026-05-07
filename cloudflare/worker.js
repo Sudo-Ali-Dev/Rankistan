@@ -331,7 +331,11 @@ async function fetchLeaderboardPayload(env) {
   if (env.LEADERBOARD_KV && typeof env.LEADERBOARD_KV.get === 'function') {
     const fromKv = await env.LEADERBOARD_KV.get(kvKey);
     if (fromKv) {
-      return JSON.parse(fromKv);
+      try {
+        return JSON.parse(fromKv);
+      } catch (error) {
+        throw new Error(`Invalid JSON in LEADERBOARD_KV for key "${kvKey}": ${error.message}`);
+      }
     }
   }
 

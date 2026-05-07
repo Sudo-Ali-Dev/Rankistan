@@ -26,6 +26,7 @@ function resolveLeaderboardUrl() {
 
 function computeBatchMeta(now = new Date()) {
   const utcHour = now.getUTCHours();
+  // Pipeline batch scheduling uses Pakistan time (UTC+5), aligned with workflow docs.
   const currentBatch = (utcHour + 5) % 24;
   const nextHour = new Date(now);
   nextHour.setUTCMinutes(0, 0, 0);

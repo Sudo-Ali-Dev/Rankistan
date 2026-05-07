@@ -148,13 +148,13 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
                   </div>
                 </div>
               </div>
-              {Array.isArray(dev?.notable_repos) && dev.notable_repos.length > 0 && (
+                    {Array.isArray(dev?.notable_repos) && dev.notable_repos.length > 0 && (
                 <div className="mt-4 border border-outline-variant bg-surface p-3">
-                  <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-2">Notable_Repos</h3>
+                  <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-2">Notable Repos</h3>
                   <div className="grid sm:grid-cols-2 gap-2">
                     {dev.notable_repos.slice(0, 2).map((repo) => (
                       <a key={repo.name} href={repo.url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline font-mono truncate">
-                        {repo.name} {repo.stars ? `• ⭐ ${repo.stars}` : ''}
+                        {repo.name} {repo.stars ? `(${repo.stars} stars)` : ''}
                       </a>
                     ))}
                   </div>
@@ -191,9 +191,9 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
               </div>
               {Array.isArray(dev?.public_social_links) && dev.public_social_links.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {dev.public_social_links.slice(0, 3).map((link) => (
+                  {dev.public_social_links.slice(0, 3).map((link, idx) => (
                     <a
-                      key={`${link.provider}-${link.url}`}
+                      key={`${link.provider || 'link'}-${idx}`}
                       href={link.url}
                       target="_blank"
                       rel="noreferrer"

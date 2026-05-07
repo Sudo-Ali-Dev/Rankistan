@@ -33,12 +33,23 @@ const MEANINGFUL_EVENT_TYPES = new Set([
 
 const SPECIALTY_KEYWORDS = {
   'AI/ML': ['ai', 'ml', 'machine learning', 'llm', 'nlp', 'computer vision', 'deep learning'],
-  Web: ['react', 'next.js', 'nextjs', 'frontend', 'backend', 'fullstack', 'api', 'express', 'django', 'flask'],
+  Web: ['react', 'next.js', 'nextjs', 'frontend', 'fullstack', 'api'],
   DevOps: ['docker', 'kubernetes', 'terraform', 'github actions', 'ci/cd', 'pipeline', 'deployment', 'cloud'],
   Mobile: ['android', 'ios', 'react native', 'flutter', 'swift', 'kotlin', 'mobile'],
   Data: ['data engineering', 'etl', 'analytics', 'postgres', 'mysql', 'mongodb', 'spark', 'pandas'],
   'Open Source': ['open source', 'library', 'sdk', 'cli', 'framework', 'boilerplate', 'template']
 };
+const PUBLIC_SOCIAL_PROVIDERS = new Set(['linkedin', 'twitter', 'x', 'website', 'blog']);
+const ACTIVITY_EVENT_LABELS = [
+  ['pushes', 'pushes'],
+  ['prs', 'PRs'],
+  ['issues', 'issues'],
+  ['releases', 'releases']
+];
+const SPECIALTY_PATTERNS = Object.entries(SPECIALTY_KEYWORDS).map(([label, keywords]) => ({
+  label,
+  patterns: keywords.map((keyword) => new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'))
+}));
 
 const SEARCH_BATCHES = [
   { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
@@ -528,17 +539,14 @@ function inferPrimaryRole({ topLanguages = [], specialties = [], bio = '' }) {
 }
 
 function inferSpecialties({ bio = '', topRepos = [], topLanguages = [] }) {
-  const corpus = [
-    String(bio || ''),
-    ...topRepos.map((repo) => String(repo?.name || '')),
-    ...topRepos.map((repo) => String(repo?.description || '')),
-    ...topRepos.map((repo) => String(repo?.language || '')),
-    ...topLanguages.map((language) => String(language || ''))
-  ].join(' ').toLowerCase();
+  const repoText = (Array.isArray(topRepos) ? topRepos : []).reduce((acc, repo) => (
+    `${acc} ${String(repo?.name || '')} ${String(repo?.description || '')} ${String(repo?.language || '')}`
+  ), '');
+  const corpus = `${String(bio || '')} ${repoText} ${topLanguages.map((language) => String(language || '')).join(' ')}`.toLowerCase();
 
   const specialties = [];
-  for (const [label, keywords] of Object.entries(SPECIALTY_KEYWORDS)) {
-    if (keywords.some((keyword) => corpus.includes(keyword))) {
+  for (const { label, patterns } of SPECIALTY_PATTERNS) {
+    if (patterns.some((pattern) => pattern.test(corpus))) {
       specialties.push(label);
     }
   }
@@ -551,8 +559,16 @@ function buildRecentActivitySummary(eventCounts = {}) {
   const prs = Number(eventCounts.prs || 0);
   const issues = Number(eventCounts.issues || 0);
   const releases = Number(eventCounts.releases || 0);
+  const counts = { pushes, prs, issues, releases };
+  const parts = ACTIVITY_EVENT_LABELS
+    .filter(([key]) => Number(counts[key] || 0) > 0)
+    .map(([key, label]) => `${counts[key]} ${label}`);
 
-  return `${pushes} pushes, ${prs} PRs, ${issues} issues, ${releases} releases in the last 30 days.`;
+  if (parts.length === 0) {
+    return 'No meaningful public events in the last 30 days.';
+  }
+
+  return `${parts.join(', ')} in the last 30 days.`;
 }
 
 function buildNotableRepos(topRepos = []) {
@@ -565,13 +581,12 @@ function buildNotableRepos(topRepos = []) {
 }
 
 function buildPublicSocialLinks(socials = [], linkedinUrl = '') {
-  const allowedProviders = new Set(['linkedin', 'twitter', 'x', 'website', 'blog']);
   const links = [];
 
   for (const social of socials) {
     const provider = String(social?.provider || '').toLowerCase();
     const url = String(social?.url || '').trim();
-    if (!url || !allowedProviders.has(provider)) continue;
+    if (!url || !PUBLIC_SOCIAL_PROVIDERS.has(provider)) continue;
     links.push({ provider, url });
   }
 
