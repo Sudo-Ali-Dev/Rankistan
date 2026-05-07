@@ -70,6 +70,10 @@ PK 2000-Jun2014 → PK Jul2014-Jan2016 → ... → PK Aug2024-Dec2024 → PK 202
 
 Each batch targets ~800-950 developers (under the 1,000-result API cap). One batch runs per hour (triggered by [cron-job.org](https://cron-job.org) via `workflow_dispatch`), completing a full cycle every 24 hours. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are removed and replaced with fresh data.
 
+#### PK 2025+ (`batch-23`): multiple GitHub searches in one hourly run
+
+The limit above is **per search request**, not per batch. The PK 2025+ window can grow past 1,000 matching accounts, which would truncate results if discovered with a single query. For **`batch_index` 23** only, `scripts/fetch-devs.js` runs **several** GitHub user searches in succession during that same workflow (narrower `created:` ranges, defined as a `queries` list on that entry in `SEARCH_BATCHES`), concatenates the usernames, then continues with the normal fetch-and-score steps. The cron schedule is still **one run per hour**; there are still **24** batch indices (`0`–`23`); leaderboard rows from this cohort still carry **`batch_index` 23**.
+
 ### Incremental Per-Batch Updates
 
 Every developer entry in `data.json` is tagged with a `batch_index`. When batch N runs:
