@@ -55,7 +55,15 @@ const SEARCH_BATCHES = [
   { label: 'PK Jan2024-Mar2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-01-01..2024-03-31' },
   { label: 'PK Apr2024-Jul2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-04-01..2024-07-31' },
   { label: 'PK Aug2024-Dec2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-08-01..2024-12-31' },
-  { label: 'PK 2025+',           q: 'location:pakistan type:user repos:>3 followers:>1 created:2025-01-01..2099-12-31' },
+  {
+    label: 'PK 2025+',
+    // GitHub caps user search at 1,000 hits per query; shard by created date so each scan stays under the cap.
+    queries: [
+      'location:pakistan type:user repos:>3 followers:>1 created:2025-01-01..2025-06-30',
+      'location:pakistan type:user repos:>3 followers:>1 created:2025-07-01..2025-12-31',
+      'location:pakistan type:user repos:>3 followers:>1 created:2026-01-01..2099-12-31'
+    ]
+  },
 ];
 
 const rateLimit = { remaining: Infinity, resetAt: 0 };
@@ -276,54 +284,91 @@ function dedupeUsernames(usernames) {
   return deduped;
 }
 
+function searchQueriesForBatch(batch) {
+  if (batch && Array.isArray(batch.queries) && batch.queries.length > 0) {
+    return batch.queries;
+  }
+  if (batch && typeof batch.q === 'string' && batch.q.length > 0) {
+    return [batch.q];
+  }
+  return [];
+}
+
 async function discoverUsers(token, batches) {
   const discovered = [];
 
   for (let index = 0; index < batches.length; index += 1) {
     const batch = batches[index];
-    console.log(`[discover ${index + 1}/${SEARCH_BATCHES.length}] ${batch.label} (pages 1-${SEARCH_MAX_PAGES})`);
+    const queries = searchQueriesForBatch(batch);
 
-    let batchCount = 0;
-    let success = false;
+    if (queries.length === 0) {
+      console.warn(`[discover ${index + 1}/${SEARCH_BATCHES.length}] ${batch.label}: no search query; skipping`);
+      continue;
+    }
 
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      try {
-        for (let page = 1; page <= SEARCH_MAX_PAGES; page += 1) {
-          const endpoint =
-            `/search/users?q=${encodeURIComponent(batch.q)}` +
-            `&sort=followers&order=desc&per_page=100&page=${page}`;
-          const result = await githubRequest(endpoint, token);
+    console.log(
+      `[discover ${index + 1}/${SEARCH_BATCHES.length}] ${batch.label} ` +
+      `(${queries.length} search shard(s), up to ${SEARCH_MAX_PAGES} pages each)`
+    );
 
-          const items = result?.items || [];
-          for (const item of items) {
-            if (item && typeof item.login === 'string') {
-              discovered.push(item.login);
-              batchCount += 1;
+    let batchTotal = 0;
+
+    for (let qIdx = 0; qIdx < queries.length; qIdx += 1) {
+      const q = queries[qIdx];
+      let shardCount = 0;
+      let shardSuccess = false;
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          for (let page = 1; page <= SEARCH_MAX_PAGES; page += 1) {
+            const endpoint =
+              `/search/users?q=${encodeURIComponent(q)}` +
+              `&sort=followers&order=desc&per_page=100&page=${page}`;
+            const result = await githubRequest(endpoint, token);
+
+            const items = result?.items || [];
+            for (const item of items) {
+              if (item && typeof item.login === 'string') {
+                discovered.push(item.login);
+                shardCount += 1;
+              }
             }
+
+            if (items.length < 100) {
+              break;
+            }
+
+            await sleep(SEARCH_DELAY_MS);
           }
 
-          if (items.length < 100) {
-            break;
+          shardSuccess = true;
+          break;
+        } catch (error) {
+          if (attempt === 1) {
+            console.warn(
+              `Search failed for ${batch.label} shard ${qIdx + 1}/${queries.length}; retrying after 3s. ` +
+              `Reason: ${error.message}`
+            );
+            await sleep(SEARCH_RETRY_DELAY_MS);
+          } else {
+            console.error(
+              `Skipping ${batch.label} shard ${qIdx + 1}/${queries.length} after retry failure: ${error.message}`
+            );
           }
-
-          await sleep(SEARCH_DELAY_MS);
         }
+      }
 
-        success = true;
-        break;
-      } catch (error) {
-        if (attempt === 1) {
-          console.warn(`Search failed for ${batch.label}; retrying after 3s. Reason: ${error.message}`);
-          await sleep(SEARCH_RETRY_DELAY_MS);
-        } else {
-          console.error(`Skipping batch ${batch.label} after retry failure: ${error.message}`);
-        }
+      if (shardSuccess) {
+        batchTotal += shardCount;
+        console.log(`  -> shard ${qIdx + 1}/${queries.length}: ${shardCount} users`);
+      }
+
+      if (qIdx < queries.length - 1) {
+        await sleep(SEARCH_DELAY_MS);
       }
     }
 
-    if (success) {
-      console.log(`  -> found ${batchCount} users`);
-    }
+    console.log(`  -> batch total (all shards): ${batchTotal} users`);
 
     if (index < batches.length - 1) {
       await sleep(SEARCH_DELAY_MS);

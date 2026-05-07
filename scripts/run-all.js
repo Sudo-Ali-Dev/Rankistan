@@ -91,7 +91,7 @@ const mode = args[0];
 if (mode === '--incremental') {
   const idx = parseInt(args[1], 10);
   if (Number.isNaN(idx)) {
-    console.error('Usage: node scripts/run-all.js --incremental <0-23>');
+    console.error('Usage: node scripts/run-all.js --incremental <batch-index>');
     process.exit(1);
   }
   runIncremental(idx).catch((e) => { console.error(e.message); process.exit(1); });
