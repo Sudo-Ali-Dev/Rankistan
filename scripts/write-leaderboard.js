@@ -27,8 +27,13 @@ const OUTPUT_FIELDS = [
   'digest_repos',
   'total_stars',
   'top_repos',
+  'notable_repos',
   'top_languages',
+  'primary_role',
+  'specialties',
+  'recent_activity_summary',
   'linkedin_url',
+  'public_social_links',
   'tags',
   'score',
   'batch_index'
@@ -62,7 +67,9 @@ function stripInternalFields(entry) {
     ...entry,
     digest_repos: Array.isArray(entry?.digest_repos) ? entry.digest_repos : [],
     top_repos: Array.isArray(entry?.top_repos) ? entry.top_repos : [],
+    notable_repos: Array.isArray(entry?.notable_repos) ? entry.notable_repos : [],
     top_languages: Array.isArray(entry?.top_languages) ? entry.top_languages : [],
+    specialties: Array.isArray(entry?.specialties) ? entry.specialties : [],
     linkedin_url: typeof entry?.linkedin_url === 'string' ? entry.linkedin_url : ''
   };
 
@@ -75,8 +82,10 @@ function stripInternalFields(entry) {
     output[field] = normalized[field];
   }
 
-  // Module 6 computes tags client-side in browser; server output always includes placeholder.
-  output.tags = [];
+  output.tags = Array.isArray(entry?.tags) ? entry.tags : [];
+  output.primary_role = typeof entry?.primary_role === 'string' ? entry.primary_role : '';
+  output.recent_activity_summary = typeof entry?.recent_activity_summary === 'string' ? entry.recent_activity_summary : '';
+  output.public_social_links = Array.isArray(entry?.public_social_links) ? entry.public_social_links : [];
 
   return output;
 }

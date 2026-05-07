@@ -4,3 +4,5 @@ compatibility_date = "2026-04-03"
 
 [vars]
 SUMMARY_ALLOWED_ORIGIN = "https://rankistan.dev,https://www.rankistan.dev,https://sudo-ali-dev.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
+LEADERBOARD_JSON_URL = "https://sudo-ali-dev.github.io/pakdev-index/data.json"
+LEADERBOARD_KV_KEY = "leaderboard:latest"

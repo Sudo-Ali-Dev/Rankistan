@@ -83,6 +83,7 @@ jobs:
       - name: Build site
         env:
           VITE_SUMMARY_API_URL: ${{ vars.VITE_SUMMARY_API_URL || 'https://rankistan-summary-api.academics-ali.workers.dev' }}
+          VITE_LEADERBOARD_API_URL: ${{ vars.VITE_LEADERBOARD_API_URL || '' }}
         run: npm run build
 
       - name: Setup Pages

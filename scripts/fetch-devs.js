@@ -31,6 +31,15 @@ const MEANINGFUL_EVENT_TYPES = new Set([
   'ReleaseEvent'
 ]);
 
+const SPECIALTY_KEYWORDS = {
+  'AI/ML': ['ai', 'ml', 'machine learning', 'llm', 'nlp', 'computer vision', 'deep learning'],
+  Web: ['react', 'next.js', 'nextjs', 'frontend', 'backend', 'fullstack', 'api', 'express', 'django', 'flask'],
+  DevOps: ['docker', 'kubernetes', 'terraform', 'github actions', 'ci/cd', 'pipeline', 'deployment', 'cloud'],
+  Mobile: ['android', 'ios', 'react native', 'flutter', 'swift', 'kotlin', 'mobile'],
+  Data: ['data engineering', 'etl', 'analytics', 'postgres', 'mysql', 'mongodb', 'spark', 'pandas'],
+  'Open Source': ['open source', 'library', 'sdk', 'cli', 'framework', 'boilerplate', 'template']
+};
+
 const SEARCH_BATCHES = [
   { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
   { label: 'PK Jul2014-Jan2016', q: 'location:pakistan type:user repos:>3 followers:>1 created:2014-07-01..2016-01-31' },
@@ -500,6 +509,79 @@ function summarizeRepos(repos) {
   };
 }
 
+function inferPrimaryRole({ topLanguages = [], specialties = [], bio = '' }) {
+  const langs = topLanguages.map((value) => String(value).toLowerCase());
+  const bioLower = String(bio || '').toLowerCase();
+
+  if (specialties.includes('AI/ML')) return 'AI/ML Engineer';
+  if (specialties.includes('Mobile')) return 'Mobile Engineer';
+  if (specialties.includes('DevOps')) return 'DevOps Engineer';
+  if (specialties.includes('Data')) return 'Data Engineer';
+  if (specialties.includes('Web')) return 'Full-Stack Web Developer';
+
+  if (langs.includes('python')) return 'Software Engineer';
+  if (langs.includes('typescript') || langs.includes('javascript')) return 'Frontend/Full-Stack Developer';
+  if (langs.includes('java') || langs.includes('kotlin') || langs.includes('swift')) return 'Application Engineer';
+  if (bioLower.includes('architect')) return 'Software Architect';
+
+  return 'Software Developer';
+}
+
+function inferSpecialties({ bio = '', topRepos = [], topLanguages = [] }) {
+  const corpus = [
+    String(bio || ''),
+    ...topRepos.map((repo) => String(repo?.name || '')),
+    ...topRepos.map((repo) => String(repo?.description || '')),
+    ...topRepos.map((repo) => String(repo?.language || '')),
+    ...topLanguages.map((language) => String(language || ''))
+  ].join(' ').toLowerCase();
+
+  const specialties = [];
+  for (const [label, keywords] of Object.entries(SPECIALTY_KEYWORDS)) {
+    if (keywords.some((keyword) => corpus.includes(keyword))) {
+      specialties.push(label);
+    }
+  }
+
+  return specialties.slice(0, 4);
+}
+
+function buildRecentActivitySummary(eventCounts = {}) {
+  const pushes = Number(eventCounts.pushes || 0);
+  const prs = Number(eventCounts.prs || 0);
+  const issues = Number(eventCounts.issues || 0);
+  const releases = Number(eventCounts.releases || 0);
+
+  return `${pushes} pushes, ${prs} PRs, ${issues} issues, ${releases} releases in the last 30 days.`;
+}
+
+function buildNotableRepos(topRepos = []) {
+  return (Array.isArray(topRepos) ? topRepos : []).slice(0, 2).map((repo) => ({
+    name: String(repo?.name || ''),
+    url: String(repo?.url || ''),
+    stars: Number(repo?.stars || 0),
+    language: repo?.language ? String(repo.language) : ''
+  }));
+}
+
+function buildPublicSocialLinks(socials = [], linkedinUrl = '') {
+  const allowedProviders = new Set(['linkedin', 'twitter', 'x', 'website', 'blog']);
+  const links = [];
+
+  for (const social of socials) {
+    const provider = String(social?.provider || '').toLowerCase();
+    const url = String(social?.url || '').trim();
+    if (!url || !allowedProviders.has(provider)) continue;
+    links.push({ provider, url });
+  }
+
+  if (linkedinUrl && !links.some((entry) => entry.provider === 'linkedin')) {
+    links.push({ provider: 'linkedin', url: linkedinUrl });
+  }
+
+  return links.slice(0, 5);
+}
+
 async function fetchAllUserRepos(username, token) {
   const allRepos = [];
 
@@ -557,8 +639,21 @@ async function fetchDeveloperActivity(username, token) {
   const topRepos = mapTopRepos(repos);
   const digestRepos = buildDigestRepos(reposActive7d, repos);
   const linkedinUrl = extractLinkedinUrl(socials);
+  const specialties = inferSpecialties({
+    bio: profile.bio,
+    topRepos,
+    topLanguages: repoSummary.top_languages
+  });
+  const primaryRole = inferPrimaryRole({
+    topLanguages: repoSummary.top_languages,
+    specialties,
+    bio: profile.bio
+  });
 
   const activityMetrics = computeActivityMetrics(recentEvents);
+  const recentActivitySummary = buildRecentActivitySummary(activityMetrics.event_counts_30d);
+  const notableRepos = buildNotableRepos(topRepos);
+  const publicSocialLinks = buildPublicSocialLinks(socials, linkedinUrl);
 
   return {
     username: profile.login || username,
@@ -571,8 +666,13 @@ async function fetchDeveloperActivity(username, token) {
     public_repos: profile.public_repos || 0,
     total_stars: repoSummary.total_stars,
     top_repos: topRepos,
+    notable_repos: notableRepos,
     top_languages: repoSummary.top_languages,
+    primary_role: primaryRole,
+    specialties,
+    recent_activity_summary: recentActivitySummary,
     linkedin_url: linkedinUrl,
+    public_social_links: publicSocialLinks,
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
     event_counts_30d: activityMetrics.event_counts_30d,
@@ -580,7 +680,8 @@ async function fetchDeveloperActivity(username, token) {
     longest_gap_days: activityMetrics.longest_gap_days,
     repos_active_7d: reposActive7d,
     digest_repos: digestRepos,
-    raw_events_60d: recentEvents
+    raw_events_60d: recentEvents,
+    tags: specialties.slice(0, 3)
   };
 }
 

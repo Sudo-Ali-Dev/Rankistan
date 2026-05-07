@@ -13,6 +13,9 @@ const KEYWORD_DICT = {
     'express', 'fastapi', 'django', 'flask', 'tailwind',
     'typescript', 'rest api', 'graphql', 'web app'
   ],
+  Backend: [
+    'node', 'nodejs', 'express', 'fastify', 'nestjs', 'django', 'flask', 'spring', 'laravel'
+  ],
   DevOps: [
     'docker', 'kubernetes', 'ci/cd', 'pipeline', 'terraform',
     'ansible', 'nginx', 'deployment', 'github actions', 'workflow',
@@ -22,6 +25,9 @@ const KEYWORD_DICT = {
     'flutter', 'android', 'ios', 'react native', 'swift',
     'kotlin', 'expo', 'mobile app', 'android app',
     'ios app', 'cross-platform'
+  ],
+  Security: [
+    'security', 'cyber', 'vulnerability', 'pentest', 'owasp', 'encryption'
   ],
   Data: [
     'pandas', 'spark', 'sql', 'database', 'etl', 'analytics',
@@ -78,6 +84,14 @@ function buildDeveloperCorpus(dev) {
 }
 
 function matchTagsForDeveloper(dev, keywordDict = KEYWORD_DICT) {
+  if (Array.isArray(dev?.tags) && dev.tags.length > 0) {
+    return dev.tags.slice(0, 4);
+  }
+
+  if (Array.isArray(dev?.specialties) && dev.specialties.length > 0) {
+    return dev.specialties.slice(0, 4);
+  }
+
   const corpus = buildDeveloperCorpus(dev);
   const matchedTags = [];
 

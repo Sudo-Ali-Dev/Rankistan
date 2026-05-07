@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 
 const SCORING_WEIGHTS = [
-  { field: 'Stars', weight: '× 2', note: 'Capped at 2,000 to prevent outlier dominance' },
-  { field: 'Events (30d)', weight: '× 3', note: 'Meaningful contributions in the last 30 days' },
+  { field: 'Stars', weight: '× 2', note: 'Capped at 250 to prevent outlier dominance' },
+  { field: 'Events (30d)', weight: 'Weighted', note: 'Releases 5, PRs 4, Pushes 2, Issues 1.5' },
   { field: 'Followers', weight: '× 1', note: 'Community reach' },
   { field: 'Public Repos', weight: '× 0.5', note: 'Breadth of open-source work' },
 ];
@@ -79,13 +79,13 @@ const FAQ = [
   { q: 'How often is the leaderboard updated?', a: 'Every hour. An external cron service triggers the GitHub Actions workflow 24 times per day — one batch per hour. A full cycle through all developers completes in 24 hours.' },
   { q: 'Why am I not on the leaderboard?', a: 'You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. Your GitHub profile must also include "Pakistan" in the location field.' },
   { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
-  { q: 'Why is my score lower than expected?', a: 'Stars are capped at 2,000 for scoring purposes. Accounts younger than 6 months receive a 0.5× penalty on their entire score. The score also weighs recent 30-day activity heavily (3× multiplier).' },
+  { q: 'Why is my score lower than expected?', a: 'Stars are capped at 250 for scoring. Accounts younger than 6 months receive a 0.5× penalty on their final score. Activity is weighted by event type (releases and PRs score higher than pushes and issues).' },
   { q: 'What is the "new account penalty"?', a: 'If your GitHub account is less than 6 months old, your final score is halved (multiplied by 0.5). This prevents newly created accounts from dominating the board.' },
   { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It scans 40,000+ profiles, re-evaluates 20,000+ candidates for score changes, then applies strict activity gates before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
   { q: 'Can I register manually?', a: 'Yes — use the Register tab to enter a GitHub username. It validates the profile against all pipeline criteria and shows you exactly which thresholds you pass or fail.' },
-  { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/pakdev-index.' },
+  { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is open source on GitHub.' },
 ];
 
 export default function About() {
@@ -246,7 +246,7 @@ export default function About() {
 
             <div className="bg-surface-container-low border border-outline-variant p-5 mb-6 font-mono text-sm leading-relaxed">
               <div className="text-primary">
-                base_score = (stars × 2) + (events_30d × 3) + (followers × 1) + (public_repos × 0.5)
+                base_score = (min(stars, 250) × 2) + weighted_events_30d + (followers × 1) + (public_repos × 0.5)
               </div>
               <div className="text-tertiary mt-2">
                 final_score = base_score × (account_age &lt; 6mo ? 0.5 : 1.0)

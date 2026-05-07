@@ -22,6 +22,9 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
   const cleanLocation = normalizeLocationForDisplay(dev?.location);
   const linkedinUrl = typeof dev?.linkedin_url === 'string' ? dev.linkedin_url.trim() : '';
   const hasLinkedin = linkedinUrl !== '';
+  const specialties = Array.isArray(dev?.specialties) && dev.specialties.length > 0
+    ? dev.specialties
+    : (Array.isArray(dev?.tags) ? dev.tags : []);
   
   return (
     <div className="border-b border-outline-variant">
@@ -82,6 +85,12 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
                 <p className="text-sm text-on-surface-variant leading-relaxed font-body">
                   {loadingSummaryUser === username ? "Generating AI Summary..." : (summary && summary !== 'error') ? summary : dev.bio || "No biography available."}
                 </p>
+                <div className="mt-3 font-mono text-[10px] uppercase text-tertiary tracking-wider">
+                  {dev?.primary_role || 'Software Developer'}
+                </div>
+                <div className="mt-2 text-[11px] text-outline leading-relaxed">
+                  {dev?.recent_activity_summary || 'Recent activity details unavailable.'}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="border-l border-outline-variant pl-4 py-2">
@@ -93,6 +102,18 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
                   <div className="font-headline font-bold text-xl">{dev.public_repos || 0}</div>
                 </div>
               </div>
+              {specialties.length > 0 && (
+                <div>
+                  <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-2">Specialties</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {specialties.slice(0, 4).map((item) => (
+                      <span key={item} className="text-[10px] font-mono px-2 py-0.5 border border-outline-variant bg-surface">
+                        {String(item).toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="md:col-span-8 flex flex-col">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow">
@@ -127,6 +148,18 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
                   </div>
                 </div>
               </div>
+              {Array.isArray(dev?.notable_repos) && dev.notable_repos.length > 0 && (
+                <div className="mt-4 border border-outline-variant bg-surface p-3">
+                  <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-2">Notable_Repos</h3>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {dev.notable_repos.slice(0, 2).map((repo) => (
+                      <a key={repo.name} href={repo.url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline font-mono truncate">
+                        {repo.name} {repo.stars ? `• ⭐ ${repo.stars}` : ''}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <a href={`https://github.com/${username}`} target="_blank" rel="noreferrer" className="text-center bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase hover:text-primary transition-all active:translate-y-px">
                   View GitHub
@@ -156,6 +189,21 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
                   Follow Node
                 </a>
               </div>
+              {Array.isArray(dev?.public_social_links) && dev.public_social_links.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {dev.public_social_links.slice(0, 3).map((link) => (
+                    <a
+                      key={`${link.provider}-${link.url}`}
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] uppercase font-mono border border-outline-variant px-2 py-1 bg-surface hover:text-primary"
+                    >
+                      {String(link.provider || 'link')}
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
