@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CACHE_KEYS, cache } from '../utils/cache';
 import { isLikelyPakistaniLocation, normalizeLocationForDisplay } from '../utils/location';
+import scoreConfig from '../../score-config.json';
 
 const MEANINGFUL_EVENTS = new Set(['PushEvent', 'PullRequestEvent', 'IssuesEvent', 'ReleaseEvent']);
 
@@ -128,6 +129,7 @@ export default function Register({ onChangeTab }) {
         role: d.bio || 'Systems Engineer',
         location: normalizeLocationForDisplay(d.location),
         stack: d.top_languages?.[0] || (d.public_repos > 50 ? 'Senior' : 'Mid-Level'),
+        score: d.score,
         timeAgo: `${(index + 1) * 14}m ago`,
         isNew: false,
       }));
@@ -208,9 +210,40 @@ export default function Register({ onChangeTab }) {
         }
       } catch (e) { /* ignored */ }
 
+      let totalStars = 0;
+      try {
+        for (let page = 1; ; page++) {
+          const repoRes = await fetch(`https://api.github.com/users/${data.login}/repos?per_page=100&page=${page}`);
+          if (!repoRes.ok) break;
+          const repos = await repoRes.json();
+          if (!Array.isArray(repos) || repos.length === 0) break;
+          repos.forEach(r => { totalStars += r.stargazers_count || 0; });
+          if (repos.length < 100) break;
+        }
+      } catch (e) { /* ignored */ }
+
       const { count, longestGap } = computeActivity(allEvents);
       const hasContributions = count >= CRITERIA.MIN_CONTRIBUTIONS_60D;
       const hasNoLongGaps = longestGap <= CRITERIA.MAX_INACTIVITY_GAP_DAYS;
+
+      // Calculate score
+      const now = Date.now();
+      const cutoff30d = 30 * 24 * 60 * 60 * 1000;
+      let activityScore = 0;
+      allEvents.forEach(e => {
+        const t = new Date(e.created_at).getTime();
+        if (t >= now - cutoff30d) {
+          if (e.type === 'PushEvent') activityScore += scoreConfig.WEIGHTS.push;
+          if (e.type === 'PullRequestEvent') activityScore += scoreConfig.WEIGHTS.pr;
+          if (e.type === 'IssuesEvent') activityScore += scoreConfig.WEIGHTS.issue;
+          if (e.type === 'ReleaseEvent') activityScore += scoreConfig.WEIGHTS.release;
+        }
+      });
+      const cappedStars = Math.min(totalStars, scoreConfig.MAX_STARS_FOR_SCORING);
+      const cappedFollowers = Math.min(data.followers || 0, scoreConfig.MAX_FOLLOWERS_FOR_SCORING);
+      const baseScore = (cappedStars * scoreConfig.STAR_WEIGHT) + activityScore + (cappedFollowers * scoreConfig.WEIGHTS.followers) + ((data.public_repos || 0) * scoreConfig.WEIGHTS.publicRepos);
+      const agePenalty = ageDays < scoreConfig.SIX_MONTHS_DAYS ? 0.5 : 1;
+      const calculatedScore = Math.round(baseScore * agePenalty);
 
       setChecks((c) => ({
         ...c,
@@ -235,9 +268,12 @@ export default function Register({ onChangeTab }) {
         role: data.bio || 'Systems Engineer',
         location: normalizeLocationForDisplay(data.location),
         stack: data.public_repos > 50 ? 'Senior' : 'Mid-Level',
+        score: calculatedScore,
         timeAgo: 'Just Now',
         isNew: true,
       };
+
+      setProfileData({ ...data, _calculatedScore: calculatedScore, _agePenaltyApplied: agePenalty < 1 });
 
       try {
         const stored = JSON.parse(localStorage.getItem('pakdev_pending_nodes') || '[]');
@@ -367,8 +403,11 @@ export default function Register({ onChangeTab }) {
               <div ref={statusPanelRef} className="mt-8 font-mono text-xs text-tertiary border border-tertiary/30 bg-tertiary/10 p-4 animate-pulse">
                 &gt; Profile Validated.<br />
                 &gt; All criteria passed.<br />
-                &gt; Awaiting standard cron synchronization.<br />
-                Your metrics will appear in the leaderboard shortly.
+                &gt; Estimated Score: {profileData?._calculatedScore} {profileData?._agePenaltyApplied && <span className="text-error">(0.5x New Account Penalty Applied)</span>}<br />
+                <br />
+                <span className="text-tertiary/80">
+                  * Note: The leaderboard updates periodically in batches. Your profile and official score will be visible after the next global synchronization.
+                </span>
               </div>
             )}
           </div>
@@ -410,7 +449,7 @@ export default function Register({ onChangeTab }) {
                   </div>
                   <div className="col-span-4 p-4 text-right relative z-10">
                     <div className={`inline-block px-2 py-1 font-mono text-[9px] uppercase ${dev.isNew ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-secondary-container text-on-secondary-container'}`}>
-                      {dev.stack}
+                      {typeof dev.score !== 'undefined' ? `Score: ${dev.score}` : dev.stack}
                     </div>
                     <div className={`font-mono text-[9px] mt-1 uppercase ${dev.isNew ? 'text-tertiary' : 'text-outline-variant'}`}>{dev.timeAgo}</div>
                   </div>
