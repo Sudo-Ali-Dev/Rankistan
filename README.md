@@ -45,7 +45,7 @@ The scanner is distributed across 24 hourly batches, so the full ecosystem is re
 |---|---|---|
 | **Discover** | `scripts/fetch-devs.js` | Searches GitHub for developers in Pakistan, split into multiple date ranges to stay within API search result limits (< 1000) |
 | **Fetch** | `scripts/fetch-devs.js` | Fetches profile, events (up to 2 pages / 200 events, last 60 days), repos, and linked social accounts (for LinkedIn) for each developer |
-| **Score** | `scripts/score.js` | Calculates a weighted score based on stars, recent activity, followers, and repo count |
+| **Score** | `score-config.json` & `scripts/score.js` | Calculates a weighted score based on stars, recent activity, followers, and repo count using unified configuration |
 | **Leaderboard** | `scripts/write-leaderboard.js` | Writes the final ranked `data.json` with public-safe fields |
 
 ### Activity Filter
