@@ -2,22 +2,15 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const config = require('../score-config.json');
 
-const WEIGHTS = {
-  release:     5,
-  pr:          4,
-  push:        2,
-  issue:       1.5,
-  followers:   1,
-  publicRepos: 0.5
-};
-
-const STAR_WEIGHT = 2;
+const WEIGHTS = config.WEIGHTS;
+const STAR_WEIGHT = config.STAR_WEIGHT;
 // 3.125 is the exact average of the new individual weights (5 + 4 + 2 + 1.5 = 12.5 / 4)
-const FALLBACK_ACTIVITY_WEIGHT = 3.125;
-const SIX_MONTHS_DAYS = 180;
-const MAX_STARS_FOR_SCORING = 250;
-const MAX_FOLLOWERS_FOR_SCORING = 500;
+const FALLBACK_ACTIVITY_WEIGHT = config.FALLBACK_ACTIVITY_WEIGHT;
+const SIX_MONTHS_DAYS = config.SIX_MONTHS_DAYS;
+const MAX_STARS_FOR_SCORING = config.MAX_STARS_FOR_SCORING;
+const MAX_FOLLOWERS_FOR_SCORING = config.MAX_FOLLOWERS_FOR_SCORING;
 
 function daysSince(date) {
   if (!date) {
