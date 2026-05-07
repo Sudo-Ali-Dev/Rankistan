@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CACHE_KEYS, cache } from '../utils/cache';
 import { isLikelyPakistaniLocation, normalizeLocationForDisplay } from '../utils/location';
+import { loadLeaderboardData } from '../utils/leaderboard-data';
 
 const MEANINGFUL_EVENTS = new Set(['PushEvent', 'PullRequestEvent', 'IssuesEvent', 'ReleaseEvent']);
 
@@ -62,6 +62,7 @@ export default function Register({ onChangeTab }) {
   const [recentDevs, setRecentDevs] = useState([]);
   const statusPanelRef = useRef(null);
   const [statusPanelOffset, setStatusPanelOffset] = useState(0);
+  const [recentLoadError, setRecentLoadError] = useState('');
 
   useEffect(() => {
     if (status !== 'complete' || !statusPanelRef.current) {
@@ -114,13 +115,11 @@ export default function Register({ onChangeTab }) {
 
       let lb = [];
       try {
-        let leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
-        if (!leaderboardPayload || cache.isStale(CACHE_KEYS.LEADERBOARD)) {
-          const res = await fetch('./data.json', { cache: 'no-store' });
-          if (res.ok) leaderboardPayload = await res.json();
-        }
+        const leaderboardPayload = await loadLeaderboardData();
         lb = Array.isArray(leaderboardPayload?.leaderboard) ? leaderboardPayload.leaderboard : [];
-      } catch (e) { /* ignored */ }
+      } catch (e) {
+        setRecentLoadError(e?.message || 'Unable to load recent sync stream.');
+      }
 
       const formattedLb = lb.slice(0, RECENT_SYNC_LIMIT).map((d, index) => ({
         avatar: d.avatar_url,
@@ -389,6 +388,11 @@ export default function Register({ onChangeTab }) {
               {recentDevs.length === 0 && (
                 <div className="p-8 text-center text-outline-variant font-mono text-xs uppercase animate-pulse">
                   Awaiting stream segments...
+                </div>
+              )}
+              {recentLoadError && (
+                <div className="p-4 text-center text-error font-mono text-[10px] uppercase border-b border-outline-variant">
+                  {recentLoadError}
                 </div>
               )}
 

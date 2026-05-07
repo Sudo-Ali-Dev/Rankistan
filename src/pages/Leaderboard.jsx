@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DevCard from '../components/DevCard';
-import { CACHE_KEYS, cache } from '../utils/cache';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { enrichLeaderboardWithTags, getAvailableTags } from '../utils/tags';
 import { generateDeveloperSummary } from '../utils/groq';
+import { computeBatchMeta, loadLeaderboardData } from '../utils/leaderboard-data';
 
 const SORT_OPTIONS = [
   { key: 'score_desc', label: 'SCORE DESC', fn: (a, b) => (b.score || 0) - (a.score || 0) },
@@ -13,6 +13,16 @@ const SORT_OPTIONS = [
   { key: 'followers_desc', label: 'FOLLOWERS', fn: (a, b) => (b.followers || 0) - (a.followers || 0) },
   { key: 'activity_desc', label: 'ACTIVITY', fn: (a, b) => (b.events_30d || 0) - (a.events_30d || 0) },
 ];
+
+function formatRefreshDate(value) {
+  if (!value) return 'Unknown';
+  return new Date(value).toLocaleString('en-PK', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatRefreshTime(value) {
+  if (!value) return 'Unknown';
+  return new Date(value).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' });
+}
 
 /** Public leaderboard fields only. Do not add `linkedin_url` or other private contact / social URLs. */
 const CSV_EXPORT_COLUMNS = [
@@ -47,6 +57,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange }) {
   const [summaryByUser, setSummaryByUser] = useState({});
   const [loadingSummaryUser, setLoadingSummaryUser] = useState('');
   const [sortIndex, setSortIndex] = useState(0);
+  const [meta, setMeta] = useState(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const devsPerPage = 10;
@@ -59,22 +70,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange }) {
       setError('');
 
       try {
-        let leaderboardPayload;
-        try {
-          const response = await fetch('./data.json', { cache: 'no-store' });
-          if (response.ok) {
-            leaderboardPayload = await response.json();
-            cache.set(CACHE_KEYS.LEADERBOARD, leaderboardPayload);
-          }
-        } catch {
-          leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
-        }
-        if (!leaderboardPayload) {
-          leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
-        }
-        if (!leaderboardPayload) {
-          throw new Error('Failed to load data.json and no cached data available.');
-        }
+        const leaderboardPayload = await loadLeaderboardData();
 
         if (!alive) return;
 
@@ -83,6 +79,11 @@ export default function Leaderboard({ searchTerm = '', onSearchChange }) {
           : [];
 
         setLeaderboard(enrichLeaderboardWithTags(rows));
+        setMeta({
+          lastUpdated: leaderboardPayload?.last_updated || '',
+          totalDevs: Number(leaderboardPayload?.total_devs || rows.length),
+          ...computeBatchMeta(new Date())
+        });
       } catch (loadError) {
         if (!alive) return;
         setError(loadError?.message || 'Failed to load frontend data.');
@@ -227,9 +228,30 @@ export default function Leaderboard({ searchTerm = '', onSearchChange }) {
       {loading ? (
           <div className="text-center py-20 font-mono text-tertiary animate-pulse">LOADING_DATA_STREAM...</div>
       ) : error ? (
-          <div className="text-center py-20 font-mono text-error">{error}</div>
+          <div className="text-center py-20 font-mono text-error">
+            <div className="mb-4">{error}</div>
+            <button
+              type="button"
+              className="border border-outline-variant px-4 py-2 text-xs text-on-surface hover:text-primary"
+              onClick={() => window.location.reload()}
+            >
+              RETRY
+            </button>
+          </div>
       ) : (
         <>
+          <div className="mb-6 border border-outline-variant bg-surface-container-lowest p-4 grid grid-cols-1 md:grid-cols-4 gap-2 font-mono text-[11px] uppercase tracking-wider">
+            <div className="text-outline">Last Refresh: <span className="text-on-surface">{formatRefreshDate(meta?.lastUpdated)}</span></div>
+            <div className="text-outline">Batch Running: <span className="text-on-surface">#{String(meta?.currentBatch ?? 0).padStart(2, '0')}</span></div>
+            <div className="text-outline">Next Refresh: <span className="text-on-surface">{formatRefreshTime(meta?.nextRefreshIso)}</span></div>
+            <div className="text-outline">Indexed Devs: <span className="text-on-surface">{Number(meta?.totalDevs || filteredLeaderboard.length).toLocaleString()}</span></div>
+          </div>
+          <div className="mb-6 border border-outline-variant bg-surface-container-low p-4">
+            <div className="font-mono text-[10px] text-tertiary uppercase tracking-widest mb-2">Ranking Transparency</div>
+            <div className="font-mono text-xs text-outline">
+              Score = (stars capped at 250 × 2) + weighted 30d events + followers + repos. Activity filters: 30+ meaningful contributions in 60 days, max 30-day inactivity gap, account age 30+ days.
+            </div>
+          </div>
           <div className="border border-outline-variant overflow-hidden bg-surface-container-lowest">
             <div className="hidden md:grid grid-cols-12 md:gap-x-4 bg-surface-container-lowest text-outline font-mono text-[10px] uppercase tracking-widest py-4 px-6 border-b border-outline-variant">
               <div className="col-span-1">Rank</div>
@@ -242,9 +264,9 @@ export default function Leaderboard({ searchTerm = '', onSearchChange }) {
 
             <div>
               {currentDevs.length === 0 ? (
-                <div className="text-center py-12 font-mono text-outline-variant text-xs uppercase">
-                  No developers match your search.
-                </div>
+                  <div className="text-center py-12 font-mono text-outline-variant text-xs uppercase px-6">
+                    {leaderboard.length === 0 ? 'No developers are available yet. Please refresh in a few minutes.' : 'No developers match your current search/filter.'}
+                  </div>
               ) : (
                 currentDevs.map(dev => (
                   <DevCard

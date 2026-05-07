@@ -144,7 +144,7 @@ function validateSummary(text) {
 function buildCorsHeaders(corsOrigin = '*') {
   return {
     'Access-Control-Allow-Origin': corsOrigin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type'
   };
 }
@@ -323,6 +323,35 @@ async function callGroqWithKeyFallback(dev, apiKeys) {
   throw lastError || new Error('All Groq keys failed.');
 }
 
+async function fetchLeaderboardPayload(env) {
+  const kvKey = typeof env.LEADERBOARD_KV_KEY === 'string' && env.LEADERBOARD_KV_KEY.trim()
+    ? env.LEADERBOARD_KV_KEY.trim()
+    : 'leaderboard:latest';
+
+  if (env.LEADERBOARD_KV && typeof env.LEADERBOARD_KV.get === 'function') {
+    const fromKv = await env.LEADERBOARD_KV.get(kvKey);
+    if (fromKv) {
+      try {
+        return JSON.parse(fromKv);
+      } catch (error) {
+        throw new Error(`Invalid JSON in LEADERBOARD_KV for key "${kvKey}": ${error.message}`);
+      }
+    }
+  }
+
+  const upstream = normalizeText(env.LEADERBOARD_JSON_URL, 500);
+  if (!upstream) {
+    throw new Error('Leaderboard source not configured. Set LEADERBOARD_JSON_URL or LEADERBOARD_KV binding.');
+  }
+
+  const response = await fetch(upstream, { cf: { cacheTtl: 60, cacheEverything: true } });
+  if (!response.ok) {
+    throw new Error(`Failed to load leaderboard source (${response.status}).`);
+  }
+
+  return response.json();
+}
+
 export default {
   async fetch(request, env) {
     const corsOrigin = resolveCorsOrigin(request, env);
@@ -330,6 +359,20 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return jsonResponse({}, 204, corsOrigin);
+    }
+
+    if (url.pathname === '/api/leaderboard') {
+      if (request.method !== 'GET') {
+        return jsonResponse({ error: 'Method not allowed.' }, 405, corsOrigin);
+      }
+
+      try {
+        const payload = await fetchLeaderboardPayload(env);
+        return jsonResponse(payload, 200, corsOrigin);
+      } catch (error) {
+        console.error(`cloudflare leaderboard endpoint failed: ${error.message}`);
+        return jsonResponse({ error: 'Failed to load leaderboard.' }, 502, corsOrigin);
+      }
     }
 
     if (url.pathname !== '/api/dev-summary') {

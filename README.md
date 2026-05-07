@@ -7,6 +7,7 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 ## Contents
 
 - [Frontend](#frontend)
+- [Product Direction](#product-direction)
 - [How It Works](#how-it-works)
 - [Running Locally](#running-locally)
 - [Scheduling](#scheduling)
@@ -24,6 +25,19 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 | **About** | How the index works: scoring, activity filters, hourly batches, and FAQs |
 
 The map assigns each developer to a canonical place key using a deterministic normalization strategy in `src/utils/location.js`. It does token-aware country detection, alias-based city matching (including common spellings and local variants), and safe fallback handling for unresolved locations.
+
+## Product Direction
+
+Rankistan targets:
+- Developers (visibility of open-source activity)
+- Recruiters (discover active talent signals)
+- Community organizers (ecosystem health and regional insights)
+
+MVP scope:
+- Leaderboard
+- Rich developer profile cards
+- Developer map
+- Weekly digest + archives (in progress)
 
 ## How It Works
 
@@ -224,7 +238,10 @@ Configuration model:
 - **If you only have one key:** use `GROQ_API_KEY`.
 - **Optional alternative (instead of list):** indexed secrets like `GROQ_API_KEY_1`, `GROQ_API_KEY_2` (and legacy names like `gsk_key_1`) are also supported.
 - `VITE_SUMMARY_API_URL`: public frontend pointer to Worker origin.
+- `VITE_LEADERBOARD_API_URL`: optional frontend pointer to Worker leaderboard endpoint (`/api/leaderboard`) with static fallback.
 - `SUMMARY_ALLOWED_ORIGIN`: allowed frontend origin for Worker CORS.
+- `LEADERBOARD_JSON_URL`: Worker upstream fallback source for leaderboard JSON.
+- `LEADERBOARD_KV_KEY`: key used when `LEADERBOARD_KV` binding is configured.
 - `GROQ_API_KEY_PAKDEVINDEX`: still used by CI digest generation (`scripts/generate-digest.js`).
 
 ## TODO

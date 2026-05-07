@@ -1,3 +1,5 @@
 GROQ_API_KEY=replace-with-your-groq-key
 GROQ_API_KEYS=key_1,key_2,key_3
 SUMMARY_ALLOWED_ORIGIN=http://localhost:5173
+LEADERBOARD_JSON_URL=https://sudo-ali-dev.github.io/pakdev-index/data.json
+LEADERBOARD_KV_KEY=leaderboard:latest
