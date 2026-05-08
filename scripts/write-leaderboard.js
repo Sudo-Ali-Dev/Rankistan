@@ -8,7 +8,7 @@ const STRIP_FIELDS = new Set([
   'longest_gap_days',
   'raw_events_60d',
   'repos_active_7d',
-  'fol lowing',
+  'following',
   'age_penalty_applied',
   'event_counts_30d',
   'all_repos'
