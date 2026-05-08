@@ -8,9 +8,10 @@ const STRIP_FIELDS = new Set([
   'longest_gap_days',
   'raw_events_60d',
   'repos_active_7d',
-  'following',
+  'fol lowing',
   'age_penalty_applied',
-  'event_counts_30d' 
+  'event_counts_30d',
+  'all_repos'
 ]);
 
 const OUTPUT_FIELDS = [
@@ -74,9 +75,6 @@ function stripInternalFields(entry) {
   for (const field of OUTPUT_FIELDS) {
     output[field] = normalized[field];
   }
-
-  // Module 6 computes tags client-side in browser; server output always includes placeholder.
-  output.tags = [];
 
   return output;
 }

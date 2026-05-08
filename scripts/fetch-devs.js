@@ -397,6 +397,18 @@ function mapTopRepos(repos) {
     .slice(0, 3);
 }
 
+function mapAllRepos(repos) {
+  return (repos || [])
+    .map((repo) => ({
+      name: repo?.name || '',
+      description: repo?.description || '',
+      stars: Number(repo?.stargazers_count || 0),
+      language: repo?.language || null
+    }))
+    .sort((a, b) => b.stars - a.stars)
+    .slice(0, 20);
+}
+
 function buildDigestRepos(reposActive7d, repos) {
   if (!Array.isArray(reposActive7d) || reposActive7d.length === 0 || !Array.isArray(repos) || repos.length === 0) {
     return [];
@@ -500,6 +512,161 @@ function summarizeRepos(repos) {
   };
 }
 
+const TAG_KEYWORDS = {
+  'AI/ML': [
+    'ai', 'ml', 'machine learning', 'deep learning', 'neural network', 'neural',
+    'llm', 'large language model', 'gpt', 'claude', 'gemini', 'openai',
+    'transformer', 'bert', 'attention', 'nlp', 'natural language', 'text generation',
+    'computer vision', 'cv', 'image recognition', 'object detection',
+    'tensorflow', 'pytorch', 'keras', 'scikit-learn', 'sklearn',
+    'model training', 'inference', 'dataset', 'data annotation',
+    'reinforcement learning', 'rl', 'gan', 'diffusion',
+    'ai model', 'ai tool', 'ai-powered', 'artificial intelligence', 'pytorch lightning'
+  ],
+  'Web Dev': [
+    'react', 'vue', 'angular', 'svelte', 'nextjs', 'next.js', 'nuxt', 'gatsby',
+    'node', 'nodejs', 'express', 'fastapi', 'django', 'flask', 'rails', 'spring',
+    'html', 'css', 'sass', 'scss', 'tailwind', 'bootstrap', 'material',
+    'typescript', 'javascript', 'js', 'jsx', 'tsx',
+    'frontend', 'front-end', 'back-end', 'backend', 'fullstack', 'full-stack', 'full stack',
+    'rest api', 'restful', 'graphql', 'apollo',
+    'web app', 'website', 'landing page', 'web service', 'http',
+    'vuejs', 'reactjs', 'angularjs', 'jquery', 'remix', 'astro'
+  ],
+  'DevOps': [
+    'docker', 'kubernetes', 'k8s', 'helm', 'container', 'containerization',
+    'terraform', 'ansible', 'puppet', 'chef', 'cloudformation',
+    'aws', 'amazon web services', 'gcp', 'google cloud', 'azure',
+    'ci/cd', 'cicd', 'pipeline', 'jenkins', 'gitlab ci', 'github actions', 'circleci',
+    'devops', 'sre', 'site reliability', 'infrastructure',
+    'nginx', 'apache', 'load balancer', 'reverse proxy',
+    'deployment', 'ci', 'cd', 'automation', 'iac', 'infrastructure as code',
+    'serverless', 'lambda', 'cloud run', 'cloud functions',
+    'ingress', 'service mesh', 'istio', 'consul', 'argocd', 'flux'
+  ],
+  'Mobile': [
+    'flutter', 'react native', 'native', 'xamarin', 'cordova', 'ionic',
+    'android', 'ios', 'swift', 'kotlin', 'java',
+    'mobile app', 'mobile development', 'app development',
+    'expo', 'react native cli', 'swiftui', 'jetpack compose',
+    'mobile', 'smartphone', 'ios app', 'android app',
+    'cross-platform', 'hybrid app', 'mobile-first',
+    'objective-c', 'uikit', 'android studio', 'dart'
+  ],
+  'Data Eng': [
+    'sql', 'postgresql', 'mysql', 'mariadb', 'mongodb', 'redis', 'elasticsearch',
+    'spark', 'hadoop', 'hive', 'kafka', 'flink', 'storm',
+    'etl', 'elt', 'data pipeline', 'data flow',
+    'pandas', 'numpy', 'scipy', 'data processing',
+    'airflow', 'dag', 'workflow', 'scheduler',
+    'big data', 'data lake', 'data warehouse', 'datalake',
+    'analytics', 'data analysis', 'business intelligence', 'bi',
+    'tableau', 'powerbi', 'looker',
+    'database', 'db', 'nosql', 'timeseries', 'grafana', 'prometheus'
+  ],
+  'Security': [
+    'security', 'cybersecurity', 'infosec', 'information security',
+    'penetration', 'pen test', 'pentesting', 'pentest',
+    'vulnerability', 'exploit', 'cve', 'bug bounty', 'vulnerability research',
+    'cipher', 'encryption', 'cryptography', 'crypto', 'decrypt', 'encrypt',
+    'hash', 'hashing', 'md5', 'sha', 'aes', 'rsa',
+    'auth', 'authentication', 'authorization', 'oauth', 'oauth2', 'saml',
+    'jwt', 'token', 'session', 'access control',
+    'ssl', 'tls', 'https', 'certificate', 'ca',
+    'security audit', 'security testing', 'security tool',
+    'infosec', 'soc', 'security operations', 'siem', 'zap', 'burp'
+  ],
+  'Blockchain': [
+    'blockchain', 'ethereum', 'solana', 'polygon', 'avalanche', 'cardano',
+    'solidity', 'rust', 'vyper',
+    'web3', 'web3.js', 'ethers.js', 'wagmi', 'rainbowkit',
+    'defi', 'decentralized finance', 'dex', 'decentralized exchange',
+    'crypto', 'cryptocurrency', 'bitcoin', 'btc', 'eth', 'ethereum',
+    'smart contract', 'contract', 'erc20', 'erc721',
+    'nft', 'non-fungible token', 'token', 'tokenization',
+    'dao', 'decentralized', 'governance',
+    'chainlink', 'ipfs', 'filecoin', 'decentralized storage',
+    'web3 developer', 'solidity developer', 'depin'
+  ],
+  'Open Source': [
+    'library', 'package', 'npm', 'pip', 'gem', 'cargo', 'maven', 'gradle',
+    'sdk', 'module', 'plugin', 'extension',
+    'cli', 'command line', 'terminal tool', 'command-line tool',
+    'framework', 'boilerplate', 'starter kit', 'template',
+    'utility', 'tool', 'opensource', 'open source', 'oss',
+    'publish', 'distribution', 'npm package', 'pip package',
+    'reusable', 'component', 'library', 'monorepo'
+  ]
+};
+
+const PRIMARY_CATEGORIES = ['AI/ML', 'Web Dev', 'DevOps', 'Mobile', 'Data Eng', 'Security', 'Blockchain'];
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildRegex(keyword) {
+  try {
+    const escaped = escapeRegex(keyword);
+    return new RegExp(`\\b${escaped}\\b`, 'i');
+  } catch {
+    return null;
+  }
+}
+
+function buildDeveloperCorpus(dev) {
+  const allRepos = Array.isArray(dev?.all_repos) ? dev.all_repos : [];
+  const topRepos = Array.isArray(dev?.top_repos) ? dev.top_repos : [];
+  const digestRepos = Array.isArray(dev?.digest_repos) ? dev.digest_repos : [];
+  const topLangs = Array.isArray(dev?.top_languages) ? dev.top_languages : [];
+
+  const parts = [
+    dev?.bio == null ? '' : String(dev.bio),
+    ...allRepos.map((repo) => (repo?.name == null ? '' : String(repo.name))),
+    ...allRepos.map((repo) => (repo?.description == null ? '' : String(repo.description))),
+    ...allRepos.map((repo) => (repo?.language == null ? '' : String(repo.language))),
+    ...topRepos.map((repo) => (repo?.name == null ? '' : String(repo.name))),
+    ...topRepos.map((repo) => (repo?.description == null ? '' : String(repo.description))),
+    ...digestRepos.map((repo) => (repo?.name == null ? '' : String(repo.name))),
+    ...digestRepos.map((repo) => (repo?.description == null ? '' : String(repo.description))),
+    ...topLangs.map((language) => (language == null ? '' : String(language)))
+  ];
+
+  return parts.join(' ').toLowerCase();
+}
+
+function computeTags(dev) {
+  const corpus = buildDeveloperCorpus(dev);
+  const tags = [];
+
+  for (const category of PRIMARY_CATEGORIES) {
+    const keywords = TAG_KEYWORDS[category];
+    if (!Array.isArray(keywords)) continue;
+
+    const matched = keywords.some((keyword) => {
+      const regex = buildRegex(keyword);
+      return regex && regex.test(corpus);
+    });
+
+    if (matched) {
+      tags.push(category);
+      break;
+    }
+  }
+
+  const openSourceKeywords = TAG_KEYWORDS['Open Source'];
+  const isOpenSource = openSourceKeywords.some((keyword) => {
+    const regex = buildRegex(keyword);
+    return regex && regex.test(corpus);
+  });
+
+  if (isOpenSource) {
+    tags.push('Open Source');
+  }
+
+  return tags;
+}
+
 async function fetchAllUserRepos(username, token) {
   const allRepos = [];
 
@@ -555,12 +722,13 @@ async function fetchDeveloperActivity(username, token) {
   const repoSummary = summarizeRepos(repos);
   const reposActive7d = extractReposPushedInLast7Days(recentEvents).map((repo) => repo.name);
   const topRepos = mapTopRepos(repos);
+  const allRepos = mapAllRepos(repos);
   const digestRepos = buildDigestRepos(reposActive7d, repos);
   const linkedinUrl = extractLinkedinUrl(socials);
 
   const activityMetrics = computeActivityMetrics(recentEvents);
 
-  return {
+  const devWithAllRepos = {
     username: profile.login || username,
     name: profile.name || '',
     avatar_url: profile.avatar_url || '',
@@ -571,17 +739,22 @@ async function fetchDeveloperActivity(username, token) {
     public_repos: profile.public_repos || 0,
     total_stars: repoSummary.total_stars,
     top_repos: topRepos,
+    all_repos: allRepos,
     top_languages: repoSummary.top_languages,
     linkedin_url: linkedinUrl,
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
-    event_counts_30d: activityMetrics.event_counts_30d, 
+    event_counts_30d: activityMetrics.event_counts_30d,
     total_contributions_60d: activityMetrics.total_contributions_60d,
     longest_gap_days: activityMetrics.longest_gap_days,
     repos_active_7d: reposActive7d,
     digest_repos: digestRepos,
     raw_events_60d: recentEvents
   };
+
+  devWithAllRepos.tags = computeTags(devWithAllRepos);
+
+  return devWithAllRepos;
 }
 
 function applyActivityFilter(developers) {

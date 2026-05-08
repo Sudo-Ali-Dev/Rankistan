@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DevCard from '../components/DevCard';
 import { CACHE_KEYS, cache } from '../utils/cache';
 import { normalizeLocationForDisplay } from '../utils/location';
-import { enrichLeaderboardWithTags, getAvailableTags } from '../utils/tags';
+import { getAvailableTags } from '../utils/tags';
 import { generateDeveloperSummary } from '../utils/groq';
 
 const SORT_OPTIONS = [
@@ -82,7 +82,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange }) {
           ? leaderboardPayload.leaderboard
           : [];
 
-        setLeaderboard(enrichLeaderboardWithTags(rows));
+        setLeaderboard(rows);
       } catch (loadError) {
         if (!alive) return;
         setError(loadError?.message || 'Failed to load frontend data.');
