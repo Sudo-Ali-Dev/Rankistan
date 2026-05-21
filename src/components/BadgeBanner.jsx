@@ -16,7 +16,7 @@ export default function BadgeBanner({ onNavigateToBadge }) {
           <p className="font-body text-sm text-on-surface-variant leading-snug">
             Flaunt your Rankistan rank in your GitHub README.{' '}
             <span className="font-mono text-[11px] text-primary">
-              ranked_devs can embed a live badge that auto-updates every hour.
+              ranked_devs can embed a live badge powered by Rankistan.
             </span>
           </p>
         </div>

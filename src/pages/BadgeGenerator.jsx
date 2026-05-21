@@ -7,13 +7,9 @@ const STYLES = [
   { id: "plastic", label: "Plastic" },
 ];
 
-// Bake the rank number directly into a static shields.io badge URL.
-// No dynamic JSON query, no worker — always works.
-function buildBadgeUrl(rank, style) {
-  const message =
-    rank != null ? encodeURIComponent(`#${rank}`) : "not%20ranked";
+function buildStaticBadgeUrl(message, style) {
   return (
-    `https://img.shields.io/badge/Rankistan-${message}-1a7f4e` +
+    `https://img.shields.io/badge/Rankistan-${encodeURIComponent(message)}-1a7f4e` +
     `?labelColor=0f6e56` +
     `&style=${style}` +
     `&logo=github` +
@@ -21,8 +17,17 @@ function buildBadgeUrl(rank, style) {
   );
 }
 
-function getSnippet(rank, style, username, fmt) {
-  const img = buildBadgeUrl(rank, style);
+function buildBadgeUrl(username, style) {
+  const endpoint = `https://rankistan.dev/api/badge/${encodeURIComponent(username)}`;
+  return (
+    `https://img.shields.io/endpoint` +
+    `?url=${encodeURIComponent(endpoint)}` +
+    `&style=${style}`
+  );
+}
+
+function getSnippet(style, username, fmt) {
+  const img = buildBadgeUrl(username, style);
   const link = "https://rankistan.dev";
   const alt = "Rankistan rank badge";
   if (fmt === "md") return `[![${alt}](${img})](${link})`;
@@ -89,10 +94,11 @@ export default function BadgeGenerator() {
   const [badgeError, setBadgeError] = useState(false);
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
+  const leaderboardRef = useRef(null);
 
   const displayUser = username.trim();
 
-  // Fetch data.json and find the user's rank whenever username changes
+  // Fetch data.json and find the user's rank whenever username changes.
   useEffect(() => {
     if (!displayUser) {
       setRank(null);
@@ -105,10 +111,12 @@ export default function BadgeGenerator() {
       setLookupState("loading");
       setRank(null);
       try {
-        const res = await fetch("https://rankistan.dev/data.json", {
-          cache: "no-store",
-        });
-        const data = await res.json();
+        if (!leaderboardRef.current) {
+          const res = await fetch("./data.json");
+          leaderboardRef.current = await res.json();
+        }
+
+        const data = leaderboardRef.current;
         const dev = (data.leaderboard || []).find(
           (d) => d.username?.toLowerCase() === displayUser.toLowerCase(),
         );
@@ -131,8 +139,10 @@ export default function BadgeGenerator() {
     setBadgeError(false);
   }, [rank, style]);
 
-  const badgeUrl = buildBadgeUrl(rank, style);
-  const snippet = getSnippet(rank, style, displayUser, fmt);
+  const badgeUrl = displayUser
+    ? buildBadgeUrl(displayUser, style)
+    : buildStaticBadgeUrl("not ranked", style);
+  const snippet = getSnippet(style, displayUser, fmt);
 
   return (
     <main className="min-h-screen relative overflow-hidden">
@@ -253,8 +263,8 @@ export default function BadgeGenerator() {
               </div>
               {[
                 ["1", "Enter your GitHub username"],
-                ["2", "Your rank is fetched live from rankistan.dev/data.json"],
-                ["3", "A badge URL is generated with your rank baked in"],
+                ["2", "Your rank is looked up from the leaderboard data"],
+                ["3", "A dynamic Shields endpoint URL is generated"],
                 ["4", "Copy the snippet and paste it into your README"],
               ].map(([n, text]) => (
                 <div key={n} className="flex items-start gap-3">
