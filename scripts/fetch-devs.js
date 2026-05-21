@@ -57,7 +57,7 @@ function pLimit(concurrency) {
   });
 }
 
-const USER_FETCH_CONCURRENCY = 6;
+const USER_FETCH_CONCURRENCY = 3;
 const limit = pLimit(USER_FETCH_CONCURRENCY);
 const SEARCH_BATCHES = [
   { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
