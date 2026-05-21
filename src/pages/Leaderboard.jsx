@@ -71,7 +71,8 @@ export function csvCell(value) {
   // 3. Normalize values into strings based on explicit types safely
   let s = "";
   if (value instanceof Date) {
-    s = value.toISOString();
+    // Guard against invalid Date objects throwing a RangeError on toISOString()
+    s = Number.isNaN(value.getTime()) ? "" : value.toISOString();
   } else if (Array.isArray(value)) {
     s = value.map((v) => (v == null ? "" : String(v))).join(", ");
   } else if (typeof value === "object") {
@@ -105,13 +106,15 @@ function exportCSV(devs) {
   // Ensure global columns fallback or fail gracefully
   const headers =
     typeof CSV_EXPORT_COLUMNS !== "undefined" ? CSV_EXPORT_COLUMNS : [];
-  if (!Array.isArray(devs) || devs.length === 0 || headers.length === 0) return;
+
+  // FIX: Removed the devs.length === 0 check to restore original behavior.
+  // Allowing empty arrays ensures users still download a clean header-only CSV when no matches are found.
+  if (!Array.isArray(devs) || headers.length === 0) return;
 
   // Build rows dynamically and safely
   const rows = devs.map((d) =>
     headers
       .map((h) => {
-        // Ensure we treat missing properties gracefully without breaking on nullish objects
         const cellValue = d ? d[h] : "";
         return csvCell(cellValue);
       })
