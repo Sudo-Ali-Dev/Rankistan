@@ -11,7 +11,7 @@ const SORT_OPTIONS = [
   { key: 'score_desc', label: 'SCORE DESC', fn: (a, b) => (b.score || 0) - (a.score || 0) },
   { key: 'score_asc', label: 'SCORE ASC', fn: (a, b) => (a.score || 0) - (b.score || 0) },
   { key: 'name_asc', label: 'NAME A-Z', fn: (a, b) => (a.name || '').localeCompare(b.name || '') },
-  { key: 'name_desc', label: 'NAME Z-A', fn: (b, name) => (b.name || '').localeCompare(a.name || '') },
+  { key: 'name_desc', label: 'NAME Z-A', fn: (a, b) => (b.name || '').localeCompare(a.name || '') },
   { key: 'followers_desc', label: 'FOLLOWERS', fn: (a, b) => (b.followers || 0) - (a.followers || 0) },
   { key: 'activity_desc', label: 'ACTIVITY', fn: (a, b) => (b.events_30d || 0) - (a.events_30d || 0) },
 ];
