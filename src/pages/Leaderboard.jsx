@@ -179,14 +179,22 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                 <span className="material-symbols-outlined text-sm">download</span>
                 <span className="truncate">EXPORT CSV</span>
               </button>
-              <button
-                type="button"
-                onClick={() => exportCSV(filteredLeaderboard)}
-                className="hidden md:block bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all"
-              >
-                Export CSV
-              </button>
-            </div>
+             <button
+              type="button"
+              onClick={() => exportCSV(filteredLeaderboard, CSV_EXPORT_COLUMNS)}
+              className="md:hidden flex flex-1 basis-0 min-w-0 items-center justify-center gap-2 bg-primary text-on-primary px-4 py-2 font-mono text-xs active:scale-95 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">download</span>
+              <span className="truncate">EXPORT CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => exportCSV(filteredLeaderboard, CSV_EXPORT_COLUMNS)}
+              className="hidden md:block bg-primary text-on-primary px-6 py-2 font-headline font-bold uppercase tracking-tight active:scale-95 transition-all"
+            >
+              Export CSV
+            </button>
+                        </div>
             {onSearchChange && (
               <div className="relative w-full min-w-0 max-w-full lg:hidden">
                 <input
