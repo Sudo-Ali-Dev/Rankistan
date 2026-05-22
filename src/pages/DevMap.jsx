@@ -401,7 +401,7 @@ export default function DevMap() {
         <div className="flex items-center justify-center h-96">
           <span className="font-mono text-sm text-tertiary animate-pulse uppercase tracking-widest">Loading Geo Data...</span>
         </div>
-      </main>
+      </main> 
     );
   }
 
@@ -409,7 +409,7 @@ export default function DevMap() {
     <main className="min-h-screen relative overflow-hidden">
       <div className="absolute inset-0 grid-lines pointer-events-none"></div>
       {/* Hero */}
-      <div className="max-w-6xl mx-auto px-4 pt-6 pb-6 sm:px-6 sm:pt-8 sm:pb-8 md:pt-12 md:pb-10 relative z-10">
+      <div className="max-w-[1440px] mx-auto px-4 pt-6 pb-6 sm:px-6 sm:pt-8 sm:pb-8 md:pt-12 md:pb-10 relative z-10">
         <div className="border-l-4 border-primary pl-4 sm:pl-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 sm:gap-6">
           <div className="min-w-0">
             <h1 className="font-headline text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tighter uppercase text-on-surface mb-2">
