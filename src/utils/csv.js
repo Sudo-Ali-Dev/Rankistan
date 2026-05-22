@@ -28,15 +28,16 @@ export function csvCell(value) {
     s = String(value);
   }
 
-  // Defensive CSV (Formula) Injection Shielding
-  // Full-width characters (＝, ＋, －, ＠) are excluded as major parsers (Excel/Sheets)
-  // do not evaluate them natively, and escaping them risks mangling internationalized text.
+  // 1. Escape internal double quotes by doubling them up per RFC 4180 first
+  s = s.replace(/"/g, '""');
+
+  // 2. Defensive CSV (Formula) Injection Shielding
+  // Checked after processing quotes to ensure characters aren't split or broken unreliably
   if (/^[\u0000-\u001F\s]*[=+\-@]/.test(s)) {
     s = `'${s}`;
   }
 
-  // Escape internal double quotes by doubling them per RFC 4180
-  s = s.replace(/"/g, '""');
+  // 3. Wrap cell context smoothly inside double-quote enclosures
   return `"${s}"`;
 }
 
@@ -59,21 +60,18 @@ export function exportCSV(devs, headers = []) {
 
   const csv = ["\uFEFF" + headers.map(csvCell).join(","), ...rows].join("\r\n");
 
-  // Allow test environments (Node) to return the raw string instead of failing on DOM methods
   if (typeof window === "undefined" || typeof document === "undefined") {
     return csv;
   }
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-
   const a = document.createElement("a");
   a.href = url;
   a.download = `rankistan-leaderboard-${new Date().toISOString().slice(0, 10)}.csv`;
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
-
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 100);
 }
