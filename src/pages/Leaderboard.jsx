@@ -5,7 +5,7 @@ import { normalizeLocationForDisplay } from "../utils/location";
 import { ensureLeaderboardTags, getAvailableTags } from "../utils/tags";
 import { generateDeveloperSummary } from "../utils/groq";
 import BadgeBanner from "../components/BadgeBanner";
-
+import { csvCell } from "../utils/csv";
 const SORT_OPTIONS = [
   {
     key: "score_desc",
@@ -53,50 +53,7 @@ const CSV_EXPORT_COLUMNS = [
   "top_languages",
 ];
 
-/**
- * Safely escapes a single cell value for CSV output.
- * Mitigates CSV Injection (Formula Injection) while preserving valid data types.
- */
-export function csvCell(value) {
-  // 1. Handle null or undefined primitives
-  if (value === null || value === undefined) {
-    return '""';
-  }
 
-  // 2. Pass genuine numbers safely (prevents breaking negative scores/math)
-  if (typeof value === "number") {
-    return isNaN(value) ? '""' : `"${value}"`;
-  }
-
-  // 3. Normalize values into strings based on explicit types safely
-  let s = "";
-  if (value instanceof Date) {
-    // Guard against invalid Date objects throwing a RangeError on toISOString()
-    s = Number.isNaN(value.getTime()) ? "" : value.toISOString();
-  } else if (Array.isArray(value)) {
-    s = value.map((v) => (v == null ? "" : String(v))).join(", ");
-  } else if (typeof value === "object") {
-    try {
-      s = JSON.stringify(value);
-    } catch (e) {
-      s = "[Object]"; // Secure fallback to prevent circular reference crashes
-    }
-  } else if (typeof value === "function") {
-    s = "[Function]"; // Prevent dumping internal system source code
-  } else {
-    s = String(value);
-  }
-
-  // 4. Defensive CSV (Formula) Injection Shielding
-  // Targets strings starting with =, +, -, @, or hidden control characters/whitespace
-  if (/^[\u0000-\u001F\s]*[=+\-@]/.test(s)) {
-    s = `'${s}`;
-  }
-
-  // 5. Escape internal double quotes by doubling them per RFC 4180
-  s = s.replace(/"/g, '""');
-  return `"${s}"`;
-}
 
 /**
  * Exports data to a secure CSV file.
