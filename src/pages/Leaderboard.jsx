@@ -5,7 +5,7 @@ import { normalizeLocationForDisplay } from '../utils/location';
 import { ensureLeaderboardTags, getAvailableTags } from '../utils/tags';
 import { generateDeveloperSummary } from '../utils/groq';
 import BadgeBanner from '../components/BadgeBanner';
-import { csvCell } from '../utils/csv';
+import { csvCell ,exportCSV} from '../utils/csv';
 const SORT_OPTIONS = [
   { key: 'score_desc', label: 'SCORE DESC', fn: (a, b) => (b.score || 0) - (a.score || 0) },
   { key: 'score_asc', label: 'SCORE ASC', fn: (a, b) => (a.score || 0) - (b.score || 0) },
@@ -19,47 +19,6 @@ const SORT_OPTIONS = [
 const CSV_EXPORT_COLUMNS = [
   'rank', 'username', 'name', 'location', 'score', 'followers', 'public_repos', 'events_30d', 'total_stars', 'top_languages'
 ];
-
-/**
- * Exports data to a secure CSV file.
- * @param {Array<Object>} devs - The data source array.
- */
-function exportCSV(devs) {
-  // Ensure global columns fallback or fail gracefully
-  const headers =
-    typeof CSV_EXPORT_COLUMNS !== "undefined" ? CSV_EXPORT_COLUMNS : [];
-
-  // FIX: Removed the devs.length === 0 check to restore original behavior.
-  // Allowing empty arrays ensures users still download a clean header-only CSV when no matches are found.
-  if (!Array.isArray(devs) || headers.length === 0) return;
-
-  // Build rows dynamically and safely
-  const rows = devs.map((d) =>
-    headers
-      .map((h) => {
-        const cellValue = d ? d[h] : "";
-        return csvCell(cellValue);
-      })
-      .join(","),
-  );
-
-  // Combine headers and rows with a UTF-8 BOM (\uFEFF) for Excel compatibility
-  const csv = ["\uFEFF" + headers.map(csvCell).join(","), ...rows].join("\r\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-
-  // Trigger secure client-side download
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `rankistan-leaderboard-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-
-  // Instant DOM cleanup
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 100);
-}
 
 export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeTab, onNavigateToBadge }) {
   const [leaderboard, setLeaderboard] = useState([]);
