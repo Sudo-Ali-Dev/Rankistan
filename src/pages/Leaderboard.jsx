@@ -5,7 +5,7 @@ import { normalizeLocationForDisplay } from '../utils/location';
 import { ensureLeaderboardTags, getAvailableTags } from '../utils/tags';
 import { generateDeveloperSummary } from '../utils/groq';
 import BadgeBanner from '../components/BadgeBanner';
-import { csvCell, exportCSV } from '../utils/csv';
+import { exportCSV } from '../utils/csv';
 
 const SORT_OPTIONS = [
   { key: 'score_desc', label: 'SCORE DESC', fn: (a, b) => (b.score || 0) - (a.score || 0) },

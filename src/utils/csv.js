@@ -47,7 +47,8 @@ export function csvCell(value) {
  * @param {Array<string>} headers - The column headers.
  */
 export function exportCSV(devs, headers = []) {
-  if (!Array.isArray(devs) || headers.length === 0) return;
+  // Tightened guard clause to explicitly verify headers array format
+  if (!Array.isArray(devs) || !Array.isArray(headers) || headers.length === 0) return;
 
   const rows = devs.map((d) =>
     headers
