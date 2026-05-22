@@ -143,6 +143,23 @@ export default function Register({ onChangeTab }) {
     loadRecent();
   }, []);
 
+  useEffect(() => {
+    setStatus('idle');
+    setErrorMsg('');
+
+    setChecks({
+      exists: null,
+      location: null,
+      repos: null,
+      followers: null,
+      accountAge: null,
+      contributions: null,
+      noLongGaps: null,
+    });
+
+    setProfileData(null);
+  }, [username]);
+  
   const handleRegister = async () => {
     if (!username.trim()) {
       setErrorMsg('SYSTEM_WARN: Please provide a valid GitHub identifier.');
