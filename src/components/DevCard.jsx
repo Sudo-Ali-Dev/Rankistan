@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { normalizeLocationForDisplay } from '../utils/location';
 
-export default function DevCard({ dev, onGenerateSummary, summary, loadingSummaryUser }) {
+export default function DevCard({ dev, onGenerateSummary, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect }) {
   const [isExpanded, setIsExpanded] = useState(false);
   
   const tagsColors = [
@@ -24,10 +24,27 @@ export default function DevCard({ dev, onGenerateSummary, summary, loadingSummar
   const hasLinkedin = linkedinUrl !== '';
   
   return (
-    <div className="border-b border-outline-variant">
+    <div className={`border-b border-outline-variant ${compareMode ? 'cursor-pointer' : ''}`}>
       {/* Main Row Info */}
-      <div className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors">
-        <div className="col-span-full md:col-span-1 mb-2 md:mb-0">
+      <div
+        className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors"
+        onClick={() => compareMode && onCompareSelect?.(dev)}
+      >
+        <div className="col-span-full md:col-span-1 mb-2 md:mb-0 flex items-center gap-2">
+          {compareMode && (
+            <div
+              className={`w-5 h-5 border-2 flex items-center justify-center transition-colors ${
+                isCompareSelected
+                  ? 'bg-tertiary border-tertiary'
+                  : 'border-outline-variant hover:border-primary'
+              }`}
+              onClick={(e) => { e.stopPropagation(); onCompareSelect?.(dev); }}
+            >
+              {isCompareSelected && (
+                <span className="material-symbols-outlined text-[14px] text-on-tertiary">check</span>
+              )}
+            </div>
+          )}
           <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
             {String(dev.rank).padStart(3, '0')}
           </span>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DevCard from '../components/DevCard';
+import CompareModal from '../components/CompareModal';
 import { CACHE_KEYS, cache } from '../utils/cache';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { ensureLeaderboardTags, getAvailableTags } from '../utils/tags';
@@ -48,6 +49,9 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
   const [summaryByUser, setSummaryByUser] = useState({});
   const [loadingSummaryUser, setLoadingSummaryUser] = useState('');
   const [sortIndex, setSortIndex] = useState(0);
+
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSelection, setCompareSelection] = useState([]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const devsPerPage = 10;
@@ -152,6 +156,21 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
     setSortIndex((prev) => (prev + 1) % SORT_OPTIONS.length);
   }
 
+  function handleCompareSelect(dev) {
+    if (!compareMode) return;
+    setCompareSelection((prev) => {
+      const idx = prev.findIndex((d) => d.username === dev.username);
+      if (idx !== -1) return prev.filter((_, i) => i !== idx);
+      if (prev.length >= 3) return [prev[1], prev[2], dev];
+      return [...prev, dev];
+    });
+  }
+
+  function handleCompareToggle() {
+    setCompareMode((prev) => !prev);
+    setCompareSelection([]);
+  }
+
   return (
     <main className="min-h-screen relative overflow-hidden">
       <div className="absolute inset-0 grid-lines pointer-events-none"></div>
@@ -206,6 +225,18 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
               >
                 Export CSV
               </button>
+              <button
+                type="button"
+                onClick={handleCompareToggle}
+                className={`flex items-center justify-center gap-2 px-4 py-2 font-mono text-xs transition-colors ${
+                  compareMode
+                    ? 'bg-tertiary text-on-tertiary'
+                    : 'bg-surface-container-high border border-outline-variant text-on-surface hover:bg-surface-container-highest'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">compare_arrows</span>
+                <span className="truncate">COMPARE</span>
+              </button>
             </div>
             {onSearchChange && (
               <div className="relative w-full min-w-0 max-w-full lg:hidden">
@@ -257,6 +288,9 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                     onGenerateSummary={handleGenerateSummary}
                     summary={summaryByUser[dev.username]}
                     loadingSummaryUser={loadingSummaryUser}
+                    compareMode={compareMode}
+                    isCompareSelected={compareSelection.some(d => d.username === dev.username)}
+                    onCompareSelect={handleCompareSelect}
                   />
                 ))
               )}
@@ -289,7 +323,41 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
               </div>
             </div>
           )}
+
+          {/* Compare selection bar */}
+          {compareMode && compareSelection.length >= 2 && (
+            <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-tertiary bg-surface-container-high p-4 md:static md:mt-4 md:border md:border-outline-variant md:bg-surface-container-lowest md:flex md:flex-row md:justify-between md:items-center md:gap-4 md:p-4">
+              <div className="flex items-center gap-3 font-mono text-xs">
+                <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
+                <span className="text-tertiary uppercase tracking-widest">
+                  {compareSelection.length} of 3 Nodes Selected
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCompareSelection([])}
+                  className="text-outline hover:text-primary transition-colors text-[10px] uppercase ml-2"
+                >
+                  Clear
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompareMode(false)}
+                className="hidden md:inline text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
+              >
+                Exit Compare
+              </button>
+            </div>
+          )}
         </>
+      )}
+
+      {/* Compare Modal */}
+      {compareSelection.length >= 2 && (
+        <CompareModal
+          developers={compareSelection}
+          onClose={() => { setCompareMode(false); setCompareSelection([]); }}
+        />
       )}
       </div>
       </div>
