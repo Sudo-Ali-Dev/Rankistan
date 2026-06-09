@@ -1,5 +1,5 @@
 import React from 'react';
-import contributorsData from '../../public/contributors.json';
+import contributorsData from '../contributors.json';
 
 export default function Contributors() {
   const { owner, contributors } = contributorsData;
