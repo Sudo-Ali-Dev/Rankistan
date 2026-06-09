@@ -1,0 +1,55 @@
+{
+  "week_of": "June 03 - June 09, 2026",
+  "generated_at": "2026-06-09T10:30:00.000Z",
+  "digest_text": "This week Pakistani developers pushed 42 notable repositories across AI/ML, web development, and DevOps. The AI/ML space saw significant activity with several new training pipelines and model serving frameworks, while the web development cohort focused on Next.js applications and real-time systems. On the DevOps front, there was a notable push toward Kubernetes-native tooling and CI/CD optimization. Several developers contributed to open-source libraries including a new React state management solution and a Python data validation library. The ecosystem continues to show strong momentum in AI infrastructure and full-stack web development.",
+  "repos": [
+    {
+      "owner": "ahmedrizwan",
+      "name": "pipeline-ml",
+      "description": "End-to-end ML pipeline for training and deploying transformer models on Kubernetes",
+      "language": "Python",
+      "stars": 89,
+      "url": "https://github.com/ahmedrizwan/pipeline-ml"
+    },
+    {
+      "owner": "fatima-ali",
+      "name": "next-ecommerce",
+      "description": "High-performance e-commerce platform built with Next.js 15 and PostgreSQL",
+      "language": "TypeScript",
+      "stars": 67,
+      "url": "https://github.com/fatima-ali/next-ecommerce"
+    },
+    {
+      "owner": "usman-ashraf",
+      "name": "k8s-optimizer",
+      "description": "Automated Kubernetes resource optimization and cost analysis tool",
+      "language": "Go",
+      "stars": 45,
+      "url": "https://github.com/usman-ashraf/k8s-optimizer"
+    },
+    {
+      "owner": "zainabkhan",
+      "name": "react-form-validator",
+      "description": "Lightweight, type-safe form validation library for React with zero dependencies",
+      "language": "TypeScript",
+      "stars": 128,
+      "url": "https://github.com/zainabkhan/react-form-validator"
+    },
+    {
+      "owner": "bilalqadri",
+      "name": "data-validator-py",
+      "description": "Schema-based data validation library for Python with JSON Schema support",
+      "language": "Python",
+      "stars": 34,
+      "url": "https://github.com/bilalqadri/data-validator-py"
+    },
+    {
+      "owner": "hafsa_irfan",
+      "name": "realtime-chat-server",
+      "description": "WebSocket-based real-time chat server with Redis pub/sub and horizontal scaling",
+      "language": "Rust",
+      "stars": 72,
+      "url": "https://github.com/hafsa_irfan/realtime-chat-server"
+    }
+  ]
+}

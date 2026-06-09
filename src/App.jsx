@@ -6,6 +6,7 @@ import Leaderboard from './pages/Leaderboard';
 import Register from './pages/Register';
 import DevMap from './pages/DevMap';
 import About from './pages/About';
+import Digest from './pages/Digest';
 import BadgeGenerator from './pages/BadgeGenerator';
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
         {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
         {activeTab === 'map' && <DevMap />}
         {activeTab === 'about' && <About />}
+        {activeTab === 'digest' && <Digest />}
         {activeTab === 'badge' && <BadgeGenerator />}
         <Footer />
       </div>

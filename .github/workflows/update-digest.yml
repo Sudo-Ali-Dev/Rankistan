@@ -55,17 +55,25 @@ jobs:
           echo "Running incremental batch: $BATCH"
           node scripts/run-all.js --incremental "$BATCH"
 
+      - name: Generate weekly digest (batch 0 only)
+        if: steps.batch.outputs.index == '0'
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_PAKDEVINDEX }}
+        run: |
+          echo "Generating weekly digest..."
+          node scripts/generate-digest.js || echo "Digest generation skipped (no Groq key or no data)."
+
       - name: Commit and push updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet -- public/data.json; then
-            echo "No leaderboard changes to commit."
+          if git diff --quiet -- public/data.json public/digest.json; then
+            echo "No leaderboard or digest changes to commit."
             exit 0
           fi
 
-          git add public/data.json
+          git add public/data.json public/digest.json
           git commit -m "chore: update leaderboard (batch ${{ steps.batch.outputs.index }})"
 
           if git push origin HEAD:main; then

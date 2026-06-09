@@ -4,6 +4,7 @@ const TABS = [
   { id: 'leaderboard', label: 'Board', icon: 'leaderboard' },
   { id: 'map', label: 'Map', icon: 'map' },
   { id: 'register', label: 'Join', icon: 'app_registration' },
+  { id: 'digest', label: 'Digest', icon: 'article' },
   { id: 'badge', label: 'Badge', icon: 'badge' },
   { id: 'about', label: 'About', icon: 'info' },
 ];
