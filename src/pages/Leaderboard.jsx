@@ -51,7 +51,6 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
   const [sortIndex, setSortIndex] = useState(0);
   const [compareMode, setCompareMode] = useState(false);
   const [compareSelection, setCompareSelection] = useState([]);
-  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const devsPerPage = 10;
@@ -339,47 +338,30 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
         </>
       )}
 
-      {/* Compare selection bar */}
-      {compareMode && compareSelection.length >= 2 && (
-        <div className="mt-8 border border-tertiary bg-surface-container-lowest p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      {/* Compare selection indicator */}
+      {compareMode && compareSelection.length > 0 && (
+        <div className="mt-4 border border-tertiary bg-surface-container-lowest p-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 font-mono text-xs">
             <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
             <span className="text-tertiary uppercase tracking-widest">
               {compareSelection.length} of 3 Nodes Selected
             </span>
-            <button
-              type="button"
-              onClick={() => setCompareSelection([])}
-              className="text-outline hover:text-primary transition-colors text-[10px] uppercase ml-2"
-            >
-              Clear
-            </button>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleCompareToggle}
-              className="text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
-            >
-              Exit Compare
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsCompareModalOpen(true)}
-              className="inline-flex items-center gap-2 bg-tertiary text-on-tertiary font-headline font-bold py-2.5 px-5 hover:bg-tertiary-fixed transition-colors duration-50 active:scale-[0.98] uppercase tracking-widest text-xs"
-            >
-              <span className="material-symbols-outlined text-sm">compare_arrows</span>
-              Compare
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleCompareToggle}
+            className="text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
+          >
+            Exit
+          </button>
         </div>
       )}
 
       {/* Compare Modal */}
-      {isCompareModalOpen && compareSelection.length >= 2 && (
+      {compareSelection.length >= 2 && (
         <CompareModal
           developers={compareSelection}
-          onClose={() => { setIsCompareModalOpen(false); setCompareMode(false); setCompareSelection([]); }}
+          onClose={() => { setCompareMode(false); setCompareSelection([]); }}
         />
       )}
       </div>
