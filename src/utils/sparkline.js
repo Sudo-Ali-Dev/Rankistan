@@ -1,6 +1,6 @@
 const DAYS = 30;
 
-function seededRandom(seed) {
+function seeded(seed) {
   let s = seed >>> 0;
   return function () {
     s = (s * 1103515245 + 12345) >>> 0;
@@ -20,35 +20,17 @@ export function generateDailyDistribution(totalEvents, seed = '') {
   const count = Math.max(0, Math.floor(Number(totalEvents) || 0));
   if (count === 0) return new Array(DAYS).fill(0);
 
-  const rng = seededRandom(hashStr(String(count) + ':' + seed));
+  const rng = seeded(hashStr(seed || String(count)));
 
-  const days = new Array(DAYS).fill(0);
-  let remaining = count;
-
-  const weekPattern = [0.15, 0.18, 0.18, 0.17, 0.16, 0.10, 0.06];
-
+  const raw = [];
+  let sum = 0;
   for (let i = 0; i < DAYS; i++) {
-    const dayOfWeek = (DAYS - 1 - i) % 7;
-    const noise = 0.4 + rng() * 0.6;
-    let portion = weekPattern[dayOfWeek] * noise;
-    if (i === DAYS - 1) {
-      portion = 1;
-    }
-    const ideal = Math.round((portion / (DAYS - i)) * remaining);
-    const minVal = i < DAYS - 1 ? 0 : remaining;
-    const maxVal = Math.max(1, Math.round(remaining / (DAYS - i) * 2.5));
-    days[i] = Math.max(minVal, Math.min(maxVal, ideal));
-    remaining -= days[i];
+    const v = rng();
+    raw.push(v);
+    sum += v;
   }
 
-  if (remaining > 0) {
-    for (let i = 0; i < DAYS && remaining > 0; i++) {
-      days[i] += 1;
-      remaining--;
-    }
-  }
-
-  return days;
+  return raw.map(v => Math.round((v / sum) * count));
 }
 
 export function sparklinePath(dailyData, width = 240, height = 48) {
