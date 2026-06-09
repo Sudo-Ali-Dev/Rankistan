@@ -8,6 +8,7 @@ import About from './pages/About';
 import Evolution from './pages/Evolution';
 import BadgeGenerator from './pages/BadgeGenerator';
 import Register from './pages/Register';
+import Digest from './pages/Digest';
 
 function App() {
   const [activeTab, setActiveTab] = useState('leaderboard');
@@ -19,6 +20,7 @@ function App() {
     const titles = {
       leaderboard: 'Rankistan | Leaderboard',
       register: 'Rankistan | Register',
+      digest: 'Rankistan | Weekly Digest',
       map: 'Rankistan | Dev Map',
       about: 'Rankistan | About',
       evolution: 'Rankistan | Evolution',
@@ -47,6 +49,7 @@ function App() {
       <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:pb-0">
         {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} onSearchChange={setSearchTerm} onChangeTab={handleChangeTab} onNavigateToBadge={handleNavigateToBadge} />}
         {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
+        {activeTab === 'digest' && <Digest onChangeTab={handleChangeTab} />}
         {activeTab === 'map' && <DevMap />}
         {activeTab === 'about' && <About onChangeTab={handleChangeTab} />}
         {activeTab === 'evolution' && <Evolution />}
