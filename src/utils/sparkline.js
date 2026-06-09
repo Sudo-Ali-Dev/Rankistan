@@ -1,8 +1,26 @@
 const DAYS = 30;
 
-export function generateDailyDistribution(totalEvents) {
+function seededRandom(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s * 1103515245 + 12345) >>> 0;
+    return (s & 0x7fffffff) / 0x80000000;
+  };
+}
+
+function hashStr(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h >>> 0;
+}
+
+export function generateDailyDistribution(totalEvents, seed = '') {
   const count = Math.max(0, Math.floor(Number(totalEvents) || 0));
   if (count === 0) return new Array(DAYS).fill(0);
+
+  const rng = seededRandom(hashStr(String(count) + ':' + seed));
 
   const days = new Array(DAYS).fill(0);
   let remaining = count;
@@ -11,14 +29,15 @@ export function generateDailyDistribution(totalEvents) {
 
   for (let i = 0; i < DAYS; i++) {
     const dayOfWeek = (DAYS - 1 - i) % 7;
-    const base = weekPattern[dayOfWeek];
-    const noise = 0.3 + Math.random() * 0.7;
-    let portion = base * noise;
+    const noise = 0.4 + rng() * 0.6;
+    let portion = weekPattern[dayOfWeek] * noise;
     if (i === DAYS - 1) {
       portion = 1;
     }
-    const raw = Math.round((portion / (DAYS - i)) * remaining);
-    days[i] = Math.min(raw, Math.max(1, Math.round(remaining / (DAYS - i))));
+    const ideal = Math.round((portion / (DAYS - i)) * remaining);
+    const minVal = i < DAYS - 1 ? 0 : remaining;
+    const maxVal = Math.max(1, Math.round(remaining / (DAYS - i) * 2.5));
+    days[i] = Math.max(minVal, Math.min(maxVal, ideal));
     remaining -= days[i];
   }
 

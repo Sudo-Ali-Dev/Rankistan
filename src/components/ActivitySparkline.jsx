@@ -3,9 +3,9 @@ import { generateDailyDistribution, sparklinePath } from '../utils/sparkline';
 
 export default function ActivitySparkline({ totalEvents = 0, username }) {
   const { path, bars, maxVal, total } = useMemo(() => {
-    const data = generateDailyDistribution(totalEvents);
+    const data = generateDailyDistribution(totalEvents, username);
     return sparklinePath(data, 240, 40);
-  }, [totalEvents]);
+  }, [totalEvents, username]);
 
   if (total === 0) return null;
 
