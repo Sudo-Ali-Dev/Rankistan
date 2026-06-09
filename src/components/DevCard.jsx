@@ -54,7 +54,7 @@ function ContributionHeatmap({ username }) {
   );
 }
 
-export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser }) {
+export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect }) {
   const [isExpanded, setIsExpanded] = useState(false);
   
   const tagsColors = [
@@ -79,8 +79,25 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
   return (
     <div className="border-b border-outline-variant">
       {/* Main Row Info */}
-      <div className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors">
-        <div className="col-span-full md:col-span-1 mb-2 md:mb-0">
+      <div
+        className={`grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors ${compareMode ? 'cursor-pointer' : ''}`}
+        onClick={() => compareMode && onCompareSelect?.(dev)}
+      >
+        <div className="col-span-full md:col-span-1 mb-2 md:mb-0 flex items-center gap-2">
+          {compareMode && (
+            <div
+              className={`w-5 h-5 border-2 flex items-center justify-center transition-colors shrink-0 ${
+                isCompareSelected
+                  ? 'bg-tertiary border-tertiary'
+                  : 'border-outline-variant hover:border-primary'
+              }`}
+              onClick={(e) => { e.stopPropagation(); onCompareSelect?.(dev); }}
+            >
+              {isCompareSelected && (
+                <span className="material-symbols-outlined text-[14px] text-on-tertiary">check</span>
+              )}
+            </div>
+          )}
           <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
             {String(dev.rank).padStart(3, '0')}
           </span>
@@ -117,7 +134,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
               {dev.score?.toLocaleString() || 0}
             </div>
             <div className="flex shrink-0 justify-end md:col-span-1">
-              <button type="button" onClick={toggleExpand} className="text-outline hover:text-primary transition-colors" aria-expanded={isExpanded} aria-label={isExpanded ? 'Collapse details' : 'Expand details'}>
+              <button type="button" onClick={(e) => { e.stopPropagation(); toggleExpand(); }} className="text-outline hover:text-primary transition-colors" aria-expanded={isExpanded} aria-label={isExpanded ? 'Collapse details' : 'Expand details'}>
                 <span className="material-symbols-outlined">{isExpanded ? 'expand_less' : 'unfold_more'}</span>
               </button>
             </div>
