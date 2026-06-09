@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { resolveHeatmapApiUrl, resolveHeatmapDirectUrl } from '../utils/groq.js';
+import ActivitySparkline from './ActivitySparkline';
 
 const GitHubIcon = ({ size = 16 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" width={size} height={size} aria-hidden="true">
@@ -162,6 +163,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
 
       {/* Expanded Details */}
       {isExpanded && (
+        <>
         <div className="bg-surface-container-lowest border-t border-outline-variant p-6 md:p-8 transform transition-all">
           <div className="grid md:grid-cols-12 gap-8">
             <div className="md:col-span-4 space-y-6">
@@ -247,6 +249,11 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
             </div>
           </div>
         </div>
+
+        <div className="mt-6">
+          <ActivitySparkline totalEvents={dev.events_30d} username={username} />
+        </div>
+        </>
       )}
     </div>
   );
