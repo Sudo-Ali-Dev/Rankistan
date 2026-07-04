@@ -29,7 +29,7 @@ function buildBadgeUrl(username, style) {
 
 function getSnippet(style, username, fmt) {
   const img = buildBadgeUrl(username, style);
-  const link = "https://rankistan.dev";
+  const link = `https://rankistan.dev/#${encodeURIComponent(username)}`;
   const alt = "Rankistan rank badge";
   if (fmt === "md") return `[![${alt}](${img})](${link})`;
   if (fmt === "html")

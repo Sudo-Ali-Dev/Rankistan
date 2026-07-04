@@ -407,7 +407,7 @@ async function handleBadgeRequest(request, env) {
 
     return new Response(JSON.stringify({
       schemaVersion: 1,
-      label: 'Rankistan',
+      label: `Rankistan @${dev.username}`,
       message: `rank #${dev.rank}`,
       color: '1a7f4e',
       labelColor: '0f6e56',
