@@ -318,8 +318,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
               )}
             </>
           )}
-        </>
-      )}
+        </div>
 
       {/* Compare selection indicator */}
       {compareMode && compareSelection.length > 0 && (
@@ -338,14 +337,15 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
             Exit
           </button>
         </div>
+      )}
 
-        {/* Compare Modal */}
-        {compareSelection.length >= 2 && (
-          <CompareModal
-            developers={compareSelection}
-            onClose={() => { setCompareMode(false); setCompareSelection([]); }}
-          />
-        )}
+      {/* Compare Modal */}
+      {compareSelection.length >= 2 && (
+        <CompareModal
+          developers={compareSelection}
+          onClose={() => { setCompareMode(false); setCompareSelection([]); }}
+        />
+      )}
       </div>
     </main>
   );
