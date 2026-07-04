@@ -79,7 +79,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
 
   const username = dev?.username || '';
   const githubUrl = `https://github.com/${username}`;
-  const avatar = dev?.avatar || `https://avatars.githubusercontent.com/${username}`;
+  const avatar = dev?.avatar_url || dev?.avatar || `https://github.com/${username}.png?size=80`;
   const cleanLocation = normalizeLocationForDisplay(dev?.location);
   const linkedinUrl = typeof dev?.linkedin_url === 'string' ? dev.linkedin_url.trim() : '';
   const hasLinkedin = linkedinUrl !== '';
