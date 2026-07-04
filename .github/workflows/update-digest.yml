@@ -94,4 +94,14 @@ jobs:
           path: dist
 
       - name: Deploy to GitHub Pages
+        id: deploy_attempt_1
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Wait before retry
+        if: steps.deploy_attempt_1.outcome == 'failure'
+        run: sleep 30
+
+      - name: Deploy to GitHub Pages (retry)
+        if: steps.deploy_attempt_1.outcome == 'failure'
         uses: actions/deploy-pages@v4
