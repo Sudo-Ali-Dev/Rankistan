@@ -106,9 +106,20 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
 
   const existing = loadExistingLeaderboard(DATA_JSON);
   const kept = existing.filter((d) => d.batch_index !== batchIndex);
+  
+  // Strict Transaction Integrity Check
+  const removedCount = existing.length - kept.length;
+  if (removedCount > 0 && newEntries.length === 0) {
+    throw new Error(
+      `Data Integrity Exception: Refusing to update batch ${batchIndex} (${SEARCH_BATCHES[batchIndex].label}). ` +
+      `This operation would permanently purge ${removedCount} existing records without replacing them with new data. ` +
+      `Aborting write sequence to maintain fallback data.`
+    );
+  }
+
   console.log(
     `Existing leaderboard: ${existing.length} total, ${kept.length} kept ` +
-      `(removed ${existing.length - kept.length} from batch ${batchIndex}).`,
+      `(removed ${removedCount} from batch ${batchIndex}).`,
   );
 
   const map = new Map(

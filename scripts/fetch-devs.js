@@ -342,7 +342,7 @@ async function discoverUsers(token, batches) {
           }
 
           shardSuccess = true;
-          break;
+          break; // Succeeded, Break out of the retry loop.
         } catch (error) {
           if (attempt === 1) {
             console.warn(
@@ -351,8 +351,13 @@ async function discoverUsers(token, batches) {
             );
             await sleep(SEARCH_RETRY_DELAY_MS);
           } else {
-            console.error(
-              `Skipping ${batch.label} shard ${qIdx + 1}/${queries.length} after retry failure: ${error.message}`
+            // Fail-Fast Strategy
+            // Immediately stop execution. Do not waste API rate limits on subsequent shards/batches
+            // when this current batch is already structurally compromised.
+            throw new Error(
+              `Catastrophic execution failure in batch "${batch.label}" (Shard ${qIdx + 1}/${queries.length}) ` +
+              `after maximum retry attempts. Refusing partial dataset to protect database integrity. ` +
+              `Downstream error: ${error.message}`
             );
           }
         }
