@@ -31,6 +31,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
   const [sortIndex, setSortIndex] = useState(0);
 
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState('');
   const devsPerPage = 10;
 
   useEffect(() => {
@@ -115,6 +116,18 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
 
   const startIdx = indexOfFirstDev + 1;
   const endIdx = Math.min(indexOfLastDev, filteredLeaderboard.length);
+
+  const goToPage = (n) => {
+    if (!Number.isFinite(n)) return;
+    setCurrentPage(Math.min(totalPages, Math.max(1, Math.trunc(n))));
+  };
+
+  const handleJump = (e) => {
+    e.preventDefault();
+    const n = parseInt(pageInput, 10);
+    if (!Number.isNaN(n)) goToPage(n);
+    setPageInput('');
+  };
 
   async function handleGenerateSummary(dev) {
     const username = String(dev?.username || '').trim();
@@ -254,24 +267,66 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                   <div className="text-outline uppercase">
                     Showing {String(startIdx).padStart(3, '0')} - {String(endIdx).padStart(3, '0')} of {filteredLeaderboard.length.toLocaleString()} Node_Instances
                   </div>
-                  <div className="flex gap-px bg-outline-variant border border-outline-variant">
-                    <button
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className="bg-surface px-4 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"
-                    >
-                      PREV
-                    </button>
-                    <button className="bg-primary text-on-primary px-4 py-2">
-                      {String(currentPage).padStart(2, '0')}
-                    </button>
-                    <button
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      className="bg-surface px-4 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"
-                    >
-                      NEXT
-                    </button>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <div className="flex gap-px bg-outline-variant border border-outline-variant">
+                      <button
+                        onClick={() => goToPage(1)}
+                        disabled={currentPage === 1}
+                        aria-label="First page"
+                        className="bg-surface px-3 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"
+                      >
+                        FIRST
+                      </button>
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        aria-label="Previous page"
+                        className="bg-surface px-4 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"
+                      >
+                        PREV
+                      </button>
+                      <span className="bg-primary text-on-primary px-4 py-2" aria-current="page">
+                        {String(currentPage).padStart(2, '0')} / {String(totalPages).padStart(2, '0')}
+                      </span>
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        aria-label="Next page"
+                        className="bg-surface px-4 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"
+                      >
+                        NEXT
+                      </button>
+                      <button
+                        onClick={() => goToPage(totalPages)}
+                        disabled={currentPage === totalPages}
+                        aria-label="Last page"
+                        className="bg-surface px-3 py-2 hover:bg-primary hover:text-on-primary transition-colors disabled:opacity-50"
+                      >
+                        LAST
+                      </button>
+                    </div>
+                    {totalPages > 1 && (
+                      <form onSubmit={handleJump} className="flex items-center gap-2">
+                        <label htmlFor="page-jump" className="text-outline uppercase">Go to</label>
+                        <input
+                          id="page-jump"
+                          type="number"
+                          min="1"
+                          max={totalPages}
+                          value={pageInput}
+                          onChange={(e) => setPageInput(e.target.value)}
+                          placeholder={String(currentPage)}
+                          aria-label={`Jump to page (1 to ${totalPages})`}
+                          className="w-16 bg-surface-container-lowest border border-outline-variant px-2 py-2 text-center text-on-surface focus:border-primary focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="submit"
+                          className="bg-surface border border-outline-variant px-3 py-2 hover:bg-primary hover:text-on-primary transition-colors"
+                        >
+                          GO
+                        </button>
+                      </form>
+                    )}
                   </div>
                 </div>
               )}
