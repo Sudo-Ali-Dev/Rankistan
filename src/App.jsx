@@ -10,8 +10,22 @@ import BadgeGenerator from './pages/BadgeGenerator';
 import Register from './pages/Register';
 import Digest from './pages/Digest';
 
+const VALID_TABS = ['leaderboard', 'register', 'digest', 'map', 'about', 'evolution', 'badge'];
+const TAB_STORAGE_KEY = 'rankistan_active_tab';
+
+function getInitialTab() {
+  try {
+    // A deep-link hash (e.g. #username from a shared or badge link) should land on
+    // the leaderboard, so it takes precedence over any persisted tab.
+    if (window.location.hash.slice(1)) return 'leaderboard';
+    const saved = localStorage.getItem(TAB_STORAGE_KEY);
+    if (saved && VALID_TABS.includes(saved)) return saved;
+  } catch (e) { /* ignore storage/access errors */ }
+  return 'leaderboard';
+}
+
 function App() {
-  const [activeTab, setActiveTab] = useState('leaderboard');
+  const [activeTab, setActiveTab] = useState(getInitialTab);
   const [searchTerm, setSearchTerm] = useState('');
   const [badgePrefillUsername, setBadgePrefillUsername] = useState('');
 
@@ -27,6 +41,11 @@ function App() {
       badge: 'Rankistan | Badge Generator',
     };
     document.title = titles[activeTab] || 'Rankistan';
+  }, [activeTab]);
+
+  // Persist the active tab so a page reload restores it (#32)
+  React.useEffect(() => {
+    try { localStorage.setItem(TAB_STORAGE_KEY, activeTab); } catch (e) { /* ignore */ }
   }, [activeTab]);
 
   const handleChangeTab = useCallback((tab) => {
