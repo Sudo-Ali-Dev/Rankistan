@@ -9,7 +9,6 @@ public/score-test*.json
 public/data.dry-run.json
 public/data.json.tmp
 public/data.dry-run.json.tmp
-*test*
 *Test*
 dist/
 public/raw_batch_*.json
