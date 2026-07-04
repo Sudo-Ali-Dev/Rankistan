@@ -13,6 +13,24 @@ function App() {
   const [activeTab, setActiveTab] = useState('leaderboard');
   const [searchTerm, setSearchTerm] = useState('');
   const [badgePrefillUsername, setBadgePrefillUsername] = useState('');
+  const [highlightUsername, setHighlightUsername] = useState(() =>
+    decodeURIComponent(window.location.hash.slice(1))
+  );
+
+  // React to manual hash changes in the URL bar (e.g. user types #username and hits Enter)
+  React.useEffect(() => {
+    function onHashChange() {
+      const hash = decodeURIComponent(window.location.hash.slice(1));
+      if (hash) {
+        setHighlightUsername(hash);
+        setActiveTab('leaderboard');
+      } else {
+        setHighlightUsername('');
+      }
+    }
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   // Update dynamic page title based on active tab
   React.useEffect(() => {
@@ -29,6 +47,10 @@ function App() {
 
   const handleChangeTab = useCallback((tab) => {
     setActiveTab(tab);
+    if (tab !== 'leaderboard') {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      setHighlightUsername('');
+    }
   }, []);
 
   const handleNavigateToBadge = useCallback((username) => {
@@ -45,7 +67,7 @@ function App() {
     <>
       <Header activeTab={activeTab} onChangeTab={handleChangeTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
       <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-        {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} onSearchChange={setSearchTerm} onChangeTab={handleChangeTab} onNavigateToBadge={handleNavigateToBadge} />}
+        {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} onSearchChange={setSearchTerm} onChangeTab={handleChangeTab} onNavigateToBadge={handleNavigateToBadge} highlightUsername={highlightUsername} onHighlightUsernameChange={setHighlightUsername} />}
         {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
         {activeTab === 'map' && <DevMap />}
         {activeTab === 'about' && <About onChangeTab={handleChangeTab} />}

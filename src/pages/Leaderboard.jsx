@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DevCard from '../components/DevCard';
 import { CACHE_KEYS, cache } from '../utils/cache';
 import { normalizeLocationForDisplay } from '../utils/location';
@@ -40,7 +40,7 @@ function exportCSV(devs) {
   URL.revokeObjectURL(url);
 }
 
-export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeTab, onNavigateToBadge }) {
+export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeTab, onNavigateToBadge, highlightUsername = '', onHighlightUsernameChange }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [selectedTag, setSelectedTag] = useState('All');
   const [loading, setLoading] = useState(true);
@@ -51,6 +51,8 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
 
   const [currentPage, setCurrentPage] = useState(1);
   const devsPerPage = 10;
+  const highlightRef = useRef(null);
+  const [scrollTrigger, setScrollTrigger] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -126,6 +128,31 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
   }, [leaderboard, selectedTag, searchTerm, sortIndex]);
 
   useEffect(() => { setCurrentPage(1); }, [selectedTag, searchTerm, sortIndex]);
+
+  // Deep-link: jump to the page containing the highlighted dev when data first loads
+  useEffect(() => {
+    if (!highlightUsername || filteredLeaderboard.length === 0) return;
+    const idx = filteredLeaderboard.findIndex(
+      (d) => (d.username || '').toLowerCase() === highlightUsername.toLowerCase()
+    );
+    if (idx === -1) return;
+    const targetPage = Math.floor(idx / devsPerPage) + 1;
+    setCurrentPage(targetPage);
+    setScrollTrigger(t => t + 1);
+  // Only fire when data arrives or the highlight target changes — not on every filter change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightUsername, leaderboard]);
+
+  // Scroll highlighted row into view; scrollTrigger ensures this fires even when the
+  // target page equals the already-active page (setCurrentPage no-op wouldn't re-run this).
+  useEffect(() => {
+    if (!highlightUsername || !highlightRef.current) return;
+    const timer = setTimeout(() => {
+      highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTrigger, highlightUsername]);
 
   const indexOfLastDev = currentPage * devsPerPage;
   const indexOfFirstDev = Math.max(0, indexOfLastDev - devsPerPage);
@@ -250,16 +277,22 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                   No developers match your search.
                 </div>
               ) : (
-                currentDevs.map(dev => (
-                  <DevCard
-                    key={dev.username}
-                    dev={dev}
-                    onGenerateSummary={handleGenerateSummary}
-                    onGenerateBadge={onNavigateToBadge}
-                    summary={summaryByUser[dev.username]}
-                    loadingSummaryUser={loadingSummaryUser}
-                  />
-                ))
+                currentDevs.map(dev => {
+                  const isHighlighted = !!highlightUsername && dev.username?.toLowerCase() === highlightUsername.toLowerCase();
+                  return (
+                    <DevCard
+                      key={dev.username}
+                      dev={dev}
+                      onGenerateSummary={handleGenerateSummary}
+                      onGenerateBadge={onNavigateToBadge}
+                      summary={summaryByUser[dev.username]}
+                      loadingSummaryUser={loadingSummaryUser}
+                      isHighlighted={isHighlighted}
+                      highlightRef={isHighlighted ? highlightRef : null}
+                      onCopyLink={onHighlightUsernameChange}
+                    />
+                  );
+                })
               )}
             </div>
           </div>
