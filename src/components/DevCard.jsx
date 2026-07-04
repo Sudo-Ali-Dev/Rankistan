@@ -42,7 +42,7 @@ function ContributionHeatmap({ username }) {
   if (failed) {
     return (
       <div className="font-mono text-[10px] text-outline uppercase text-center px-2">
-        Heatmap unavailable
+        Activity graph unavailable
       </div>
     );
   }
@@ -169,7 +169,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-grow">
                 {/* Heatmap */}
                 <div className="flex flex-col">
-                  <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4">Contribution_Heatmap</h3>
+                  <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4">Contribution_Activity</h3>
                   <div className="flex-grow bg-surface border border-outline-variant p-2 overflow-hidden flex justify-center items-center h-[160px]">
                     <ContributionHeatmap username={username} />
                   </div>
