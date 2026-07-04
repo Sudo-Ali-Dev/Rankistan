@@ -20,7 +20,7 @@ function App() {
     const titles = {
       leaderboard: 'Rankistan | Leaderboard',
       register: 'Rankistan | Register',
-      digest: 'Rankistan | Weekly Digest',
+      digest: 'Rankistan | Repository Digest',
       map: 'Rankistan | Dev Map',
       about: 'Rankistan | About',
       evolution: 'Rankistan | Evolution',

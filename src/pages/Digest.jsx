@@ -46,9 +46,9 @@ export default function Digest({ onChangeTab }) {
     const repos = devs.flatMap(d =>
       (d.digest_repos || []).map(r => ({
         ...r,
+        stars: r.stars || 0,
         dev: d.username,
         devAvatar: d.avatar_url,
-        devFollowers: d.followers || 0
       }))
     );
     repos.sort((a, b) => b.stars - a.stars);
@@ -56,15 +56,13 @@ export default function Digest({ onChangeTab }) {
     const contribMap = new Map();
     for (const r of repos) {
       if (!contribMap.has(r.dev)) {
-        contribMap.set(r.dev, { username: r.dev, avatar: r.devAvatar, repoCount: 0, totalStars: 0, uniqueOwners: new Set() });
+        contribMap.set(r.dev, { username: r.dev, avatar: r.devAvatar, repoCount: 0, totalStars: 0 });
       }
       const entry = contribMap.get(r.dev);
       entry.repoCount += 1;
       entry.totalStars += r.stars;
-      entry.uniqueOwners.add(r.owner);
     }
     const contributors = Array.from(contribMap.values())
-      .map(c => ({ ...c, uniqueOwners: c.uniqueOwners.size }))
       .sort((a, b) => b.totalStars - a.totalStars);
 
     return {
@@ -106,7 +104,7 @@ export default function Digest({ onChangeTab }) {
               SYSTEM_STATUS: NO_DATA
             </div>
             <h1 className="font-headline text-3xl sm:text-4xl md:text-6xl font-bold tracking-tighter uppercase leading-none">
-              Weekly <span className="text-primary italic">Digest</span>
+              Repository <span className="text-primary italic">Digest</span>
             </h1>
           </div>
           <div className="border border-outline-variant bg-surface-container-lowest p-6 sm:p-8 text-center">
@@ -132,7 +130,7 @@ export default function Digest({ onChangeTab }) {
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
               <h1 className="font-headline text-3xl sm:text-4xl md:text-6xl font-bold tracking-tighter uppercase leading-none">
-                Weekly <span className="text-primary italic">Digest</span>
+                Repository <span className="text-primary italic">Digest</span>
               </h1>
               <p className="font-mono text-xs sm:text-sm text-tertiary mt-2 sm:mt-3 uppercase tracking-widest">
                 Top Repositories From The Pakistani Developer Community
@@ -166,7 +164,7 @@ export default function Digest({ onChangeTab }) {
           <div className="border border-outline-variant bg-surface-container-lowest p-3 sm:p-5">
             <span className="material-symbols-outlined text-secondary text-lg sm:text-2xl mb-2">military_tech</span>
             <div className="font-headline text-lg sm:text-2xl font-bold text-secondary">{topStars >= 1000 ? (topStars / 1000).toFixed(1) + 'k' : topStars}</div>
-            <div className="font-mono text-[10px] text-outline uppercase tracking-widest mt-1">Top Stars</div>
+            <div className="font-mono text-[10px] text-outline uppercase tracking-widest mt-1">Highest Repo</div>
           </div>
           <div className="border border-outline-variant bg-surface-container-lowest p-3 sm:p-5">
             <span className="material-symbols-outlined text-warning text-lg sm:text-2xl mb-2">trending_up</span>
@@ -181,7 +179,7 @@ export default function Digest({ onChangeTab }) {
             <div className="p-4 sm:p-6 border-b border-outline-variant bg-surface-container-high flex items-center justify-between">
               <span className="font-mono text-xs uppercase tracking-widest flex items-center gap-2">
                 <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
-                Top Contributors This Week
+                Top Contributors
               </span>
               <span className="font-mono text-[10px] text-outline uppercase">{topContributors.length} devs</span>
             </div>
