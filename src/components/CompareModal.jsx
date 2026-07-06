@@ -69,11 +69,11 @@ export default function CompareModal({ developers, onClose }) {
         </div>
 
         {/* Comparison Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto relative">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-outline-variant bg-surface-container-low">
-                <th className="text-left font-mono text-[10px] text-outline uppercase tracking-widest px-3 sm:px-4 py-4 w-32 sm:w-40 min-w-[120px] sm:min-w-[140px]">
+                <th className="sticky left-0 z-10 bg-surface-container-low text-left font-mono text-[10px] text-outline uppercase tracking-widest px-3 sm:px-4 py-4 w-32 sm:w-40 min-w-[120px] sm:min-w-[140px]">
                   Metric
                 </th>
                 {developers.map((dev) => (
@@ -100,7 +100,7 @@ export default function CompareModal({ developers, onClose }) {
                 const winnerIdx = findWinner(developers, row);
                 return (
                   <tr key={row.key} className="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors">
-                    <td className="px-3 sm:px-4 py-3 font-mono text-[10px] text-outline uppercase tracking-widest">
+                    <td className="sticky left-0 z-10 bg-surface-container-lowest px-3 sm:px-4 py-3 font-mono text-[10px] text-outline uppercase tracking-widest">
                       {row.label}
                     </td>
                     {developers.map((dev, idx) => {
