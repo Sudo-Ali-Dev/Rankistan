@@ -1,8 +1,41 @@
-import React from 'react';
-import contributorsData from '../contributors.json';
+import React, { useEffect, useState } from 'react';
+import fallbackData from '../contributors.json';
+
+const CONTRIBUTORS_API = 'https://api.github.com/repos/Sudo-Ali-Dev/Rankistan/contributors';
 
 export default function Contributors() {
-  const { owner, contributors } = contributorsData;
+  const [owner] = useState(fallbackData.owner);
+  const [contributors, setContributors] = useState(fallbackData.contributors);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function fetchContributors() {
+      try {
+        const res = await fetch(CONTRIBUTORS_API);
+        if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+        const data = await res.json();
+        if (!alive) return;
+
+        const filtered = data
+          .filter((c) => c.login !== 'github-actions[bot]')
+          .map((c) => ({
+            name: c.login,
+            username: c.login,
+            avatar_url: c.avatar_url,
+            bio: null,
+            role: 'Contributor',
+          }));
+
+        setContributors(filtered);
+      } catch {
+        if (alive) setContributors(fallbackData.contributors);
+      }
+    }
+
+    fetchContributors();
+    return () => { alive = false; };
+  }, []);
 
   return (
     <div className="border border-outline-variant bg-surface-container-lowest">
