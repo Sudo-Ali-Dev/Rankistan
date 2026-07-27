@@ -65,7 +65,7 @@ function App() {
   return (
     <>
       <Header activeTab={activeTab} onChangeTab={handleChangeTab} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
-      <div className="pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+      <div className={`pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] ${activeTab === 'leaderboard' ? 'xl:pb-0' : 'lg:pb-0'}`}>
         {activeTab === 'leaderboard' && <Leaderboard searchTerm={searchTerm} onSearchChange={setSearchTerm} onChangeTab={handleChangeTab} onNavigateToBadge={handleNavigateToBadge} />}
         {activeTab === 'register' && <Register onChangeTab={handleChangeTab} />}
         {activeTab === 'digest' && <Digest onChangeTab={handleChangeTab} />}

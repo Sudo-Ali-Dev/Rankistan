@@ -11,7 +11,7 @@ export default function Header({ activeTab, onChangeTab, searchTerm, onSearchCha
   return (
     <nav className="relative bg-[#10141a] border-b border-[#414752] w-full h-16 sticky top-0 z-50">
       <div className="relative z-20 flex h-16 w-full min-w-0 items-center justify-between px-4 sm:px-6">
-        <div className="flex min-w-0 items-center gap-4 md:gap-8">
+        <div className="flex min-w-0 items-center gap-4 lg:gap-8">
         <button 
           type="button"
           onClick={() => changeTab('leaderboard')} 
@@ -24,13 +24,13 @@ export default function Header({ activeTab, onChangeTab, searchTerm, onSearchCha
             className="w-9 h-9 object-contain"
           />
           <span
-            className="text-[#a2c9ff] text-[2.125rem] md:text-[2rem] leading-none translate-y-0.5 md:translate-y-0"
+            className="text-[#a2c9ff] text-[2.125rem] lg:text-[2rem] leading-none translate-y-0.5 lg:translate-y-0"
             style={{ fontFamily: "'Waltograph', 'Space Grotesk', sans-serif" }}
           >
             Rankistan
           </span>
         </button>
-        <div className="hidden md:flex gap-6 font-['Space_Grotesk'] tracking-tight">
+        <div className={`hidden ${activeTab === 'leaderboard' ? 'xl:flex' : 'lg:flex'} gap-6 font-['Space_Grotesk'] tracking-tight`}>
           <button 
             type="button"
             onClick={() => changeTab('leaderboard')}
