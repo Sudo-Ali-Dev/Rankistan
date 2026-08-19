@@ -5,10 +5,12 @@ import { fileURLToPath } from 'node:url';
 const GROQ_KEY_SLOTS = 8;
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
-const GROQ_MAX_TOKENS = 600;
+const GROQ_MODEL = 'openai/gpt-oss-120b';
+const GROQ_MAX_COMPLETION_TOKENS = 1400;
 const GROQ_TEMPERATURE = 0.7;
-const GROQ_TIMEOUT_MS = 30000;
+const GROQ_REASONING_EFFORT = 'low';
+const GROQ_INCLUDE_REASONING = false;
+const GROQ_TIMEOUT_MS = 45000;
 const GROQ_RETRY_DELAY_MS = 10000;
 const MIN_VALID_DIGEST_LENGTH = 100;
 const MAX_REPOS_FOR_PROMPT = 40;
@@ -169,8 +171,10 @@ async function callGroqDigest(repos, apiKey) {
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        max_tokens: GROQ_MAX_TOKENS,
+        max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
         temperature: GROQ_TEMPERATURE,
+        reasoning_effort: GROQ_REASONING_EFFORT,
+        include_reasoning: GROQ_INCLUDE_REASONING,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
