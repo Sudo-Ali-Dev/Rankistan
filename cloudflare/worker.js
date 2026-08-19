@@ -1,8 +1,10 @@
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
-const GROQ_MAX_TOKENS = 120;
+const GROQ_MODEL = 'openai/gpt-oss-120b';
+const GROQ_MAX_COMPLETION_TOKENS = 800;
 const GROQ_TEMPERATURE = 0.5;
-const GROQ_TIMEOUT_MS = 15000;
+const GROQ_REASONING_EFFORT = 'low';
+const GROQ_INCLUDE_REASONING = false;
+const GROQ_TIMEOUT_MS = 25000;
 const MIN_SUMMARY_LENGTH = 30;
 const MAX_SUMMARY_LENGTH = 400;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -262,8 +264,10 @@ async function callGroqOnce(dev, apiKey) {
       },
       body: JSON.stringify({
         model: GROQ_MODEL,
-        max_tokens: GROQ_MAX_TOKENS,
+        max_completion_tokens: GROQ_MAX_COMPLETION_TOKENS,
         temperature: GROQ_TEMPERATURE,
+        reasoning_effort: GROQ_REASONING_EFFORT,
+        include_reasoning: GROQ_INCLUDE_REASONING,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: buildUserPrompt(dev) }
