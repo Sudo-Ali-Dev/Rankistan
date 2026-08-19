@@ -323,7 +323,13 @@ async function callGroqWithKeyFallback(dev, apiKeys) {
 const HEATMAP_UPSTREAM = 'https://github-readme-activity-graph.vercel.app/graph';
 const HEATMAP_COLOR = '50b85e';
 const HEATMAP_BG = '10141a';
+const HEATMAP_CACHE_SECONDS = 3600;
+const HEATMAP_ERROR_MARKERS = ["Can't fetch any contribution", 'Please check your username'];
 const GITHUB_USERNAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i;
+
+function isHeatmapErrorCard(svg) {
+  return HEATMAP_ERROR_MARKERS.some((marker) => svg.includes(marker));
+}
 
 function buildHeatmapUpstreamUrl(username) {
   const params = new URLSearchParams({
@@ -351,26 +357,63 @@ async function handleHeatmapRequest(request, env) {
     return jsonResponse({ error: 'Invalid username.' }, 400, corsOrigin);
   }
 
+  const upstreamUrl = buildHeatmapUpstreamUrl(username);
+  const cache = typeof caches === 'undefined' ? null : caches.default;
+  const cacheKey = new Request(upstreamUrl, { method: 'GET' });
+
   try {
-    const upstream = await fetch(buildHeatmapUpstreamUrl(username), {
-      cf: { cacheTtl: 3600 }
-    });
+    const cached = cache ? await cache.match(cacheKey) : null;
+    if (cached) {
+      const cachedSvg = await cached.text();
+
+      if (!isHeatmapErrorCard(cachedSvg)) {
+        return new Response(cachedSvg, {
+          headers: {
+            ...buildCorsHeaders(corsOrigin),
+            'Content-Type': cached.headers.get('Content-Type') || 'image/svg+xml',
+            'Cache-Control': `public, max-age=${HEATMAP_CACHE_SECONDS}`
+          }
+        });
+      }
+
+      await cache.delete(cacheKey);
+    }
+
+    const upstream = await fetch(upstreamUrl);
 
     if (!upstream.ok) {
       throw new Error(`Heatmap upstream returned ${upstream.status}.`);
     }
 
-    const body = await upstream.arrayBuffer();
-    return new Response(body, {
+    const svg = await upstream.text();
+
+    if (isHeatmapErrorCard(svg)) {
+      throw new Error('Heatmap upstream returned an error card.');
+    }
+
+    const response = new Response(svg, {
       headers: {
         ...buildCorsHeaders(corsOrigin),
         'Content-Type': upstream.headers.get('Content-Type') || 'image/svg+xml',
-        'Cache-Control': 'public, max-age=3600'
+        'Cache-Control': `public, max-age=${HEATMAP_CACHE_SECONDS}`
       }
     });
+
+    if (cache) {
+      await cache.put(cacheKey, response.clone());
+    }
+
+    return response;
   } catch (error) {
     console.error(`Heatmap proxy failed for ${username}: ${error.message}`);
-    return jsonResponse({ error: 'Heatmap unavailable.' }, 502, corsOrigin);
+    return new Response(JSON.stringify({ error: 'Heatmap unavailable.' }), {
+      status: 502,
+      headers: {
+        ...buildCorsHeaders(corsOrigin),
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store'
+      }
+    });
   }
 }
 
