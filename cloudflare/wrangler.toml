@@ -4,3 +4,14 @@ compatibility_date = "2026-04-03"
 
 [vars]
 SUMMARY_ALLOWED_ORIGIN = "https://rankistan.dev,https://www.rankistan.dev,https://sudo-ali-dev.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
+
+# Authoritative rate-limit counter for /api/dev-summary. Replaces the
+# module-level Map, which only ever counted within a single Worker isolate and
+# so enforced the limit per-isolate rather than per-IP (#65).
+#
+# namespace_id is a per-Worker identifier, not a resource to create - pick any
+# stable integer and keep it. period must be 10 or 60.
+[[ratelimits]]
+name = "SUMMARY_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

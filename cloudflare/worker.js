@@ -9,6 +9,7 @@ const MIN_SUMMARY_LENGTH = 30;
 const MAX_SUMMARY_LENGTH = 400;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
+const RATE_LIMIT_MAX_TRACKED_IPS = 10000;
 
 const REFUSAL_PREFIXES = ["i'm sorry", 'i cannot', 'as an ai'];
 
@@ -28,8 +29,17 @@ const SYSTEM_PROMPT = [
 const rateLimitByIp = new Map();
 
 function normalizeText(value, maxLength = 200) {
-  const text = value == null ? '' : String(value).trim();
-  return text.slice(0, maxLength);
+  const text = value == null ? '' : String(value);
+  // Every value that passes through here is interpolated into the LLM prompt
+  // by buildUserPrompt(). A newline lets a caller close the current field and
+  // inject their own instruction lines, so collapse control characters and
+  // runs of whitespace to single spaces before truncating.
+  return text
+    // eslint-disable-next-line no-control-regex -- stripping them is the point
+    .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
 }
 
 function normalizeLanguages(languages) {
@@ -195,23 +205,50 @@ function jsonResponse(body, status = 200, corsOrigin = '*') {
 }
 
 function getClientIp(request) {
-  const forwarded = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for') || 'unknown';
-  return forwarded.split(',')[0].trim() || 'unknown';
+  // Only CF-Connecting-IP is trustworthy here: Cloudflare sets it and a client
+  // cannot forge it. x-forwarded-for used to be accepted as a fallback, which
+  // made the rate-limit key caller-controlled - a request could pick a fresh
+  // key every time and never be limited, while also growing the Map without
+  // bound. An absent CF header now shares one bucket rather than escaping.
+  const ip = request.headers.get('CF-Connecting-IP');
+  return (ip && ip.trim()) || 'unknown';
 }
 
-function isRateLimited(ip) {
-  const now = Date.now();
+// Cloudflare's Rate Limiting binding is the authoritative counter. The Map
+// below is only a fallback: module-level state lives in a single Worker
+// isolate and is neither shared nor persistent, so the old implementation
+// enforced the limit per-isolate rather than per-IP (#65). Configure the
+// binding in wrangler.toml; without it this endpoint is only weakly
+// protected, and the leaderboard-membership check below is what actually
+// caps the cost of abuse.
+//
+// Note the binding is authoritative per Cloudflare location, not strictly
+// global - materially better than per-isolate, but not a hard global cap.
+async function isRateLimited(request, env) {
+  const ip = getClientIp(request);
+  const limiter = env?.SUMMARY_RATE_LIMITER;
 
-  for (const [key, timestamps] of rateLimitByIp.entries()) {
-    const recent = timestamps.filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
-    if (recent.length === 0) {
-      rateLimitByIp.delete(key);
-    } else {
-      rateLimitByIp.set(key, recent);
+  if (limiter && typeof limiter.limit === 'function') {
+    try {
+      const { success } = await limiter.limit({ key: ip });
+      return !success;
+    } catch (error) {
+      console.error('SUMMARY_RATE_LIMITER failed; falling back to in-isolate counter.', error);
     }
   }
 
-  const recent = (rateLimitByIp.get(ip) || []).filter((ts) => now - ts < RATE_LIMIT_WINDOW_MS);
+  return isRateLimitedInIsolate(ip);
+}
+
+function isRateLimitedInIsolate(ip) {
+  const now = Date.now();
+  const cutoff = now - RATE_LIMIT_WINDOW_MS;
+
+  // Only the requesting key is read. The previous version rewrote *every*
+  // entry in the Map on *every* request, so a spray of distinct keys was a
+  // CPU amplifier on top of the unbounded-memory problem.
+  const recent = (rateLimitByIp.get(ip) || []).filter((ts) => ts > cutoff);
+
   if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
     rateLimitByIp.set(ip, recent);
     return true;
@@ -219,7 +256,43 @@ function isRateLimited(ip) {
 
   recent.push(now);
   rateLimitByIp.set(ip, recent);
+
+  // Amortised eviction: sweep only once the Map exceeds the cap, so memory
+  // stays bounded without paying a scan per request.
+  if (rateLimitByIp.size > RATE_LIMIT_MAX_TRACKED_IPS) {
+    for (const [key, timestamps] of rateLimitByIp) {
+      if (timestamps.length === 0 || timestamps[timestamps.length - 1] <= cutoff) {
+        rateLimitByIp.delete(key);
+      }
+    }
+  }
+
   return false;
+}
+
+const LEADERBOARD_URL = 'https://rankistan.dev/data.json';
+const LEADERBOARD_CACHE_SECONDS = 300;
+
+// Shared by /api/badge and /api/dev-summary. Returns the leaderboard entry for
+// a username, or null if that developer is not ranked. Throws on a failed
+// fetch so callers can distinguish "not ranked" from "lookup unavailable" -
+// the badge route previously called response.json() without checking
+// response.ok, so a 404 HTML body surfaced as a generic error badge.
+async function findRankedDeveloper(username) {
+  const response = await fetch(LEADERBOARD_URL, {
+    cf: { cacheTtl: LEADERBOARD_CACHE_SECONDS }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Leaderboard fetch failed with ${response.status}.`);
+  }
+
+  const data = await response.json();
+  const wanted = username.toLowerCase();
+
+  return (data.leaderboard || []).find(
+    (entry) => String(entry.username || '').toLowerCase() === wanted
+  ) || null;
 }
 
 const GROQ_KEY_SLOTS = 8;
@@ -427,25 +500,22 @@ async function handleBadgeRequest(request, env) {
   const headers = {
     ...buildCorsHeaders(corsOrigin),
     'Content-Type': 'application/json',
-    'Cache-Control': 'public, max-age=300'
+    'Cache-Control': `public, max-age=${LEADERBOARD_CACHE_SECONDS}`
   };
 
   if (request.method !== 'GET') {
     return jsonResponse({ error: 'Method not allowed.' }, 405, corsOrigin);
   }
 
-  if (!username) {
-    return jsonResponse({ error: 'Missing username.' }, 400, corsOrigin);
+  // The heatmap route already validated usernames with this regex; the badge
+  // route only checked for non-empty, which was an inconsistency rather than
+  // an exploit. Validate before spending a leaderboard fetch on it.
+  if (!username || !GITHUB_USERNAME_RE.test(username)) {
+    return jsonResponse({ error: 'Invalid username.' }, 400, corsOrigin);
   }
 
   try {
-    const response = await fetch('https://rankistan.dev/data.json', {
-      cf: { cacheTtl: 300 }
-    });
-    const data = await response.json();
-    const dev = (data.leaderboard || []).find(
-      (entry) => entry.username?.toLowerCase() === username
-    );
+    const dev = await findRankedDeveloper(username);
 
     if (!dev) {
       return new Response(JSON.stringify({
@@ -464,9 +534,10 @@ async function handleBadgeRequest(request, env) {
       labelColor: '0f6e56',
       namedLogo: 'github',
       logoColor: 'white',
-      cacheSeconds: 300
+      cacheSeconds: LEADERBOARD_CACHE_SECONDS
     }), { headers });
-  } catch {
+  } catch (error) {
+    console.error(`Badge lookup failed for ${username}: ${error.message}`);
     return new Response(JSON.stringify({
       schemaVersion: 1,
       label: 'Rankistan',
@@ -501,8 +572,7 @@ export default {
       return jsonResponse({ error: 'Method not allowed.' }, 405, corsOrigin);
     }
 
-    const ip = getClientIp(request);
-    if (isRateLimited(ip)) {
+    if (await isRateLimited(request, env)) {
       return jsonResponse({ error: 'Rate limit exceeded. Try again in a minute.' }, 429, corsOrigin);
     }
 
@@ -516,8 +586,26 @@ export default {
     const rawDev = body?.dev && typeof body.dev === 'object' ? body.dev : body;
     const dev = sanitizeDeveloper(rawDev || {});
 
-    if (!dev.username) {
-      return jsonResponse({ error: 'Missing dev.username.' }, 400, corsOrigin);
+    // sanitizeDeveloper() only coerces and clamps; it never validated the
+    // username, unlike the heatmap route. Validate the shape first.
+    if (!dev.username || !GITHUB_USERNAME_RE.test(dev.username)) {
+      return jsonResponse({ error: 'Invalid dev.username.' }, 400, corsOrigin);
+    }
+
+    // This endpoint spends real money per call, and every field below is
+    // interpolated into the prompt. Serving only developers who are actually
+    // on the leaderboard bounds the abuse surface to a known 1000-row set,
+    // and mirrors what /api/badge already does.
+    let rankedDev;
+    try {
+      rankedDev = await findRankedDeveloper(dev.username);
+    } catch (error) {
+      console.error(`Leaderboard lookup failed for ${dev.username}: ${error.message}`);
+      return jsonResponse({ error: 'Leaderboard lookup unavailable.' }, 503, corsOrigin);
+    }
+
+    if (!rankedDev) {
+      return jsonResponse({ error: 'Developer is not on the leaderboard.' }, 404, corsOrigin);
     }
 
     const apiKeys = getGroqApiKeys(env);
@@ -533,4 +621,23 @@ export default {
       return jsonResponse({ error: 'Failed to generate summary.' }, 502, corsOrigin);
     }
   }
+};
+
+// Exported for unit tests only. The Workers runtime uses the default export as
+// its entrypoint and ignores additional named exports, so this has no runtime
+// effect on the deployed Worker.
+export {
+  normalizeText,
+  normalizeLanguages,
+  normalizeTopRepos,
+  sanitizeDeveloper,
+  buildUserPrompt,
+  truncateSummary,
+  validateSummary,
+  resolveCorsOrigin,
+  getClientIp,
+  isRateLimitedInIsolate,
+  isHeatmapErrorCard,
+  GITHUB_USERNAME_RE,
+  RATE_LIMIT_MAX_REQUESTS
 };
