@@ -452,7 +452,7 @@ export default function Register({ onChangeTab }) {
             </div>
 
             <div
-              className="overflow-y-auto bg-surface-container-lowest pr-1 sm:pr-2 scrollbar-thin transition-[height] duration-150 max-h-[70vh] sm:max-h-none"
+              className="overflow-y-auto bg-surface-container-lowest pr-1 sm:pr-2 transition-[height] duration-150 max-h-[70vh] sm:max-h-none"
               style={{ height: recentSyncHeight }}
             >
               {recentDevs.length === 0 && (

@@ -525,7 +525,7 @@ export default function DevMap() {
               </label>
               <span className="font-mono text-[10px] text-outline shrink-0">{cityStats.length} Places</span>
             </div>
-            <div ref={cityListRef} className="space-y-2 max-h-[360px] sm:max-h-[480px] lg:max-h-[600px] overflow-y-auto pr-1 sm:pr-2 scrollbar-thin">
+            <div ref={cityListRef} className="space-y-2 max-h-[360px] sm:max-h-[480px] lg:max-h-[600px] overflow-y-auto pr-1 sm:pr-2">
               {cityStats.map(({ city, count, totalScore, topDev }, idx) => {
                 const coords = CITY_COORDS[city];
                 const color = DOT_COLORS[city] || DOT_COLORS._default;

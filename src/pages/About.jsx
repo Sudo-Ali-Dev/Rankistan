@@ -139,7 +139,7 @@ export default function About({ onChangeTab }) {
                 key={s.step}
                 className={`p-4 sm:p-6 bg-surface-container-lowest hover:bg-surface-container-low transition-colors ${
                   i < PIPELINE_STEPS.length - 1 ? 'border-b md:border-b lg:border-b' : ''
-                } ${i % 3 !== 2 ? 'lg:border-r' : ''} ${i % 2 !== 1 ? 'md:border-r lg:border-r-0' : 'md:border-r-0'} ${i % 3 !== 2 ? 'lg:border-r' : 'lg:border-r-0'} border-outline-variant`}
+                } ${i % 2 !== 1 ? 'md:border-r lg:border-r-0' : 'md:border-r-0'} ${i % 3 !== 2 ? 'lg:border-r' : 'lg:border-r-0'} border-outline-variant`}
               >
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
                   <span className="font-mono text-[10px] text-on-primary bg-primary px-2 py-0.5">{s.step}</span>
