@@ -60,7 +60,7 @@ function ContributionHeatmap({ username }) {
   );
 }
 
-export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser }) {
+export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect }) {
   const [isExpanded, setIsExpanded] = useState(false);
   
   const tagsColors = [
@@ -87,8 +87,25 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
   return (
     <div className="border-b border-outline-variant">
       {/* Main Row Info */}
-      <div className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors cursor-pointer" onClick={toggleExpand}>
-        <div className="col-span-full md:col-span-1 mb-2 md:mb-0">
+      <div
+        className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors cursor-pointer"
+        onClick={() => compareMode ? onCompareSelect?.(dev) : toggleExpand()}
+      >
+        <div className="col-span-full md:col-span-1 mb-2 md:mb-0 flex items-center gap-2">
+          {compareMode && (
+            <div
+              className={`w-5 h-5 border-2 flex items-center justify-center transition-colors shrink-0 ${
+                isCompareSelected
+                  ? 'bg-tertiary border-tertiary'
+                  : 'border-outline-variant hover:border-primary'
+              }`}
+              onClick={(e) => { e.stopPropagation(); onCompareSelect?.(dev); }}
+            >
+              {isCompareSelected && (
+                <span className="material-symbols-outlined text-[14px] text-on-tertiary">check</span>
+              )}
+            </div>
+          )}
           <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
             {String(dev.rank).padStart(3, '0')}
           </span>
@@ -145,6 +162,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
 
       {/* Expanded Details */}
       {isExpanded && (
+        <>
         <div className="bg-surface-container-lowest border-t border-outline-variant p-6 md:p-8 transform transition-all">
           <div className="grid md:grid-cols-12 gap-8">
             <div className="md:col-span-4 space-y-6">
@@ -230,6 +248,8 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
             </div>
           </div>
         </div>
+
+        </>
       )}
     </div>
   );
