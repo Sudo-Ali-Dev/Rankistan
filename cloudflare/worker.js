@@ -161,7 +161,10 @@ function buildCorsHeaders(corsOrigin = '*') {
   return {
     'Access-Control-Allow-Origin': corsOrigin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type',
+    // Responses here carry a per-request ACAO and some of them are cached.
+    // Without Vary, a cache can hand one origin's ACAO to a different origin.
+    'Vary': 'Origin'
   };
 }
 
@@ -422,6 +425,19 @@ function buildHeatmapUpstreamUrl(username) {
   return `${HEATMAP_UPSTREAM}?${params.toString()}`;
 }
 
+// The upstream is a third party we do not control. Serve its bytes only as an
+// SVG image, never with a Content-Type it chose: reflecting that header meant a
+// compromised or changed upstream could return text/html and have us serve
+// attacker-influenced markup from our own origin. nosniff and a deny-all CSP
+// are defence in depth for the same reason (the app embeds this via <img>, so
+// scripts would not run there, but a direct visit to the Worker URL would).
+const HEATMAP_SVG_HEADERS = {
+  'Content-Type': 'image/svg+xml; charset=utf-8',
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+  'Cache-Control': `public, max-age=${HEATMAP_CACHE_SECONDS}`
+};
+
 async function handleHeatmapRequest(request, env) {
   const corsOrigin = resolveCorsOrigin(request, env);
   const username = new URL(request.url).pathname.split('/').pop()?.trim();
@@ -438,19 +454,20 @@ async function handleHeatmapRequest(request, env) {
   const cache = typeof caches === 'undefined' ? null : caches.default;
   const cacheKey = new Request(upstreamUrl, { method: 'GET' });
 
+  // Only the SVG body is cached, with no CORS header on it. Previously the
+  // cached entry carried the Access-Control-Allow-Origin of whichever origin
+  // asked first, while the cache key (the upstream URL) had no Origin in it -
+  // so that first caller's ACAO was replayed to everyone for an hour.
+  const serve = (svg) =>
+    new Response(svg, { headers: { ...buildCorsHeaders(corsOrigin), ...HEATMAP_SVG_HEADERS } });
+
   try {
     const cached = cache ? await cache.match(cacheKey) : null;
     if (cached) {
       const cachedSvg = await cached.text();
 
       if (!isHeatmapErrorCard(cachedSvg)) {
-        return new Response(cachedSvg, {
-          headers: {
-            ...buildCorsHeaders(corsOrigin),
-            'Content-Type': cached.headers.get('Content-Type') || 'image/svg+xml',
-            'Cache-Control': `public, max-age=${HEATMAP_CACHE_SECONDS}`
-          }
-        });
+        return serve(cachedSvg);
       }
 
       await cache.delete(cacheKey);
@@ -468,19 +485,11 @@ async function handleHeatmapRequest(request, env) {
       throw new Error('Heatmap upstream returned an error card.');
     }
 
-    const response = new Response(svg, {
-      headers: {
-        ...buildCorsHeaders(corsOrigin),
-        'Content-Type': upstream.headers.get('Content-Type') || 'image/svg+xml',
-        'Cache-Control': `public, max-age=${HEATMAP_CACHE_SECONDS}`
-      }
-    });
-
     if (cache) {
-      await cache.put(cacheKey, response.clone());
+      await cache.put(cacheKey, new Response(svg, { headers: HEATMAP_SVG_HEADERS }));
     }
 
-    return response;
+    return serve(svg);
   } catch (error) {
     console.error(`Heatmap proxy failed for ${username}: ${error.message}`);
     return new Response(JSON.stringify({ error: 'Heatmap unavailable.' }), {
@@ -635,6 +644,7 @@ export {
   truncateSummary,
   validateSummary,
   resolveCorsOrigin,
+  buildCorsHeaders,
   getClientIp,
   isRateLimitedInIsolate,
   isHeatmapErrorCard,
