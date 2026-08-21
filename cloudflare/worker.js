@@ -231,16 +231,37 @@ async function isRateLimited(request, env) {
   const ip = getClientIp(request);
   const limiter = env?.SUMMARY_RATE_LIMITER;
 
+  // MEASURED IN PRODUCTION, NOT ASSUMED: the SUMMARY_RATE_LIMITER binding does
+  // not enforce here. It returns {"success":true} for every sequential request
+  // with a correct, stable key - verified by logging the raw result, and
+  // confirmed by dropping the configured limit to 3 and still passing 10
+  // sequential requests. It rejected 7 of 40 *concurrent* requests, so it
+  // provides some coarse burst protection and nothing more.
+  //
+  // Both layers therefore run, and either can reject. They used to be
+  // primary-and-fallback, and because the binding never throws, the `return`
+  // inside the try made the in-isolate counter unreachable - so nothing at all
+  // caught a slow drip. Note isRateLimitedInIsolate() also *records* the
+  // request, so it must be called on every request, not only when the binding
+  // passes.
+  //
+  // This is still not a correct rate limiter: isolates are ephemeral, so a
+  // sequential attacker keeps landing on fresh ones with empty state. That is
+  // the residue of #65 and needs a Durable Object to fix properly. What
+  // actually bounds abuse today is the username validation and the
+  // leaderboard-membership check below, not this.
+  const isolateLimited = isRateLimitedInIsolate(ip);
+
   if (limiter && typeof limiter.limit === 'function') {
     try {
       const { success } = await limiter.limit({ key: ip });
-      return !success;
+      return !success || isolateLimited;
     } catch (error) {
-      console.error('SUMMARY_RATE_LIMITER failed; falling back to in-isolate counter.', error);
+      console.error('SUMMARY_RATE_LIMITER failed; using the in-isolate counter alone.', error);
     }
   }
 
-  return isRateLimitedInIsolate(ip);
+  return isolateLimited;
 }
 
 function isRateLimitedInIsolate(ip) {
