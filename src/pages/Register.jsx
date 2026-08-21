@@ -64,6 +64,7 @@ export default function Register({ onChangeTab }) {
   const [profileData, setProfileData] = useState(null);
   const [scoreBreakdown, setScoreBreakdown] = useState(null);
   const [gatesPassed, setGatesPassed] = useState(false);
+  const requestIdRef = useRef(0);
   const [recentDevs, setRecentDevs] = useState([]);
   const statusPanelRef = useRef(null);
   const [statusPanelOffset, setStatusPanelOffset] = useState(0);
@@ -158,6 +159,12 @@ export default function Register({ onChangeTab }) {
     });
 
     setProfileData(null);
+    setScoreBreakdown(null);
+    setGatesPassed(false);
+    // Editing the field invalidates any submission still in flight, so a
+    // late response cannot repopulate the panel for a handle the input no
+    // longer shows.
+    requestIdRef.current += 1;
   }, [username]);
   
   const handleRegister = async () => {
@@ -166,6 +173,9 @@ export default function Register({ onChangeTab }) {
       setStatus('error');
       return;
     }
+
+    const reqId = (requestIdRef.current += 1);
+    const stale = () => requestIdRef.current !== reqId;
 
     setStatus('loading');
     setErrorMsg('');
@@ -176,6 +186,7 @@ export default function Register({ onChangeTab }) {
 
     try {
       const res = await fetch(`https://api.github.com/users/${username.trim()}`);
+      if (stale()) return;
 
       if (res.status === 404) {
         setChecks((c) => ({ ...c, exists: false }));
@@ -189,6 +200,7 @@ export default function Register({ onChangeTab }) {
       }
 
       const data = await res.json();
+      if (stale()) return;
       setProfileData(data);
 
       const isValidLocation = isLikelyPakistaniLocation(data.location);
@@ -227,6 +239,7 @@ export default function Register({ onChangeTab }) {
       try {
         for (let page = 1; page <= 2; page++) {
           const evRes = await fetch(`https://api.github.com/users/${data.login}/events?per_page=100&page=${page}`);
+          if (stale()) return;
           if (!evRes.ok) break;
           const pageEvents = await evRes.json();
           if (!Array.isArray(pageEvents)) break;
@@ -239,6 +252,7 @@ export default function Register({ onChangeTab }) {
       try {
         for (let page = 1; ; page++) {
           const repoRes = await fetch(`https://api.github.com/users/${data.login}/repos?per_page=100&page=${page}`);
+          if (stale()) return;
           if (!repoRes.ok) break;
           const repos = await repoRes.json();
           if (!Array.isArray(repos) || repos.length === 0) break;

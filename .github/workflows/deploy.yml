@@ -11,7 +11,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages-deploy
+  # Deliberately NOT shared with update-digest.yml. Sharing one group stopped
+  # concurrent Pages deploys, but it also let the next hourly pipeline dispatch
+  # cancel a merge's queued deploy, so code changes waited for a later pipeline
+  # run to ship them. The in-flight-deployment error is handled by the retry
+  # below instead, matching what update-digest.yml does.
+  group: pages-deploy-push
   cancel-in-progress: false
 
 jobs:
@@ -19,7 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      # Falls back to the retry step, since the first deploy is now
+      # allowed to fail when the pipeline holds a deployment.
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -48,4 +55,15 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      # deploy-pages fails if the pipeline's own Pages deployment is mid-flight.
+      - name: Wait before retry
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+
+      - name: Deploy to GitHub Pages (retry)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4

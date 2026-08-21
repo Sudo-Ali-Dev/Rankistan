@@ -248,6 +248,26 @@ function main() {
   });
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Compare through realpath so a symlinked or differently-cased argv[1] still
+// matches. If it somehow does not, say so loudly and fail: exiting 0 having
+// silently done nothing would let the hourly pipeline "succeed" without ever
+// running a batch.
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  const self = fileURLToPath(import.meta.url);
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(self);
+  } catch {
+    return path.resolve(process.argv[1]) === path.resolve(self);
+  }
+}
+
+if (isEntryPoint()) {
   main();
+} else if (process.argv[1] && /run-all\.js$/i.test(process.argv[1])) {
+  console.error(
+    `run-all.js was invoked directly but the entry-point check did not match ` +
+    `(argv[1]=${process.argv[1]}). Refusing to exit 0 without doing work.`
+  );
+  process.exit(1);
 }

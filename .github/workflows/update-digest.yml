@@ -41,8 +41,14 @@ jobs:
 
       - name: Determine batch index
         id: batch
+        # The dispatch input arrives via env, not spliced into the script body.
+        # Interpolating ${{ }} directly into run: is the shape that becomes a
+        # script-injection bug the moment a trigger with untrusted input is
+        # added. workflow_dispatch requires write access today, so this is
+        # hardening rather than a live fix.
+        env:
+          INPUT_BATCH: ${{ github.event.inputs.batch }}
         run: |
-          INPUT_BATCH="${{ github.event.inputs.batch }}"
           if [ -n "$INPUT_BATCH" ]; then
             echo "index=$INPUT_BATCH" >> "$GITHUB_OUTPUT"
           else
@@ -55,12 +61,15 @@ jobs:
       - name: Run incremental pipeline
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BATCH_INDEX: ${{ steps.batch.outputs.index }}
         run: |
-          BATCH="${{ steps.batch.outputs.index }}"
+          BATCH="$BATCH_INDEX"
           echo "Running incremental batch: $BATCH"
           node scripts/run-all.js --incremental "$BATCH"
 
       - name: Commit and push updates
+        env:
+          BATCH_INDEX: ${{ steps.batch.outputs.index }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -71,7 +80,7 @@ jobs:
           fi
 
           git add public/data.json
-          git commit -m "chore: update leaderboard (batch ${{ steps.batch.outputs.index }})"
+          git commit -m "chore: update leaderboard (batch $BATCH_INDEX)"
 
           if git push origin HEAD:main; then
             exit 0
