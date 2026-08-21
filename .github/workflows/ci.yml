@@ -42,6 +42,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Boots the built bundle in a DOM and asserts the app mounts. Added
+      # after a react/react-dom mismatch took the site down while build and
+      # all tests passed - nothing here had ever loaded the app.
+      - name: Smoke test the build
+        run: npm run smoke
+
   # Guards the pipeline's own logic without touching GitHub or public/data.json.
   pipeline-dry-run:
     runs-on: ubuntu-latest

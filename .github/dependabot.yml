@@ -11,11 +11,30 @@ updates:
       # a dozen separate ones.
       dev-dependencies:
         dependency-type: development
+      # react and react-dom MUST move together: React throws error #527 and
+      # refuses to mount if the two are on different versions. Dependabot
+      # splits them into separate PRs by default, and merging one without the
+      # other took the site down (react 19.2.8 against react-dom 19.2.4).
+      # Grouping them makes that split impossible.
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
     ignore:
       # Tailwind 4 is a breaking rewrite (Oxide engine, CSS-first @theme, the
       # PostCSS plugin moves to @tailwindcss/postcss) and needs a deliberate
       # migration, not an automated PR.
       - dependency-name: tailwindcss
+        update-types: [version-update:semver-major]
+      # ESLint 10 cannot be taken yet: eslint-plugin-jsx-a11y@6 peers on
+      # "eslint ^3 || ... || ^9", so bumping the major breaks `npm ci` with an
+      # ERESOLVE conflict. CI caught this on #80. Revisit once jsx-a11y ships
+      # v10 support, and bump eslint and @eslint/js together.
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      - dependency-name: "@eslint/js"
         update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions

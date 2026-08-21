@@ -20,6 +20,7 @@ const OUTPUT_FIELDS = [
   'avatar_url',
   'bio',
   'location',
+  'pronouns',
   'followers',
   'public_repos',
   'created_at',

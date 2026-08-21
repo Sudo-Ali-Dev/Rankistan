@@ -5,13 +5,23 @@ compatibility_date = "2026-04-03"
 [vars]
 SUMMARY_ALLOWED_ORIGIN = "https://rankistan.dev,https://www.rankistan.dev,https://sudo-ali-dev.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 
-# Authoritative rate-limit counter for /api/dev-summary. Replaces the
-# module-level Map, which only ever counted within a single Worker isolate and
-# so enforced the limit per-isolate rather than per-IP (#65).
+# Rate limiting for /api/dev-summary.
 #
-# namespace_id is a per-Worker identifier, not a resource to create - pick any
-# stable integer and keep it. period must be 10 or 60.
-[[ratelimits]]
-name = "SUMMARY_RATE_LIMITER"
-namespace_id = "1001"
-simple = { limit = 20, period = 60 }
+# A Durable Object is used because Cloudflare guarantees a single instance per
+# object ID and serialises requests to it, so keying by client IP gives one
+# authoritative counter per IP with no races. That is what a rate limit needs.
+#
+# The two previous approaches are recorded in rate-limiter.js: a module-level
+# Map (per-isolate, so a sequential caller was never counted - the original
+# report in #65) and Cloudflare's [[ratelimits]] binding, which measured as
+# ineffective here: it returned success for 30 consecutive requests against a
+# 20/60s config, and for 10 against a 3/60s config.
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+script_name = "rankistan-summary-api"
+
+# SQLite-backed Durable Objects are available without a paid plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiter"]
