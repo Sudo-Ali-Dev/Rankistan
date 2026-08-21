@@ -1,7 +1,7 @@
 import React from 'react';
 
-const REPO_COMMIT_BASE = 'https://github.com/Sudo-Ali-Dev/pakdev-index/commit';
-const CONFIG_URL = 'https://github.com/Sudo-Ali-Dev/pakdev-index/blob/main/score-config.json';
+const REPO_COMMIT_BASE = 'https://github.com/Sudo-Ali-Dev/Rankistan/commit';
+const CONFIG_URL = 'https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/score-config.json';
 const SCORING_VERSION = '2.0.0';
 const LAST_DOCUMENTED = 'May 2026';
 

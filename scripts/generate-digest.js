@@ -58,7 +58,7 @@ async function loadDotEnv(repoRoot) {
     }
 
     const key = line.slice(0, equalsIndex).trim();
-    const value = line.slice(equalsIndex + 1).trim().replace(/^['\"]|['\"]$/g, '');
+    const value = line.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, '');
 
     if (key && process.env[key] === undefined) {
       process.env[key] = value;

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { normalizeLocationForDisplay } from '../utils/location';
 
 const COMPARE_ROWS = [
@@ -41,12 +42,39 @@ function findWinner(devs, row) {
 }
 
 export default function CompareModal({ developers, onClose }) {
+  const panelRef = useRef(null);
+
+  // Escape to dismiss, and move focus into the dialog on open so a keyboard
+  // user is not left behind on the list underneath. The panel's
+  // stopPropagation was previously paired with no backdrop handler, so
+  // clicking outside did nothing at all.
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key === 'Escape') onClose?.();
+    }
+    document.addEventListener('keydown', onKeyDown);
+    const previouslyFocused = document.activeElement;
+    panelRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+    };
+  }, [onClose]);
+
   if (!developers || developers.length === 0) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
-        className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto border border-outline-variant bg-surface-container-lowest"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Developer comparison"
+        tabIndex={-1}
+        className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto border border-outline-variant bg-surface-container-lowest outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

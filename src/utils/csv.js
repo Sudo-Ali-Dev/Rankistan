@@ -19,7 +19,7 @@ export function csvCell(value) {
   } else if (typeof value === "object") {
     try {
       s = JSON.stringify(value);
-    } catch (e) {
+    } catch {
       s = "[Object]"; 
     }
   } else if (typeof value === "function") {
@@ -33,6 +33,9 @@ export function csvCell(value) {
 
   // 2. Defensive CSV (Formula) Injection Shielding
   // Checked after processing quotes to ensure characters aren't split or broken unreliably
+  // The control-char class is deliberate: leading control characters must not
+  // hide a formula prefix from this check.
+  // eslint-disable-next-line no-control-regex
   if (/^[\u0000-\u001F\s]*[=+\-@]/.test(s)) {
     s = `'${s}`;
   }

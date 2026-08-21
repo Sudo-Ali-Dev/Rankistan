@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   fetchPakistaniDevelopers,
   applyActivityFilter,
@@ -15,12 +16,77 @@ const DATA_JSON = path.join(PUBLIC_DIR, 'data.json');
 const DRY_RUN_DATA_JSON = path.join(PUBLIC_DIR, 'data.dry-run.json');
 
 function loadExistingLeaderboard(targetPath = DATA_JSON) {
-  try {
-    const raw = fs.readFileSync(targetPath, 'utf8');
-    const data = JSON.parse(raw);
-    return Array.isArray(data.leaderboard) ? data.leaderboard : [];
-  } catch {
+  if (!fs.existsSync(targetPath)) {
+    // First run, or a checkout without published data. Empty is the correct
+    // starting point, and there is nothing to purge.
+    console.warn(`No existing leaderboard at ${targetPath}; starting from empty.`);
     return [];
+  }
+
+  // Any other failure must abort. The previous `catch { return [] }` turned an
+  // unreadable file, a truncated write or invalid JSON into "no existing data",
+  // which made removedCount 0, which silently bypassed the integrity check
+  // below - publishing a leaderboard containing only the current batch and
+  // deleting every other developer.
+  const raw = fs.readFileSync(targetPath, 'utf8');
+  const data = JSON.parse(raw);
+
+  if (!Array.isArray(data.leaderboard)) {
+    throw new Error(
+      `Existing leaderboard at ${targetPath} is missing its "leaderboard" array. ` +
+      `Refusing to treat this as empty.`
+    );
+  }
+
+  return data.leaderboard;
+}
+// A batch replaces its own cohort wholesale, so the write is only safe if the
+// incoming set is a plausible replacement for what it displaces.
+//
+// The original check fired only when the batch returned *nothing*. Per-developer
+// fetch failures in fetch-devs.js are caught and merely counted, and secondary
+// rate limits already cause roughly 5% of pipeline runs to fail, so a storm
+// mid-batch can reduce a 200-developer batch to a handful. That passed the
+// zero-only check and purged the rest.
+//
+// MIN_COHORT_FOR_RATIO_CHECK avoids false alarms on the small batches, where
+// natural variance is large: batch sizes currently range from about 12 to 217,
+// and a 12-developer cohort losing half its members is ordinary noise.
+export const MIN_REPLACEMENT_RATIO = 0.5;
+export const MIN_COHORT_FOR_RATIO_CHECK = 20;
+
+export function assertReplacementIsSafe({
+  batchIndex,
+  batchLabel,
+  removedCount,
+  replacementCount,
+  allowShrink = false
+}) {
+  if (removedCount <= 0) {
+    return;
+  }
+
+  if (replacementCount === 0) {
+    throw new Error(
+      `Data Integrity Exception: Refusing to update batch ${batchIndex} (${batchLabel}). ` +
+      `This operation would permanently purge ${removedCount} existing records without ` +
+      `replacing them with new data. Aborting write sequence to maintain fallback data.`
+    );
+  }
+
+  if (allowShrink || removedCount < MIN_COHORT_FOR_RATIO_CHECK) {
+    return;
+  }
+
+  const floor = removedCount * MIN_REPLACEMENT_RATIO;
+  if (replacementCount < floor) {
+    throw new Error(
+      `Data Integrity Exception: Refusing to update batch ${batchIndex} (${batchLabel}). ` +
+      `Only ${replacementCount} developers came back to replace ${removedCount} existing ` +
+      `records, below the ${MIN_REPLACEMENT_RATIO * 100}% floor. This usually means the ` +
+      `fetch was throttled mid-batch rather than that the cohort really shrank. ` +
+      `Set ALLOW_LEADERBOARD_SHRINK=1 to publish anyway.`
+    );
   }
 }
 
@@ -107,15 +173,14 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
   const existing = loadExistingLeaderboard(DATA_JSON);
   const kept = existing.filter((d) => d.batch_index !== batchIndex);
   
-  // Strict Transaction Integrity Check
   const removedCount = existing.length - kept.length;
-  if (removedCount > 0 && newEntries.length === 0) {
-    throw new Error(
-      `Data Integrity Exception: Refusing to update batch ${batchIndex} (${SEARCH_BATCHES[batchIndex].label}). ` +
-      `This operation would permanently purge ${removedCount} existing records without replacing them with new data. ` +
-      `Aborting write sequence to maintain fallback data.`
-    );
-  }
+  assertReplacementIsSafe({
+    batchIndex,
+    batchLabel: SEARCH_BATCHES[batchIndex].label,
+    removedCount,
+    replacementCount: newEntries.length,
+    allowShrink: process.env.ALLOW_LEADERBOARD_SHRINK === '1'
+  });
 
   console.log(
     `Existing leaderboard: ${existing.length} total, ${kept.length} kept ` +
@@ -157,21 +222,52 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
   );
 }
 
-const args = process.argv.slice(2);
-const mode = args[0];
-const dryRun = args.includes('--dry-run') || process.env.SKIP_GITHUB === 'true';
+// Only run the CLI when this file is the process entry point. Previously the
+// block below executed on *import*, so the module could not be imported by a
+// test without process.exit(1) tearing the runner down.
+function main() {
+  const args = process.argv.slice(2);
+  const mode = args[0];
+  const dryRun = args.includes('--dry-run') || process.env.SKIP_GITHUB === 'true';
+  const usage = 'Usage: node scripts/run-all.js --incremental <batch-index> [--dry-run]';
 
-if (mode === '--incremental') {
-  const idx = parseInt(args[1], 10);
-  if (Number.isNaN(idx)) {
-    console.error('Usage: node scripts/run-all.js --incremental <batch-index> [--dry-run]');
+  if (mode !== '--incremental') {
+    console.error(usage);
     process.exit(1);
   }
+
+  const idx = parseInt(args[1], 10);
+  if (Number.isNaN(idx)) {
+    console.error(usage);
+    process.exit(1);
+  }
+
   runIncremental(idx, { dryRun }).catch((e) => {
     console.error(e.message);
     process.exit(1);
   });
-} else {
-  console.error('Usage: node scripts/run-all.js --incremental <batch-index> [--dry-run]');
+}
+
+// Compare through realpath so a symlinked or differently-cased argv[1] still
+// matches. If it somehow does not, say so loudly and fail: exiting 0 having
+// silently done nothing would let the hourly pipeline "succeed" without ever
+// running a batch.
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  const self = fileURLToPath(import.meta.url);
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(self);
+  } catch {
+    return path.resolve(process.argv[1]) === path.resolve(self);
+  }
+}
+
+if (isEntryPoint()) {
+  main();
+} else if (process.argv[1] && /run-all\.js$/i.test(process.argv[1])) {
+  console.error(
+    `run-all.js was invoked directly but the entry-point check did not match ` +
+    `(argv[1]=${process.argv[1]}). Refusing to exit 0 without doing work.`
+  );
   process.exit(1);
 }

@@ -1,0 +1,58 @@
+name: Bug report
+description: Something is wrong on the site or in the pipeline
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where?
+      options:
+        - Leaderboard
+        - Developer Map
+        - Register
+        - Repository Digest
+        - Badge Generator
+        - About / Evolution
+        - Scoring
+        - Data pipeline (GitHub Actions)
+        - Cloudflare Worker (summaries / badges / heatmap)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Leaderboard
+        2. Search for "..."
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: developer
+    attributes:
+      label: Affected developer / username
+      description: If the bug is about a specific leaderboard entry, which one?
+
+  - type: input
+    id: env
+    attributes:
+      label: Browser and device
+      placeholder: Chrome 130 on Windows 11, or Safari on iPhone 15
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or console output
+      description: Anything from the browser console is especially useful.

@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Keep the noise down: this repo has 2 runtime deps and ~16 dev deps, so
+      # batching dev-dependency bumps into one PR is far easier to review than
+      # a dozen separate ones.
+      dev-dependencies:
+        dependency-type: development
+    ignore:
+      # Tailwind 4 is a breaking rewrite (Oxide engine, CSS-first @theme, the
+      # PostCSS plugin moves to @tailwindcss/postcss) and needs a deliberate
+      # migration, not an automated PR.
+      - dependency-name: tailwindcss
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

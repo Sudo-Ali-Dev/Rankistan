@@ -64,6 +64,7 @@ export default function Register({ onChangeTab }) {
   const [profileData, setProfileData] = useState(null);
   const [scoreBreakdown, setScoreBreakdown] = useState(null);
   const [gatesPassed, setGatesPassed] = useState(false);
+  const requestIdRef = useRef(0);
   const [recentDevs, setRecentDevs] = useState([]);
   const statusPanelRef = useRef(null);
   const [statusPanelOffset, setStatusPanelOffset] = useState(0);
@@ -115,7 +116,7 @@ export default function Register({ onChangeTab }) {
             }));
           }
         }
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       let lb = [];
       try {
@@ -125,7 +126,7 @@ export default function Register({ onChangeTab }) {
           if (res.ok) leaderboardPayload = await res.json();
         }
         lb = Array.isArray(leaderboardPayload?.leaderboard) ? leaderboardPayload.leaderboard : [];
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       const formattedLb = lb.slice(0, RECENT_SYNC_LIMIT).map((d, index) => ({
         avatar: d.avatar_url,
@@ -158,6 +159,12 @@ export default function Register({ onChangeTab }) {
     });
 
     setProfileData(null);
+    setScoreBreakdown(null);
+    setGatesPassed(false);
+    // Editing the field invalidates any submission still in flight, so a
+    // late response cannot repopulate the panel for a handle the input no
+    // longer shows.
+    requestIdRef.current += 1;
   }, [username]);
   
   const handleRegister = async () => {
@@ -166,6 +173,9 @@ export default function Register({ onChangeTab }) {
       setStatus('error');
       return;
     }
+
+    const reqId = (requestIdRef.current += 1);
+    const stale = () => requestIdRef.current !== reqId;
 
     setStatus('loading');
     setErrorMsg('');
@@ -176,6 +186,7 @@ export default function Register({ onChangeTab }) {
 
     try {
       const res = await fetch(`https://api.github.com/users/${username.trim()}`);
+      if (stale()) return;
 
       if (res.status === 404) {
         setChecks((c) => ({ ...c, exists: false }));
@@ -189,6 +200,7 @@ export default function Register({ onChangeTab }) {
       }
 
       const data = await res.json();
+      if (stale()) return;
       setProfileData(data);
 
       const isValidLocation = isLikelyPakistaniLocation(data.location);
@@ -227,25 +239,27 @@ export default function Register({ onChangeTab }) {
       try {
         for (let page = 1; page <= 2; page++) {
           const evRes = await fetch(`https://api.github.com/users/${data.login}/events?per_page=100&page=${page}`);
+          if (stale()) return;
           if (!evRes.ok) break;
           const pageEvents = await evRes.json();
           if (!Array.isArray(pageEvents)) break;
           allEvents.push(...pageEvents);
           if (pageEvents.length < 100) break;
         }
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       let totalStars = 0;
       try {
         for (let page = 1; ; page++) {
           const repoRes = await fetch(`https://api.github.com/users/${data.login}/repos?per_page=100&page=${page}`);
+          if (stale()) return;
           if (!repoRes.ok) break;
           const repos = await repoRes.json();
           if (!Array.isArray(repos) || repos.length === 0) break;
           repos.forEach(r => { totalStars += r.stargazers_count || 0; });
           if (repos.length < 100) break;
         }
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       const { count, longestGap } = computeActivity(allEvents);
       const hasContributions = count >= CRITERIA.MIN_CONTRIBUTIONS_60D;
@@ -315,7 +329,7 @@ export default function Register({ onChangeTab }) {
           if (prev.find((p) => p.username.toLowerCase() === newReg.username.toLowerCase())) return prev;
           return [newReg, ...prev].slice(0, RECENT_SYNC_LIMIT);
         });
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
     } catch (e) {
       setStatus('error');
       setErrorMsg(e.message);
@@ -452,7 +466,7 @@ export default function Register({ onChangeTab }) {
             </div>
 
             <div
-              className="overflow-y-auto bg-surface-container-lowest pr-1 sm:pr-2 scrollbar-thin transition-[height] duration-150 max-h-[70vh] sm:max-h-none"
+              className="overflow-y-auto bg-surface-container-lowest pr-1 sm:pr-2 transition-[height] duration-150 max-h-[70vh] sm:max-h-none"
               style={{ height: recentSyncHeight }}
             >
               {recentDevs.length === 0 && (

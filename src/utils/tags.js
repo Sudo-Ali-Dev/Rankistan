@@ -7,17 +7,6 @@ import {
   matchTagsForDeveloper
 } from './tag-matcher.js';
 
-function enrichLeaderboardWithTags(leaderboard, keywordDict = KEYWORD_DICT) {
-  if (!Array.isArray(leaderboard)) {
-    return [];
-  }
-
-  return leaderboard.map((dev) => ({
-    ...dev,
-    tags: matchTagsForDeveloper(dev, keywordDict)
-  }));
-}
-
 function ensureLeaderboardTags(leaderboard, keywordDict = KEYWORD_DICT) {
   if (!Array.isArray(leaderboard)) {
     return [];
@@ -55,7 +44,6 @@ export {
   buildRegex,
   buildDeveloperCorpus,
   matchTagsForDeveloper,
-  enrichLeaderboardWithTags,
   ensureLeaderboardTags,
   getAvailableTags
 };

@@ -94,7 +94,7 @@ async function loadDotEnv(repoRoot) {
     }
 
     const key = line.slice(0, equalsIndex).trim();
-    const value = line.slice(equalsIndex + 1).trim().replace(/^['\"]|['\"]$/g, '');
+    const value = line.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, '');
 
     if (key && process.env[key] === undefined) {
       process.env[key] = value;
@@ -192,7 +192,7 @@ async function githubRequest(endpoint, token, options = {}) {
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${token}`,
         'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'pakdev-index-fetch-devs'
+        'User-Agent': 'rankistan-fetch-devs'
       },
       signal: controller.signal
     });

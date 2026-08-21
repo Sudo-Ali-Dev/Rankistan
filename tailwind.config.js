@@ -65,6 +65,9 @@ export default {
           "label": ["Space Grotesk"],
           "mono": ["JetBrains Mono", "monospace"]
       },
+      // 'duration-50' is used in 14 places across the app; Tailwind's default
+      // scale has no 50, so without this every one of them fell back to 150ms.
+      transitionDuration: { '50': '50ms' },
       borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"},
     },
   },

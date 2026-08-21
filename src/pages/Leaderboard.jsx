@@ -32,6 +32,11 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
   const [sortIndex, setSortIndex] = useState(0);
   const [compareMode, setCompareMode] = useState(false);
   const [compareSelection, setCompareSelection] = useState([]);
+  // The modal used to mount as soon as a second row was ticked, which covered
+  // the list and made a third selection impossible - so the "of 3" indicator
+  // and the 3-item branch in handleCompareSelect were both unreachable. Opening
+  // is now an explicit action.
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageInput, setPageInput] = useState('');
@@ -162,6 +167,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
   function handleCompareToggle() {
     setCompareMode((prev) => !prev);
     setCompareSelection([]);
+    setCompareOpen(false);
   }
 
   return (
@@ -384,21 +390,33 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
               {compareSelection.length} of 3 Nodes Selected
             </span>
           </div>
-          <button
-            type="button"
-            onClick={handleCompareToggle}
-            className="text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
-          >
-            Exit
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => setCompareOpen(true)}
+              disabled={compareSelection.length < 2}
+              className="border border-tertiary/60 px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-tertiary hover:bg-tertiary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Compare
+            </button>
+            <button
+              type="button"
+              onClick={handleCompareToggle}
+              className="text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
+            >
+              Exit
+            </button>
+          </div>
         </div>
       )}
 
       {/* Compare Modal */}
-      {compareSelection.length >= 2 && (
+      {compareOpen && compareSelection.length >= 2 && (
         <CompareModal
           developers={compareSelection}
-          onClose={() => { setCompareMode(false); setCompareSelection([]); }}
+          // Closing returns to the list with the selection intact, so a third
+          // node can be added and the modal reopened.
+          onClose={() => setCompareOpen(false)}
         />
       )}
       </div>

@@ -8,39 +8,36 @@
   },
   "contributors": [
     {
-      "name": "Muhammad Hamza",
-      "username": "muhammadhamzachishti",
-      "avatar_url": "https://avatars.githubusercontent.com/u/268736367?v=4",
-      "bio": null,
-      "role": "Contributor"
-    },
-    {
-      "name": "Muhammad Saad Amin",
-      "username": "SENODROOM",
-      "avatar_url": "https://avatars.githubusercontent.com/u/136210526?v=4",
-      "bio": "Software Engineer | Web, AI & Compiler Systems",
-      "role": "Contributor"
-    },
-    {
-      "name": "Haider Ali",
-      "username": "ryomenhaider",
-      "avatar_url": "https://avatars.githubusercontent.com/u/194666989?v=4",
-      "bio": "I am a ML Engineer",
-      "role": "Contributor"
-    },
-    {
-      "name": "wahb Amir",
       "username": "wahb-amir",
-      "avatar_url": "https://avatars.githubusercontent.com/u/211194923?v=4",
-      "bio": "Systems Architect & ML Engineer",
-      "role": "Contributor"
+      "avatar_url": "https://avatars.githubusercontent.com/u/211194923?v=4"
     },
     {
-      "name": "Waqar Ahmad",
+      "username": "ryomenhaider",
+      "avatar_url": "https://avatars.githubusercontent.com/u/194666989?v=4"
+    },
+    {
+      "username": "enmfarooq85",
+      "avatar_url": "https://avatars.githubusercontent.com/u/143240734?v=4"
+    },
+    {
+      "username": "SENODROOM",
+      "avatar_url": "https://avatars.githubusercontent.com/u/136210526?v=4"
+    },
+    {
       "username": "waqarahmadweb",
-      "avatar_url": "https://avatars.githubusercontent.com/u/155743918?v=4",
-      "bio": null,
-      "role": "Contributor"
+      "avatar_url": "https://avatars.githubusercontent.com/u/34026578?v=4"
+    }
+  ],
+  "coAuthors": [
+    {
+      "username": "M-Talha-Farooqi",
+      "avatar_url": "https://avatars.githubusercontent.com/u/76969614?v=4",
+      "contributions": 1
+    },
+    {
+      "username": "muhammadhaider02",
+      "avatar_url": "https://avatars.githubusercontent.com/u/175801847?v=4",
+      "contributions": 1
     }
   ]
 }

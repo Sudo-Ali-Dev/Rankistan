@@ -1,6 +1,6 @@
 # Rankistan
 
-**Current release: [v2.0.0](https://github.com/Sudo-Ali-Dev/pakdev-index/releases/tag/v2.0.0)** — Scoring v2 (diminishing returns, daily caps, Evolution tab, Register breakdown).
+**Current release: [v2.0.0](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/v2.0.0)** — Scoring v2 (diminishing returns, daily caps, Evolution tab, Register breakdown).
 
 An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by normalized profile locations on an interactive map of Pakistan, a **Badge Generator** for README rank badges, **Register** for profile checks with a live score breakdown, **Evolution** for how the scoring formula changed over time, and **About** documentation for pipeline logic, filters, and scheduling.
 
@@ -13,7 +13,9 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 - [Running Locally](#running-locally)
 - [Scheduling](#scheduling)
 - [Project Structure](#project-structure)
+- [Cloudflare Worker API](#cloudflare-worker-api)
 - [Groq Key Security](#groq-key-security)
+- [Contributing](#contributing)
 - [TODO](#todo)
 
 ## Frontend
@@ -188,22 +190,40 @@ For a plain-language history of how the formula changed (and why), open the **Ev
 # Install dependencies
 npm install
 
-# Run a single batch incrementally (0-23)
+# Start the frontend dev server (no token needed - reads public/data.json)
+npm run dev
+```
+
+Frontend work needs nothing else. For **pipeline** work, copy `.env.example` to
+`.env` and set `MY_GITHUB_PAT`; `scripts/fetch-devs.js` exits with
+`Missing GitHub token. Set MY_GITHUB_PAT in .env` without it. Only public data is
+read, so a classic PAT with **no scopes** (or a fine-grained token with
+`Public Repositories: Read`) is sufficient — never grant write scopes.
+
+```bash
+# Run a single batch incrementally (0-23) - requires MY_GITHUB_PAT
 node scripts/run-all.js --incremental 0
 
 # Dry-run: skip GitHub, test atomic write to public/data.dry-run.json (no PAT / rate limits)
 node scripts/run-all.js --incremental 0 --dry-run
 # Same as: SKIP_GITHUB=true node scripts/run-all.js --incremental 0
 
-# Verify activity scoring helpers (log2 curve + daily caps)
-npm run verify:activity
+# Checks - all of these also run in CI on every PR
+npm run lint          # ESLint across src/, scripts/ and cloudflare/
+npm test              # Vitest
+npm run build         # production build
+npm run verify:activity   # activity-scoring invariants (log2 curve + daily caps)
 
-# Start the frontend dev server
-npm run dev
+# Formatting - see CONTRIBUTING.md before running repo-wide
+npm run format:check
+npm run format
 
-# Deploy the Cloudflare Worker (badge + summary APIs)
+# Deploy the Cloudflare Worker (badge + summary APIs) - not done by merging
 npm run cf:deploy
 ```
+
+Node 20 is expected (`.nvmrc`, `engines` in `package.json`). See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor workflow.
 
 The repo root is ESM (`"type": "module"` in `package.json`); pipeline scripts use `import`/`export` and import JSON with `with { type: 'json' }`.
 
@@ -289,21 +309,38 @@ src/
 
 ## Cloudflare Worker API
 
-The Worker (`cloudflare/worker.js`) backs two public endpoints:
+The Worker (`cloudflare/worker.js`) backs three public endpoints:
 
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/dev-summary` | POST | On-demand AI developer summaries (Groq) |
 | `/api/badge/{username}` | GET | Shields.io JSON for dynamic README badges |
+| `/api/heatmap/{username}` | GET | Contribution-graph SVG, proxied and cached |
 
 Summary generation runs behind the Worker so the Groq key is not exposed in the frontend bundle.
+
+Worker changes only take effect after `npm run cf:deploy` — merging a PR does not update the Worker.
 
 ### Security Model
 
 - Frontend sends developer metadata and receives summary text; badge snippets point Shields.io at `/api/badge/{username}`.
 - `GROQ_API_KEY_1` … `GROQ_API_KEY_8` are stored only in Worker secrets.
-- Worker enforces CORS and basic per-IP rate limiting (summaries).
 - Frontend resolves Worker URLs via `VITE_SUMMARY_API_URL` (see `src/utils/groq.js`).
+- `/api/dev-summary` requires the username to be a valid GitHub handle **and** to
+  already exist on the leaderboard. That is what bounds the cost of abuse: the
+  endpoint spends Groq credits per call and is otherwise unauthenticated.
+- Rate limiting uses Cloudflare's Rate Limiting binding (`SUMMARY_RATE_LIMITER`
+  in `cloudflare/wrangler.toml`), which is authoritative **per Cloudflare
+  location** rather than strictly globally. A module-level counter was used
+  before, which only ever limited per Worker isolate ([#65](https://github.com/Sudo-Ali-Dev/Rankistan/issues/65)).
+- CORS reflects only origins listed in `SUMMARY_ALLOWED_ORIGIN`, and every
+  response sets `Vary: Origin` so cached responses cannot leak one origin's
+  `Access-Control-Allow-Origin` to another.
+- `/api/heatmap` pins `Content-Type: image/svg+xml` with `nosniff` and a
+  deny-all CSP rather than trusting the third-party upstream's own header.
+- All developer fields are stripped of control characters before being
+  interpolated into the LLM prompt, so a caller cannot inject prompt
+  instructions through a name, location, or repo description.
 
 ### Trade-off
 
@@ -314,7 +351,13 @@ Configuration model:
 - Set **`GROQ_API_KEY_1` through `GROQ_API_KEY_8`** (same key format for each slot). The Worker rotates through them on rate limits.
 - `VITE_SUMMARY_API_URL`: public frontend pointer to Worker origin.
 - `SUMMARY_ALLOWED_ORIGIN`: allowed frontend origin for Worker CORS.
-- CI digest generation (`scripts/generate-digest.js`) uses the first available slot from `GROQ_API_KEY_1` … `GROQ_API_KEY_8`.
+- `scripts/generate-digest.js` uses the first available slot from `GROQ_API_KEY_1` … `GROQ_API_KEY_8`. Note it is **not currently wired into CI**: no workflow or npm script invokes it, and `public/digest.json` is not generated. The Repository Digest page builds itself from `public/data.json` instead.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the checks CI runs on every PR,
+formatting rules, and PR scope guidance. Security reports go through
+[SECURITY.md](SECURITY.md), not public issues.
 
 ## TODO
 

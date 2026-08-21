@@ -20,7 +20,7 @@ function getInitialTab() {
     if (window.location.hash.slice(1)) return 'leaderboard';
     const saved = localStorage.getItem(TAB_STORAGE_KEY);
     if (saved && VALID_TABS.includes(saved)) return saved;
-  } catch (e) { /* ignore storage/access errors */ }
+  } catch { /* ignore storage/access errors */ }
   return 'leaderboard';
 }
 
@@ -45,7 +45,7 @@ function App() {
 
   // Persist the active tab so a page reload restores it (#32)
   React.useEffect(() => {
-    try { localStorage.setItem(TAB_STORAGE_KEY, activeTab); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(TAB_STORAGE_KEY, activeTab); } catch { /* ignore */ }
   }, [activeTab]);
 
   const handleChangeTab = useCallback((tab) => {

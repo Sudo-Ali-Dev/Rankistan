@@ -9,10 +9,13 @@ public/score-test*.json
 public/data.dry-run.json
 public/data.json.tmp
 public/data.dry-run.json.tmp
+# Scratch/experiment files.
+# NOTE: git runs with core.ignorecase=true here, so this ALSO matches
+# *.test.js - hence the explicit re-includes below. Removing them will
+# silently un-track the test suite again.
 *Test*
+!**/*.test.js
+!**/*.spec.js
 dist/
 public/raw_batch_*.json
-src/pages/WeeklyDigest.jsx
-src/pages/Archives.jsx
-src/pages/ReportDetail.jsx
 JD/

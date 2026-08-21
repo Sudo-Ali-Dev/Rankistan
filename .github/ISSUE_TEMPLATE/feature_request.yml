@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an addition or change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the problem, not just the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scoring
+    attributes:
+      label: Does this change the scoring formula?
+      description: >
+        Scoring changes need matching updates to scripts/score.js,
+        src/utils/score-breakdown.js, score-config.json, the About and
+        Evolution pages, and the README - so they are usually batched
+        rather than merged one at a time.
+      options:
+        - label: Yes, this changes how developers are scored or ranked
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

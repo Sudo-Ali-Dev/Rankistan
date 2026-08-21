@@ -167,8 +167,8 @@ export default function Digest({ onChangeTab }) {
             <div className="font-mono text-[10px] text-outline uppercase tracking-widest mt-1">Highest Repo</div>
           </div>
           <div className="border border-outline-variant bg-surface-container-lowest p-3 sm:p-5">
-            <span className="material-symbols-outlined text-warning text-lg sm:text-2xl mb-2">trending_up</span>
-            <div className="font-headline text-lg sm:text-2xl font-bold text-warning">{formatNum(leaderboard.length)}</div>
+            <span className="material-symbols-outlined text-primary-container text-lg sm:text-2xl mb-2">trending_up</span>
+            <div className="font-headline text-lg sm:text-2xl font-bold text-primary-container">{formatNum(leaderboard.length)}</div>
             <div className="font-mono text-[10px] text-outline uppercase tracking-widest mt-1">Active Devs</div>
           </div>
         </div>
@@ -262,7 +262,7 @@ export default function Digest({ onChangeTab }) {
                             {repo.language}
                           </span>
                         ) : (
-                          <span className="font-mono text-[10px] text-outline-variant">\u2014</span>
+                          <span className="font-mono text-[10px] text-outline-variant">{'\u2014'}</span>
                         )}
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-right font-mono text-xs font-bold text-on-surface tabular-nums">
