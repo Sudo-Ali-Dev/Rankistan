@@ -138,6 +138,7 @@ const DOT_COLORS = {
 export default function DevMap() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [hoveredCity, setHoveredCity] = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
   const tableRef = useRef(null);
@@ -176,9 +177,13 @@ export default function DevMap() {
           lb = cache.get(CACHE_KEYS.LEADERBOARD);
         }
         if (!lb) lb = cache.get(CACHE_KEYS.LEADERBOARD);
+        if (!lb) {
+          throw new Error('Could not load data.json and no cached copy is available.');
+        }
         setData(lb);
       } catch (e) {
         console.error('Failed to load leaderboard data', e);
+        setError(e);
       } finally {
         setLoading(false);
       }
@@ -393,6 +398,27 @@ export default function DevMap() {
       </div>
     );
   }, [selectedCity, devsByCity]);
+
+  // Previously a failed load fell through to the normal render, showing
+  // "Total_Devs 0 / Places 0" - indistinguishable from there being no
+  // Pakistani developers at all.
+  if (error) {
+    return (
+      <main className="min-h-screen relative overflow-hidden">
+        <div className="absolute inset-0 grid-lines pointer-events-none"></div>
+        <div className="flex items-center justify-center h-96 px-4">
+          <div role="alert" className="max-w-md border border-error/40 bg-surface-container-lowest p-5 text-center">
+            <p className="font-headline text-sm font-bold uppercase tracking-widest text-error mb-2">
+              Geo data unavailable
+            </p>
+            <p className="font-mono text-xs text-on-surface-variant">
+              {String(error?.message || error)}
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (loading) {
     return (
