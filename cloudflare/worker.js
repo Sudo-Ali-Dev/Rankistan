@@ -601,9 +601,8 @@ export default {
       return jsonResponse({ error: 'Invalid dev.username.' }, 400, corsOrigin);
     }
 
-    // This endpoint spends real money per call, and every field below is
-    // interpolated into the prompt. Serving only developers who are actually
-    // on the leaderboard bounds the abuse surface to a known 1000-row set,
+    // This endpoint spends real money per call. Requiring the developer to be
+    // on the leaderboard bounds who can be summarised to a known ~1000-row set,
     // and mirrors what /api/badge already does.
     let rankedDev;
     try {
@@ -623,7 +622,14 @@ export default {
     }
 
     try {
-      const summary = await callGroqWithKeyFallback(dev, apiKeys);
+      // Build the prompt from OUR published leaderboard row, not from the
+      // request body. The caller only chooses *which* ranked developer to
+      // summarise; every value that reaches the model comes from data.json.
+      // Passing the client's object here would have left name, location,
+      // top_languages and every repo name/description attacker-controlled,
+      // with only control-character stripping standing between a caller and
+      // the prompt.
+      const summary = await callGroqWithKeyFallback(sanitizeDeveloper(rankedDev), apiKeys);
       return jsonResponse({ summary }, 200, corsOrigin);
     } catch (error) {
       console.error(`cloudflare worker failed for ${dev.username}: ${error.message}`);
