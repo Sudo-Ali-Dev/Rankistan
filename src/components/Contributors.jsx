@@ -28,7 +28,23 @@ function withCoAuthors(apiList, ownerLogin) {
   const extra = (fallbackData.coAuthors || []).filter(
     (c) => !seen.has(String(c.username).toLowerCase()) && isListable(c.username, ownerLogin)
   );
-  return [...apiList, ...extra].sort((a, b) => b.contributions - a.contributions);
+  // Whether we have real counts is decided by the *primary* list, not by the
+  // merged one. The offline fallback carries no commit counts while the
+  // co-authors do, so sorting the mix by count would rank the two co-authors
+  // above every real contributor and render the rest as "--" with empty bars.
+  const haveCounts = apiList.some((c) => (c.contributions || 0) > 0);
+
+  if (!haveCounts) {
+    // Countless mode: drop the co-author counts too so the list is uniform,
+    // and order by name instead of by a number we only have for two rows.
+    return [...apiList, ...extra]
+      .map((c) => ({ ...c, contributions: 0 }))
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }
+
+  return [...apiList, ...extra].sort(
+    (a, b) => (b.contributions || 0) - (a.contributions || 0)
+  );
 }
 
 export default function Contributors() {

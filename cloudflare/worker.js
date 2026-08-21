@@ -268,6 +268,16 @@ function isRateLimitedInIsolate(ip) {
         rateLimitByIp.delete(key);
       }
     }
+
+    // If every tracked key is still inside the window, the staleness sweep
+    // above frees nothing, `size` stays over the cap, and it then runs on
+    // every subsequent request - reinstating the O(n)-per-request scan it was
+    // meant to remove. Map iterates in insertion order, so dropping from the
+    // front evicts the oldest keys and puts a hard bound on both.
+    for (const key of rateLimitByIp.keys()) {
+      if (rateLimitByIp.size <= RATE_LIMIT_MAX_TRACKED_IPS) break;
+      rateLimitByIp.delete(key);
+    }
   }
 
   return false;
@@ -281,7 +291,20 @@ const LEADERBOARD_CACHE_SECONDS = 300;
 // fetch so callers can distinguish "not ranked" from "lookup unavailable" -
 // the badge route previously called response.json() without checking
 // response.ok, so a 404 HTML body surfaced as a generic error badge.
-async function findRankedDeveloper(username) {
+// data.json is ~1.6 MB / 1000 rows. cf.cacheTtl avoids the network hop but not
+// the JSON.parse, and this now runs on every /api/dev-summary request - in the
+// same invocation as the Groq call, against the Workers CPU budget. Memoise the
+// parsed index per isolate so the parse is paid once per TTL rather than once
+// per request.
+let leaderboardIndex = null;
+let leaderboardIndexAt = 0;
+
+async function loadLeaderboardIndex() {
+  const now = Date.now();
+  if (leaderboardIndex && now - leaderboardIndexAt < LEADERBOARD_CACHE_SECONDS * 1000) {
+    return leaderboardIndex;
+  }
+
   const response = await fetch(LEADERBOARD_URL, {
     cf: { cacheTtl: LEADERBOARD_CACHE_SECONDS }
   });
@@ -291,11 +314,24 @@ async function findRankedDeveloper(username) {
   }
 
   const data = await response.json();
-  const wanted = username.toLowerCase();
+  if (!Array.isArray(data?.leaderboard)) {
+    throw new Error('Leaderboard payload has no leaderboard array.');
+  }
 
-  return (data.leaderboard || []).find(
-    (entry) => String(entry.username || '').toLowerCase() === wanted
-  ) || null;
+  const index = new Map();
+  for (const entry of data.leaderboard) {
+    const login = String(entry?.username || '').toLowerCase();
+    if (login) index.set(login, entry);
+  }
+
+  leaderboardIndex = index;
+  leaderboardIndexAt = now;
+  return index;
+}
+
+async function findRankedDeveloper(username) {
+  const index = await loadLeaderboardIndex();
+  return index.get(username.toLowerCase()) || null;
 }
 
 const GROQ_KEY_SLOTS = 8;
@@ -473,7 +509,15 @@ async function handleHeatmapRequest(request, env) {
       await cache.delete(cacheKey);
     }
 
-    const upstream = await fetch(upstreamUrl);
+    // caches.default is documented as having no effect on *.workers.dev
+    // deployments, and the frontend points at the workers.dev hostname - so the
+    // Cache API block above is inert in production today. This cf hint is a
+    // separate mechanism and does work there, which matters because every
+    // uncached hit lands on the third-party upstream that rate-limits us into
+    // the error cards this route exists to suppress.
+    const upstream = await fetch(upstreamUrl, {
+      cf: { cacheTtl: HEATMAP_CACHE_SECONDS }
+    });
 
     if (!upstream.ok) {
       throw new Error(`Heatmap upstream returned ${upstream.status}.`);
