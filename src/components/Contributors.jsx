@@ -7,10 +7,13 @@ const CONTRIBUTORS_API =
 // Logins kept out of the credits grid.
 const EXCLUDED_LOGINS = new Set(['muhammadhamzachishti']);
 
+// Same accent rotation the map uses for its place dots.
+const NODE_COLORS = ['#a2c9ff', '#74dd7e', '#d8baff', '#58a6ff', '#cda8ff', '#90fa97'];
+
 function isListable(login, ownerLogin) {
   const lower = String(login || '').toLowerCase();
   if (!lower) return false;
-  // The owner has their own card above; the old version listed them twice.
+  // The owner has their own block above; the old version listed them twice.
   if (lower === String(ownerLogin || '').toLowerCase()) return false;
   return !EXCLUDED_LOGINS.has(lower);
 }
@@ -33,7 +36,7 @@ export default function Contributors() {
 
         setContributors(
           data
-            // Filter on type so every bot is excluded, not just the one login
+            // Filter on type so every bot is excluded, not just one login
             .filter((c) => c?.type !== 'Bot' && isListable(c?.login, owner.username))
             .map((c) => ({
               username: c.login,
@@ -45,7 +48,6 @@ export default function Contributors() {
       } catch {
         if (!alive) return;
         // Offline or rate-limited (unauthenticated calls get 60/hr per IP).
-        // Fall back to the checked-in list so the section is never empty.
         setUsedFallback(true);
         setContributors(
           (fallbackData.contributors || [])
@@ -53,7 +55,7 @@ export default function Contributors() {
             .map((c) => ({
               username: c.username,
               avatar_url: c.avatar_url,
-              contributions: null
+              contributions: 0
             }))
         );
       }
@@ -66,99 +68,99 @@ export default function Contributors() {
   }, [owner.username]);
 
   const loading = contributors === null;
-  const count = contributors ? contributors.length : 0;
-  const totalCommits = contributors
-    ? contributors.reduce((sum, c) => sum + (c.contributions || 0), 0)
-    : 0;
+  const list = contributors || [];
+  const count = list.length;
+  const totalCommits = list.reduce((sum, c) => sum + c.contributions, 0);
+  const maxCommits = list.reduce((max, c) => Math.max(max, c.contributions), 0);
 
   return (
     <div className="border border-outline-variant bg-surface-container-lowest">
-      <div className="p-4 sm:p-6 border-b border-outline-variant bg-surface-container-high">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <span className="material-symbols-outlined text-primary" aria-hidden="true">
-            group
-          </span>
-          <h2 className="font-headline text-lg sm:text-xl font-bold tracking-tighter uppercase">
-            The Team
+      {/* Header in the same idiom as the map's Place Breakdown panel */}
+      <div className="flex items-center justify-between gap-3 p-4 sm:p-6 border-b border-outline-variant bg-surface-container-high">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2 h-2 bg-tertiary animate-pulse shrink-0"></span>
+          <h2 className="font-headline text-lg sm:text-xl font-bold tracking-tighter uppercase truncate">
+            The <span className="text-primary italic">Team</span>
           </h2>
-          {!loading && (
-            <span className="font-mono text-[10px] text-outline uppercase tracking-widest">
-              {count} contributor{count === 1 ? '' : 's'}
-            </span>
-          )}
         </div>
+        <span className="font-mono text-[10px] text-outline uppercase tracking-widest shrink-0">
+          {loading ? 'SYNCING' : `${count} CONTRIBUTOR${count === 1 ? '' : 'S'}`}
+        </span>
       </div>
 
       <div className="p-4 sm:p-6 space-y-4">
-        {/* Owner is the main block; the stats panel fills the trailing third so
-            the row does not end in empty space. Contributors sit below. */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5 p-4 sm:p-5 border-2 border-primary/30 bg-primary/5">
-            <img
-              src={owner.avatar_url}
-              alt=""
-              width="80"
-              height="80"
-              loading="lazy"
-              decoding="async"
-              className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 border-2 border-primary/50 object-cover"
-            />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <span className="font-headline text-lg sm:text-xl font-bold text-on-surface">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {/* Main block: the owner */}
+          <div className="lg:col-span-2 relative border border-primary/40 border-l-4 border-l-primary bg-primary/5 p-4 sm:p-5">
+            <div className="font-mono text-[9px] text-primary/70 uppercase tracking-widest mb-3">
+              PRIMARY_NODE // MAINTAINER
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
+              <img
+                src={owner.avatar_url}
+                alt=""
+                width="72"
+                height="72"
+                loading="lazy"
+                decoding="async"
+                className="w-16 h-16 sm:w-[72px] sm:h-[72px] shrink-0 border border-primary/50 object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="font-headline text-xl sm:text-2xl font-bold uppercase tracking-tighter text-on-surface leading-none">
                   {owner.name}
-                </span>
-                <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 uppercase tracking-widest">
-                  Owner
-                </span>
-              </div>
-              {owner.bio && (
-                <p className="font-body text-xs sm:text-sm text-on-surface-variant mt-1.5">
-                  {owner.bio}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 font-mono text-[11px]">
-                <a
-                  href={`https://github.com/${owner.username}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  @{owner.username}
-                </a>
-                {owner.website && (
+                </div>
+                {owner.bio && (
+                  <p className="font-mono text-[11px] text-on-surface-variant mt-2">{owner.bio}</p>
+                )}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 font-mono text-[11px]">
                   <a
-                    href={owner.website}
+                    href={`https://github.com/${owner.username}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-tertiary hover:text-primary transition-colors"
+                    className="text-primary hover:underline"
                   >
-                    <span className="material-symbols-outlined text-xs" aria-hidden="true">
-                      language
-                    </span>
-                    {owner.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                    @{owner.username}
                   </a>
-                )}
+                  {owner.website && (
+                    <a
+                      href={owner.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-tertiary hover:text-primary transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-xs" aria-hidden="true">
+                        language
+                      </span>
+                      {owner.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col justify-between gap-4 p-4 sm:p-5 border border-outline-variant bg-surface">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="font-headline text-2xl font-bold text-tertiary tabular-nums">
-                  {loading ? '—' : count}
-                </div>
-                <div className="font-mono text-[10px] text-outline uppercase tracking-widest mt-0.5">
-                  Contributors
-                </div>
+          {/* Right sub block: stats + CTA */}
+          <div className="flex flex-col justify-between gap-4 border border-outline-variant bg-surface p-4 sm:p-5">
+            <div>
+              <div className="font-mono text-[9px] text-outline uppercase tracking-widest mb-3">
+                COMMUNITY // STATS
               </div>
-              <div>
-                <div className="font-headline text-2xl font-bold text-primary tabular-nums">
-                  {loading || !totalCommits ? '—' : totalCommits}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="border-l-2 border-tertiary/60 pl-2.5">
+                  <div className="font-mono text-2xl font-bold text-tertiary tabular-nums leading-none">
+                    {loading ? '--' : String(count).padStart(2, '0')}
+                  </div>
+                  <div className="font-mono text-[9px] text-outline uppercase tracking-widest mt-1">
+                    Contributors
+                  </div>
                 </div>
-                <div className="font-mono text-[10px] text-outline uppercase tracking-widest mt-0.5">
-                  Commits
+                <div className="border-l-2 border-primary/60 pl-2.5">
+                  <div className="font-mono text-2xl font-bold text-primary tabular-nums leading-none">
+                    {loading || !totalCommits ? '--' : totalCommits}
+                  </div>
+                  <div className="font-mono text-[9px] text-outline uppercase tracking-widest mt-1">
+                    Commits
+                  </div>
                 </div>
               </div>
             </div>
@@ -166,78 +168,97 @@ export default function Contributors() {
               href="https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/CONTRIBUTING.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 border border-primary/60 px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-primary hover:bg-primary/10 transition-colors"
+              className="group inline-flex items-center justify-between gap-2 border border-primary/50 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-primary hover:bg-primary/10 hover:border-primary transition-colors"
             >
-              <span className="material-symbols-outlined text-sm" aria-hidden="true">
+              <span>Join_The_Index</span>
+              <span
+                className="material-symbols-outlined text-sm group-hover:translate-x-0.5 transition-transform"
+                aria-hidden="true"
+              >
                 arrow_forward
               </span>
-              Contribute
             </a>
           </div>
         </div>
 
+        {/* Sub blocks: contributors, ranked like the leaderboard */}
         <div>
-          <div className="flex items-baseline justify-between gap-3 mb-3">
-            <span className="font-mono text-[10px] text-outline uppercase tracking-widest">
-              Contributors
+          <div className="flex items-center justify-between gap-3 mb-2.5">
+            <span className="font-mono text-[10px] text-tertiary uppercase tracking-tighter flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-tertiary shrink-0"></span>
+              Contributor_Nodes
             </span>
-            {usedFallback && (
-              <span className="font-mono text-[10px] text-outline/70 uppercase tracking-widest">
-                cached list
-              </span>
-            )}
+            <span className="font-mono text-[9px] text-outline uppercase tracking-widest">
+              {usedFallback ? 'cached' : 'by commits'}
+            </span>
           </div>
 
           {loading ? (
             <div
               role="status"
-              className="font-mono text-[10px] text-outline uppercase tracking-widest animate-pulse py-6 text-center"
+              className="font-mono text-[10px] text-tertiary uppercase tracking-widest animate-pulse py-8 text-center"
             >
-              Loading contributors...
+              Loading_Contributor_Nodes...
             </div>
           ) : count === 0 ? (
             <div className="p-6 sm:p-8 border border-dashed border-outline-variant/40 text-center">
               <div className="font-mono text-[10px] text-outline uppercase tracking-widest">
                 No contributors yet
               </div>
-              <p className="font-body text-xs text-on-surface-variant mt-1">
-                Be the first to contribute.
-              </p>
             </div>
           ) : (
-            /* Denser grid across the full width, instead of two columns
-               squeezed into half the section. */
-            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {contributors.map((c) => (
-                <li key={c.username}>
-                  <a
-                    href={`https://github.com/${c.username}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group flex h-full items-center gap-3 p-3 border border-outline-variant/60 bg-surface hover:border-primary hover:bg-surface-container-low transition-colors"
-                  >
-                    <img
-                      src={c.avatar_url}
-                      alt=""
-                      width="40"
-                      height="40"
-                      loading="lazy"
-                      decoding="async"
-                      className="w-10 h-10 shrink-0 border border-outline-variant object-cover"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-headline text-sm font-bold text-on-surface group-hover:text-primary transition-colors break-all leading-tight">
-                        {c.username}
-                      </span>
-                      {c.contributions != null && (
-                        <span className="block font-mono text-[10px] text-outline mt-0.5">
-                          {c.contributions} commit{c.contributions === 1 ? '' : 's'}
+            <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+              {list.map((c, idx) => {
+                const color = NODE_COLORS[idx % NODE_COLORS.length];
+                const share = totalCommits > 0 ? (c.contributions / totalCommits) * 100 : 0;
+                const barPct = maxCommits > 0 ? (c.contributions / maxCommits) * 100 : 0;
+                return (
+                  <li key={c.username}>
+                    <a
+                      href={`https://github.com/${c.username}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group block border border-outline-variant/50 bg-surface-container-low p-2.5 sm:p-3 hover:border-primary hover:bg-surface-container-high transition-all duration-200"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono text-[10px] text-outline w-5 text-right shrink-0 group-hover:text-primary transition-colors">
+                          {String(idx + 1).padStart(2, '0')}
                         </span>
-                      )}
-                    </span>
-                  </a>
-                </li>
-              ))}
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: color }}
+                        ></span>
+                        <img
+                          src={c.avatar_url}
+                          alt=""
+                          width="24"
+                          height="24"
+                          loading="lazy"
+                          decoding="async"
+                          className="w-6 h-6 shrink-0 border border-outline-variant object-cover"
+                        />
+                        <span className="font-headline text-xs sm:text-sm font-bold uppercase tracking-tighter truncate text-on-surface group-hover:text-primary transition-colors">
+                          {c.username}
+                        </span>
+                        <span className="font-mono text-sm font-bold text-primary shrink-0 ml-auto tabular-nums">
+                          {c.contributions || '--'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 sm:gap-3 mt-2 ml-[30px] sm:ml-[38px] min-w-0">
+                        <div className="flex-1 bg-surface-container-highest h-1.5">
+                          <div
+                            className="h-full transition-all duration-500"
+                            style={{ width: `${barPct}%`, backgroundColor: color }}
+                          ></div>
+                        </div>
+                        <span className="font-mono text-[10px] text-outline w-12 text-right shrink-0">
+                          {totalCommits > 0 ? `${share.toFixed(1)}%` : ''}
+                        </span>
+                      </div>
+                    </a>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
