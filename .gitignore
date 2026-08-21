@@ -9,10 +9,9 @@ public/score-test*.json
 public/data.dry-run.json
 public/data.json.tmp
 public/data.dry-run.json.tmp
+# NOTE: broad and case-sensitive - this will also swallow a file named
+# e.g. FooTest.jsx or TestUtils.js. Narrow it if that ever bites.
 *Test*
 dist/
 public/raw_batch_*.json
-src/pages/WeeklyDigest.jsx
-src/pages/Archives.jsx
-src/pages/ReportDetail.jsx
 JD/
