@@ -18,6 +18,19 @@ function isListable(login, ownerLogin) {
   return !EXCLUDED_LOGINS.has(lower);
 }
 
+// GitHub's sidebar counts 12 contributors while /contributors returns 9,
+// because that endpoint reports commit *authors* only and ignores
+// Co-authored-by trailers. These are the people credited that way, resolved by
+// matching the trailer email against the GitHub user search. Merged in so the
+// credits are complete rather than whatever one API happens to expose.
+function withCoAuthors(apiList, ownerLogin) {
+  const seen = new Set(apiList.map((c) => c.username.toLowerCase()));
+  const extra = (fallbackData.coAuthors || []).filter(
+    (c) => !seen.has(String(c.username).toLowerCase()) && isListable(c.username, ownerLogin)
+  );
+  return [...apiList, ...extra].sort((a, b) => b.contributions - a.contributions);
+}
+
 export default function Contributors() {
   const owner = fallbackData.owner;
   const [contributors, setContributors] = useState(null);
@@ -35,28 +48,33 @@ export default function Contributors() {
         if (!Array.isArray(data)) throw new Error('Unexpected API shape');
 
         setContributors(
-          data
-            // Filter on type so every bot is excluded, not just one login
-            .filter((c) => c?.type !== 'Bot' && isListable(c?.login, owner.username))
-            .map((c) => ({
-              username: c.login,
-              avatar_url: c.avatar_url,
-              contributions: Number(c.contributions) || 0
-            }))
-            .sort((a, b) => b.contributions - a.contributions)
+          withCoAuthors(
+            data
+              // Filter on type so every bot is excluded, not just one login
+              .filter((c) => c?.type !== 'Bot' && isListable(c?.login, owner.username))
+              .map((c) => ({
+                username: c.login,
+                avatar_url: c.avatar_url,
+                contributions: Number(c.contributions) || 0
+              })),
+            owner.username
+          )
         );
       } catch {
         if (!alive) return;
         // Offline or rate-limited (unauthenticated calls get 60/hr per IP).
         setUsedFallback(true);
         setContributors(
-          (fallbackData.contributors || [])
-            .filter((c) => isListable(c.username, owner.username))
-            .map((c) => ({
-              username: c.username,
-              avatar_url: c.avatar_url,
-              contributions: 0
-            }))
+          withCoAuthors(
+            (fallbackData.contributors || [])
+              .filter((c) => isListable(c.username, owner.username))
+              .map((c) => ({
+                username: c.username,
+                avatar_url: c.avatar_url,
+                contributions: Number(c.contributions) || 0
+              })),
+            owner.username
+          )
         );
       }
     }
