@@ -8,6 +8,7 @@ import {
   MAX_DEVELOPERS,
   ACTIVITY_THRESHOLDS
 } from './fetch-devs.js';
+import { fetchPronouns, attachPronouns } from './fetch-pronouns.js';
 import { scoreDevelopers } from './score.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
 
@@ -162,7 +163,17 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
       `<=${ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS}d max gap)`,
   );
 
-  const scored = scoreDevelopers(filtered);
+  // Use each developer's own declared pronouns in the AI summaries rather
+  // than inferring gender from a name (#73). Runs after the activity filter
+  // so it covers only the developers that will be published, and failure is
+  // non-fatal: a developer with none simply carries none.
+  const pronounsByLogin = await fetchPronouns(
+    filtered.map((d) => d.username),
+    process.env.MY_GITHUB_PAT || process.env.GITHUB_TOKEN
+  );
+  const withPronouns = attachPronouns(filtered, pronounsByLogin);
+
+  const scored = scoreDevelopers(withPronouns);
   console.log(`Scored ${scored.length} developers.`);
 
   const newEntries = scored.map((d) => ({

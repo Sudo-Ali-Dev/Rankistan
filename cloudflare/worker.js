@@ -1,3 +1,7 @@
+// The Durable Object class must be exported from the Worker entrypoint for
+// wrangler to bind it.
+export { RateLimiter } from './rate-limiter.js';
+
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-120b';
 const GROQ_MAX_COMPLETION_TOKENS = 800;
@@ -18,12 +22,15 @@ const SYSTEM_PROMPT = [
   'Write exactly 2 sentences describing this developer based on their GitHub activity.',
   'Be specific - mention their main technologies and what kind of projects they build.',
   'Do not use bullet points. Do not start with "This developer". Write in third person.',
-  // A name does not tell you someone's pronouns. The previous instruction
-  // asked the model to infer gender from the name, which misgendered real
-  // people on a public leaderboard (#73) - and fired even when `name` was
-  // empty, leaving it nothing to reason from but a username.
-  'Use they/them pronouns. Never infer gender from a name, username, location, or project.',
-  'Prefer their name or "they" as the subject.'
+  // Pronouns come from the developer's own GitHub profile (the `pronouns` field
+  // exposed by the GraphQL API), carried through the pipeline into data.json.
+  // The original prompt told the model to infer gender from the name, which
+  // misgendered real people on a public leaderboard (#73). Using what someone
+  // declared about themselves is both correct and respectful; guessing is not.
+  'A "Pronouns:" line may be supplied. When it is, use exactly those pronouns throughout.',
+  'When no pronouns are supplied, do not guess and do not substitute a default:',
+  'use the developer name as the subject, or the @username when no name is given.',
+  'Never infer gender from a name, username, location, or project.'
 ].join(' ');
 
 const rateLimitByIp = new Map();
@@ -71,6 +78,7 @@ function sanitizeDeveloper(rawDev) {
     username: normalizeText(rawDev?.username, 80),
     name: normalizeText(rawDev?.name, 120),
     location: normalizeText(rawDev?.location, 120),
+    pronouns: normalizeText(rawDev?.pronouns, 40),
     top_languages: normalizeLanguages(rawDev?.top_languages),
     total_stars: Number.isFinite(Number(rawDev?.total_stars)) ? Number(rawDev.total_stars) : 0,
     events_30d: Number.isFinite(Number(rawDev?.events_30d)) ? Number(rawDev.events_30d) : 0,
@@ -100,6 +108,11 @@ function buildUserPrompt(dev) {
   const location = normalizeText(dev?.location, 120);
   if (location) {
     lines[0] = `${lines[0]} from ${location}`;
+  }
+
+  const pronouns = normalizeText(dev?.pronouns, 40);
+  if (pronouns) {
+    lines.push(`Pronouns: ${pronouns}`);
   }
 
   const normalizedLanguages = normalizeLanguages(dev?.top_languages);
@@ -227,20 +240,37 @@ function getClientIp(request) {
 //
 // Note the binding is authoritative per Cloudflare location, not strictly
 // global - materially better than per-isolate, but not a hard global cap.
+// Rate limiting is delegated to a Durable Object (cloudflare/rate-limiter.js).
+// Cloudflare guarantees one instance per object ID and serialises requests to
+// it, so keying by client IP gives one authoritative, race-free counter per IP.
+//
+// The two previous approaches both measured as ineffective and are documented
+// in that file: a module-level Map (per-isolate, so a sequential caller was
+// never counted) and Cloudflare's Rate Limiting binding (returned success for
+// 30 consecutive requests against a 20/60s config, and for 10 against a 3/60s
+// config).
+//
+// Fails CLOSED. If the Durable Object is unreachable the request is rejected
+// rather than waved through: this endpoint spends money per call, so an
+// unavailable limiter must not become an open door.
 async function isRateLimited(request, env) {
   const ip = getClientIp(request);
-  const limiter = env?.SUMMARY_RATE_LIMITER;
+  const namespace = env?.RATE_LIMITER;
 
-  if (limiter && typeof limiter.limit === 'function') {
-    try {
-      const { success } = await limiter.limit({ key: ip });
-      return !success;
-    } catch (error) {
-      console.error('SUMMARY_RATE_LIMITER failed; falling back to in-isolate counter.', error);
-    }
+  if (!namespace || typeof namespace.idFromName !== 'function') {
+    console.error('RATE_LIMITER durable object binding is missing; rejecting.');
+    return true;
   }
 
-  return isRateLimitedInIsolate(ip);
+  try {
+    const stub = namespace.get(namespace.idFromName(ip));
+    const response = await stub.fetch('https://rate-limiter/check');
+    const { allowed } = await response.json();
+    return allowed !== true;
+  } catch (error) {
+    console.error(`RATE_LIMITER unavailable for ${ip}; rejecting. ${error.message}`);
+    return true;
+  }
 }
 
 function isRateLimitedInIsolate(ip) {
