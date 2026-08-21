@@ -28,6 +28,14 @@ updates:
       # migration, not an automated PR.
       - dependency-name: tailwindcss
         update-types: [version-update:semver-major]
+      # ESLint 10 cannot be taken yet: eslint-plugin-jsx-a11y@6 peers on
+      # "eslint ^3 || ... || ^9", so bumping the major breaks `npm ci` with an
+      # ERESOLVE conflict. CI caught this on #80. Revisit once jsx-a11y ships
+      # v10 support, and bump eslint and @eslint/js together.
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      - dependency-name: "@eslint/js"
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
