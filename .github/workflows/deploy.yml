@@ -56,7 +56,7 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         continue-on-error: true
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       # deploy-pages fails if the pipeline's own Pages deployment is mid-flight.
       - name: Wait before retry
@@ -66,4 +66,4 @@ jobs:
       - name: Deploy to GitHub Pages (retry)
         id: deployment_retry
         if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
