@@ -13,7 +13,7 @@ const TABS = [
 export default function MobileTabBar({ activeTab, onChangeTab }) {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-around gap-0 border-t border-[#414752] bg-[#10141a] px-1 pt-1.5 shadow-[0_-4px_24px_rgba(0,0,0,0.35)] md:hidden"
+      className={`fixed bottom-0 left-0 right-0 z-40 flex items-stretch justify-around gap-0 border-t border-[#414752] bg-[#10141a] px-1 pt-1.5 shadow-[0_-4px_24px_rgba(0,0,0,0.35)] ${activeTab === 'leaderboard' ? 'xl:hidden' : 'lg:hidden'}`}
       style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
       aria-label="Main navigation"
     >
