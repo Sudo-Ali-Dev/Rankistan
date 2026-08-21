@@ -1,7 +1,7 @@
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-120b';
 const GROQ_MAX_COMPLETION_TOKENS = 800;
-const GROQ_TEMPERATURE = 0.5;
+const GROQ_TEMPERATURE = 0;
 const GROQ_REASONING_EFFORT = 'low';
 const GROQ_INCLUDE_REASONING = false;
 const GROQ_TIMEOUT_MS = 25000;
@@ -17,8 +17,12 @@ const SYSTEM_PROMPT = [
   'Write exactly 2 sentences describing this developer based on their GitHub activity.',
   'Be specific - mention their main technologies and what kind of projects they build.',
   'Do not use bullet points. Do not start with "This developer". Write in third person.',
-  'Use he/him or she/her pronouns based on the developer\'s name. Pay careful attention to the name — e.g. Muhammad, Ali, Ibrahim, Ahmed, Shayan are male; Fatima, Ayesha, Noor (female name) are female.',
-  'If the gender is truly ambiguous, use "they/them".'
+  // A name does not tell you someone's pronouns. The previous instruction
+  // asked the model to infer gender from the name, which misgendered real
+  // people on a public leaderboard (#73) - and fired even when `name` was
+  // empty, leaving it nothing to reason from but a username.
+  'Use they/them pronouns. Never infer gender from a name, username, location, or project.',
+  'Prefer their name or "they" as the subject.'
 ].join(' ');
 
 const rateLimitByIp = new Map();
