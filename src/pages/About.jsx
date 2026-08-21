@@ -86,7 +86,7 @@ const FAQ = [
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
   { q: 'Can I register manually?', a: 'Yes — use the Register tab to enter a GitHub username. It validates the profile against all pipeline criteria and shows you exactly which thresholds you pass or fail.' },
-  { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/pakdev-index.' },
+  { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/Rankistan.' },
 ];
 
 export default function About({ onChangeTab }) {
@@ -386,7 +386,7 @@ export default function About({ onChangeTab }) {
             The pipeline scripts, scoring algorithm, and frontend are all on GitHub. Inspect the code, file issues, or contribute.
           </p>
           <a
-            href="https://github.com/Sudo-Ali-Dev/pakdev-index"
+            href="https://github.com/Sudo-Ali-Dev/Rankistan"
             target="_blank"
             rel="noreferrer"
             className="inline-flex min-h-11 items-center justify-center gap-2 bg-primary text-on-primary font-headline font-bold py-3 px-5 sm:px-6 hover:bg-primary-container transition-colors duration-50 active:scale-[0.98]"

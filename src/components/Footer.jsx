@@ -12,7 +12,7 @@ export default function Footer() {
           <span className="hidden md:inline">BUILT BY <a href="https://sudo-ali-dev.github.io/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">MUHAMMAD ALI</a> </span>
         </div>
         <nav className="flex gap-6">
-          <a className="hover:text-primary transition-colors" href="https://github.com/Sudo-Ali-Dev/pakdev-index/blob/main/README.md" target="_blank" rel="noopener noreferrer">Documentation</a>
+          <a className="hover:text-primary transition-colors" href="https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/README.md" target="_blank" rel="noopener noreferrer">Documentation</a>
           <a className="hover:text-primary transition-colors" href="https://github.com/Sudo-Ali-Dev/Rankistan" target="_blank" rel="noopener noreferrer">GitHub</a>
         </nav>
         <div className="flex items-center gap-3">
