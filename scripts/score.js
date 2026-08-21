@@ -29,11 +29,6 @@ function daysSince(date) {
   return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
 }
 
-function toNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function sanitizeScoreField(developer, field) {
   const value = developer?.[field];
   const n = Number(value);

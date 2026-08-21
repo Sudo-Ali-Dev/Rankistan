@@ -115,7 +115,7 @@ export default function Register({ onChangeTab }) {
             }));
           }
         }
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       let lb = [];
       try {
@@ -125,7 +125,7 @@ export default function Register({ onChangeTab }) {
           if (res.ok) leaderboardPayload = await res.json();
         }
         lb = Array.isArray(leaderboardPayload?.leaderboard) ? leaderboardPayload.leaderboard : [];
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       const formattedLb = lb.slice(0, RECENT_SYNC_LIMIT).map((d, index) => ({
         avatar: d.avatar_url,
@@ -233,7 +233,7 @@ export default function Register({ onChangeTab }) {
           allEvents.push(...pageEvents);
           if (pageEvents.length < 100) break;
         }
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       let totalStars = 0;
       try {
@@ -245,7 +245,7 @@ export default function Register({ onChangeTab }) {
           repos.forEach(r => { totalStars += r.stargazers_count || 0; });
           if (repos.length < 100) break;
         }
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
 
       const { count, longestGap } = computeActivity(allEvents);
       const hasContributions = count >= CRITERIA.MIN_CONTRIBUTIONS_60D;
@@ -315,7 +315,7 @@ export default function Register({ onChangeTab }) {
           if (prev.find((p) => p.username.toLowerCase() === newReg.username.toLowerCase())) return prev;
           return [newReg, ...prev].slice(0, RECENT_SYNC_LIMIT);
         });
-      } catch (e) { /* ignored */ }
+      } catch { /* ignored */ }
     } catch (e) {
       setStatus('error');
       setErrorMsg(e.message);
