@@ -252,10 +252,13 @@ export default function About({ onChangeTab }) {
 
             <div className="overflow-x-auto bg-surface-container-low border border-outline-variant p-3 sm:p-5 mb-4 sm:mb-6 font-mono text-xs sm:text-sm leading-relaxed">
               <div className="text-primary">
-                base_score = (stars × 2) + (activity_score) + (followers × 1) + (min(public_repos, 200) × 0.5)
+                base_score = (min(stars, 250) × 2) + activity_score + (min(followers, 500) × 1) + (min(public_repos, 200) × 0.5)
               </div>
               <div className="text-tertiary mt-2">
-                final_score = base_score × (account_age &lt; 6mo ? 0.5 : 1.0)
+                final_score = round(base_score × (account_age &lt; 6mo ? 0.5 : 1.0))
+              </div>
+              <div className="text-outline mt-3 text-[11px]">
+                activity_score = Σ daily min(cap, Σ base / log2(n+1)) over 30d, per type, UTC days
               </div>
             </div>
 
