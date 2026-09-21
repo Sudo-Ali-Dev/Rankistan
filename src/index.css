@@ -55,3 +55,89 @@
 .crt-glow {
     text-shadow: 0 0 8px rgba(162, 201, 255, 0.3);
 }
+
+/* ============================================================
+   LEADERBOARD HIGHLIGHT ANIMATIONS
+   Applied to deep-linked developer rows (e.g. #username URLs).
+   These run for 15 seconds then clear via React state.
+
+   Structure when highlighted:
+   .highlight-glow-wrapper      (relative, overflow:hidden, clips the gradient)
+     .highlight-glow-bg         (absolute, spinning conic-gradient card BEHIND content)
+     .highlight-glow-inner      (relative, solid dark bg, row content sits on top)
+   ============================================================ */
+
+/* --- Glow Wrapper ---
+   Parent container. Padding creates a gap around the content
+   where the spinning gradient is visible. Overflow:hidden clips
+   the gradient card to clean edges. */
+.highlight-glow-wrapper {
+    position: relative;
+    overflow: hidden;
+    padding: 3px;
+}
+
+/* --- Glow Background Card ---
+   Fills the entire wrapper including the padding gap. The
+   spinning blue conic-gradient is visible through the 3px
+   padding gap around the content row, creating a glowing
+   animated border effect. */
+   .highlight-glow-bg {
+       position: absolute;
+       top: -1000px;
+       left: -1000px;
+       right: -1000px;
+       bottom: -1000px;  
+       background: conic-gradient(
+           from 0deg,
+           #ffffff,
+           #d1d5db,
+           #4b5563,
+           #9ca3af,
+           #ffffff
+       );
+       animation: spin-slow 1.5s linear infinite;
+       z-index: 0;
+   }
+
+/* --- Glow Inner (Content Row) ---
+   Sits on top of the gradient card (z-index:1). Solid dark
+   background covers the center, while the 3px padding on the
+   wrapper lets the spinning gradient show through as a border. */
+.highlight-glow-inner {
+    position: relative;
+    z-index: 1;
+    background: #0e1a2e;
+}
+
+/* --- Pulse Highlight ---
+   Background pulses between the dark surface (#0e1a2e) and a
+   lighter blue (#1a3a6a) to draw attention to the matched row.
+   Infinite loop, 2s per cycle, cleared after 15s by React. */
+@keyframes pulse-highlight {
+    0%, 100% { background-color: #0e1a2e; }
+    50% { background-color: #1a3a6a; }
+}
+.animate-pulse-highlight {
+    animation: pulse-highlight 2s ease-in-out infinite;
+}
+
+/* --- Rank Pulse ---
+   Rank number pulses between bright sky blue and white to
+   match the highlighted row's glow effect. */
+@keyframes rank-pulse {
+    0%, 100% { color: #7ab3f0; }
+    50% { color: #ffffff; }
+}
+.animate-rank-pulse {
+    animation: rank-pulse 2s ease-in-out infinite;
+}
+
+/* --- Spin Slow ---
+   Rotates the conic-gradient background card. Blue shades spin
+   slowly (15s per full rotation). The overflow:hidden parent
+   clips this to a glowing border effect around the row. */
+@keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

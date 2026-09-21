@@ -60,7 +60,7 @@ function ContributionHeatmap({ username }) {
   );
 }
 
-export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect }) {
+export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect, isHighlighted = false }) {
   const [isExpanded, setIsExpanded] = useState(false);
   
   const tagsColors = [
@@ -85,10 +85,18 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
   const hasLinkedin = linkedinUrl !== '';
   
   return (
-    <div className="border-b border-outline-variant">
+    <div
+      id={`dev-${dev.username}`}
+      className={`${isHighlighted ? 'highlight-glow-wrapper' : 'border-b border-outline-variant'}`}
+    >
+      {isHighlighted && <div className="highlight-glow-bg" />}
       {/* Main Row Info */}
       <div
-        className="grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group hover:bg-surface-container-low transition-colors cursor-pointer"
+        className={`grid grid-cols-1 md:grid-cols-12 md:gap-x-4 bg-surface items-center py-6 px-6 group transition-colors cursor-pointer relative ${
+          isHighlighted
+            ? 'animate-pulse-highlight highlight-glow-inner hover:!bg-[#1a3a6a]'
+            : 'hover:bg-surface-container-low border-b border-outline-variant'
+        }`}
         onClick={() => compareMode ? onCompareSelect?.(dev) : toggleExpand()}
       >
         <div className="col-span-full md:col-span-1 mb-2 md:mb-0 flex items-center gap-2">
@@ -106,13 +114,13 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
               )}
             </div>
           )}
-          <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
+          <span className={`font-mono text-2xl font-bold transition-colors ${isHighlighted ? 'text-[#7ab3f0] animate-rank-pulse' : 'text-outline-variant group-hover:text-primary'}`}>
             {String(dev.rank).padStart(3, '0')}
           </span>
         </div>
         <div className="col-span-full md:col-span-4 flex items-center gap-4 mb-4 md:mb-0">
           <div className="relative shrink-0">
-            <img alt={username} className="w-12 h-12 grayscale group-hover:grayscale-0 transition-all border border-outline-variant p-0.5 object-cover" src={avatar} />
+            <img alt={username} className={`w-12 h-12 transition-all border border-outline-variant p-0.5 object-cover ${isHighlighted ? '' : 'grayscale group-hover:grayscale-0'}`} src={avatar} />
             {dev.rank <= 3 && <div className="absolute -top-1 -right-1 w-3 h-3 bg-tertiary border-2 border-surface"></div>}
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">

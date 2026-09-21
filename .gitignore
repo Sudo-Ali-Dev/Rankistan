@@ -17,5 +17,6 @@ public/data.dry-run.json.tmp
 !**/*.test.js
 !**/*.spec.js
 dist/
+*.lock
 public/raw_batch_*.json
 JD/
