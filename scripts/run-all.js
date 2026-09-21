@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -181,9 +182,47 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
     batch_index: batchIndex,
   }));
 
-  const existing = loadExistingLeaderboard(DATA_JSON);
+  saveBatchEntries(batchIndex, newEntries);
+  mergeBatchIntoLeaderboard({ batchIndex, newEntries, targetPath });
+}
+
+/**
+ * Where this batch's own rows are parked so the merge can be replayed without
+ * going back to GitHub.
+ *
+ * Deliberately outside the working tree: the retry in the workflow resets hard
+ * onto origin/main between attempts, and anything kept in the repo would be
+ * thrown away exactly when it is needed.
+ */
+export function batchEntriesPath(batchIndex) {
+  const dir = process.env.BATCH_OUTPUT_DIR || os.tmpdir();
+  return path.join(dir, `rankistan-batch-${batchIndex}.json`);
+}
+
+function saveBatchEntries(batchIndex, entries) {
+  const target = batchEntriesPath(batchIndex);
+  atomicWriteJsonSync(target, { batch_index: batchIndex, entries });
+  console.log(`Batch ${batchIndex} rows saved for re-merge: ${target}`);
+}
+
+/**
+ * Fold one batch's rows into whatever the leaderboard currently holds.
+ *
+ * This is the whole of the merge, and it is a merge *by row owner*: every row
+ * carries the `batch_index` that produced it, this batch replaces only its own,
+ * and the other 23 batches are carried across untouched. Two batches finishing
+ * at once are therefore not in conflict - they own disjoint rows.
+ *
+ * That is why the retry path re-runs this against the newest file rather than
+ * asking git to reconcile two versions of it. `public/data.json` is generated,
+ * 1.6MB, and rewritten whole on every run; a textual three-way merge of it
+ * conflicts every single time, which is what `ci: retry leaderboard push after
+ * rebasing onto main` (186ad85) has been doing daily since May.
+ */
+export function mergeBatchIntoLeaderboard({ batchIndex, newEntries, targetPath = DATA_JSON }) {
+  const existing = loadExistingLeaderboard(targetPath);
   const kept = existing.filter((d) => d.batch_index !== batchIndex);
-  
+
   const removedCount = existing.length - kept.length;
   assertReplacementIsSafe({
     batchIndex,
@@ -231,6 +270,39 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
   console.log(
     `Added ${newEntries.length} from batch ${batchIndex}, kept ${kept.length} from other batches.`,
   );
+  return output;
+}
+
+/**
+ * Replay a finished batch onto the leaderboard as it stands right now.
+ *
+ * Used when a push loses the race: rather than reconciling two rewrites of a
+ * generated file, take the newest file and fold this batch's saved rows back
+ * into it. The integrity checks run again on the way through, so a replay
+ * cannot smuggle in a shrunken or mixed-model board.
+ */
+export function remergeBatch(batchIndex, { targetPath = DATA_JSON } = {}) {
+  const source = batchEntriesPath(batchIndex);
+  if (!fs.existsSync(source)) {
+    throw new Error(
+      `No saved rows for batch ${batchIndex} at ${source}. ` +
+      `A re-merge can only replay a batch this run already computed.`
+    );
+  }
+
+  const saved = JSON.parse(fs.readFileSync(source, 'utf8'));
+  const entries = Array.isArray(saved?.entries) ? saved.entries : [];
+  if (saved?.batch_index !== batchIndex) {
+    throw new Error(
+      `Saved rows at ${source} are for batch ${saved?.batch_index}, not ${batchIndex}.`
+    );
+  }
+  if (entries.length === 0) {
+    throw new Error(`Saved rows for batch ${batchIndex} are empty; refusing to re-merge.`);
+  }
+
+  console.log(`\nRe-merging batch ${batchIndex} (${entries.length} rows) onto the current file.`);
+  return mergeBatchIntoLeaderboard({ batchIndex, newEntries: entries, targetPath });
 }
 
 // Only run the CLI when this file is the process entry point. Previously the
@@ -240,9 +312,11 @@ function main() {
   const args = process.argv.slice(2);
   const mode = args[0];
   const dryRun = args.includes('--dry-run') || process.env.SKIP_GITHUB === 'true';
-  const usage = 'Usage: node scripts/run-all.js --incremental <batch-index> [--dry-run]';
+  const usage =
+    'Usage: node scripts/run-all.js --incremental <batch-index> [--dry-run]\n' +
+    '       node scripts/run-all.js --remerge <batch-index>';
 
-  if (mode !== '--incremental') {
+  if (mode !== '--incremental' && mode !== '--remerge') {
     console.error(usage);
     process.exit(1);
   }
@@ -251,6 +325,17 @@ function main() {
   if (Number.isNaN(idx)) {
     console.error(usage);
     process.exit(1);
+  }
+
+  // `--remerge` touches no network: it replays rows this run already fetched.
+  if (mode === '--remerge') {
+    try {
+      remergeBatch(idx);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    return;
   }
 
   runIncremental(idx, { dryRun }).catch((e) => {

@@ -33,6 +33,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # The tip, not `github.sha`. A dispatched run pins to the SHA the
+          # branch had when it was queued, and this job routinely waits ~20
+          # minutes behind the previous batch before it starts - so it began on
+          # a commit that was already one batch stale, every time.
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -62,6 +67,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BATCH_INDEX: ${{ steps.batch.outputs.index }}
+          # Outside the working tree: the retry below resets hard onto
+          # origin/main between attempts, which would delete these rows exactly
+          # when the re-merge needs them.
+          BATCH_OUTPUT_DIR: ${{ runner.temp }}
         run: |
           BATCH="$BATCH_INDEX"
           echo "Running incremental batch: $BATCH"
@@ -70,6 +79,7 @@ jobs:
       - name: Commit and push updates
         env:
           BATCH_INDEX: ${{ steps.batch.outputs.index }}
+          BATCH_OUTPUT_DIR: ${{ runner.temp }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -79,17 +89,44 @@ jobs:
             exit 0
           fi
 
-          git add public/data.json
-          git commit -m "chore: update leaderboard (batch $BATCH_INDEX)"
+          # Losing the push race is normal: a batch takes up to an hour and the
+          # next one is dispatched every hour, so main is expected to move
+          # underneath a slow batch.
+          #
+          # What this must not do is ask git to reconcile the result. data.json
+          # is generated, 1.6MB, and rewritten whole on every run, so a textual
+          # three-way merge of two rewrites conflicts every time - which is why
+          # `git pull --rebase` (186ad85, May) failed on batch 0 on 22 of the
+          # last 26 pipeline failures and has never once succeeded.
+          #
+          # The merge is by row owner instead. Every row carries the
+          # `batch_index` that produced it, batches own disjoint rows, and the
+          # pipeline already folds one batch into the other 23. So on rejection:
+          # take main as it now stands and replay this batch's saved rows onto
+          # it. No network, no conflict possible, and the integrity checks run
+          # again on every attempt.
+          for attempt in 1 2 3 4 5; do
+            git add public/data.json
+            git commit -q -m "chore: update leaderboard (batch $BATCH_INDEX)"
 
-          if git push origin HEAD:main; then
-            exit 0
-          fi
+            if git push origin HEAD:main; then
+              echo "Pushed batch $BATCH_INDEX on attempt $attempt."
+              exit 0
+            fi
 
-          echo "Push rejected because main moved. Rebasing onto latest origin/main and retrying."
-          git fetch origin main
-          git pull --rebase origin main
-          git push origin HEAD:main
+            echo "Push rejected on attempt $attempt; main moved. Replaying batch $BATCH_INDEX onto the new tip."
+            git fetch origin main
+            git reset --hard origin/main
+            node scripts/run-all.js --remerge "$BATCH_INDEX"
+
+            if git diff --quiet -- public/data.json; then
+              echo "Re-merge produced no change against the new tip; nothing left to publish."
+              exit 0
+            fi
+          done
+
+          echo "::error::Could not publish batch $BATCH_INDEX after 5 attempts."
+          exit 1
 
       - name: Install dependencies
         run: npm ci

@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   assertReplacementIsSafe,
+  mergeBatchIntoLeaderboard,
   MIN_REPLACEMENT_RATIO,
   MIN_COHORT_FOR_RATIO_CHECK
 } from './run-all.js';
@@ -72,5 +76,83 @@ describe('assertReplacementIsSafe', () => {
   it('names the batch so a CI failure is diagnosable', () => {
     expect(() => call({ batchIndex: 23, batchLabel: 'PK Apr2025-Now', replacementCount: 0 }))
       .toThrow(/batch 23 \(PK Apr2025-Now\)/);
+  });
+});
+
+describe('mergeBatchIntoLeaderboard', () => {
+  const row = (username, batch, score) => ({
+    username,
+    batch_index: batch,
+    score,
+    score_exact: score,
+    model_version: '3.0.0'
+  });
+
+  const write = (file, leaderboard) =>
+    fs.writeFileSync(file, JSON.stringify({ last_updated: 'x', total_devs: leaderboard.length, leaderboard }));
+
+  const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8')).leaderboard;
+
+  let tmp;
+  beforeEach(() => {
+    tmp = path.join(os.tmpdir(), `rankistan-merge-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+  });
+  afterEach(() => {
+    if (tmp && fs.existsSync(tmp)) fs.unlinkSync(tmp);
+  });
+
+  it('replaces only the rows the batch owns', () => {
+    write(tmp, [row('a', 0, 500), row('b', 0, 400), row('c', 7, 300)]);
+    mergeBatchIntoLeaderboard({
+      batchIndex: 0,
+      newEntries: [row('a', 0, 900), row('z', 0, 800)],
+      targetPath: tmp
+    });
+    const out = read(tmp);
+    expect(out.map((d) => d.username).sort()).toEqual(['a', 'c', 'z']);
+    expect(out.find((d) => d.username === 'a').score).toBe(900);
+    // untouched batch carried across at its old value
+    expect(out.find((d) => d.username === 'c').score).toBe(300);
+  });
+
+  // The race this exists to survive: batch 0 checks out the board, spends 46
+  // minutes fetching, and by the time it pushes, batch 23 has published its own
+  // rows. Re-merging must keep both. A textual merge conflicts here, and
+  // resolving that conflict by taking either side wholesale silently deletes
+  // the other batch's work.
+  it('keeps the other batch when a slow batch lands after it', () => {
+    const atCheckout = [row('slow-1', 0, 500), row('other', 23, 300)];
+    write(tmp, atCheckout);
+
+    // main moves: batch 23 republishes while batch 0 is still fetching
+    write(tmp, [row('slow-1', 0, 500), row('other', 23, 999), row('newcomer', 23, 950)]);
+
+    // batch 0 finishes and replays its rows onto the file as it now stands
+    mergeBatchIntoLeaderboard({
+      batchIndex: 0,
+      newEntries: [row('slow-1', 0, 600), row('slow-2', 0, 550)],
+      targetPath: tmp
+    });
+
+    const out = read(tmp);
+    const byName = Object.fromEntries(out.map((d) => [d.username, d]));
+    expect(Object.keys(byName).sort()).toEqual(['newcomer', 'other', 'slow-1', 'slow-2']);
+    expect(byName['slow-1'].score).toBe(600);
+    expect(byName.other.score).toBe(999);
+    expect(byName.newcomer.score).toBe(950);
+  });
+
+  it('reranks across the whole board, not within the batch', () => {
+    write(tmp, [row('a', 0, 100), row('b', 7, 800), row('c', 7, 700)]);
+    mergeBatchIntoLeaderboard({ batchIndex: 0, newEntries: [row('a', 0, 900)], targetPath: tmp });
+    const out = read(tmp);
+    expect(out.map((d) => [d.username, d.rank])).toEqual([['a', 1], ['b', 2], ['c', 3]]);
+  });
+
+  it('still refuses a replacement that would shrink the board', () => {
+    write(tmp, Array.from({ length: 200 }, (_, i) => row(`u${i}`, 0, 100 - i / 10)));
+    expect(() =>
+      mergeBatchIntoLeaderboard({ batchIndex: 0, newEntries: [row('only', 0, 500)], targetPath: tmp })
+    ).toThrow(/Data Integrity Exception/);
   });
 });
