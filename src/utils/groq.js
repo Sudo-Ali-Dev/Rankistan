@@ -105,6 +105,15 @@ function resolveHeatmapDirectUrl(username) {
   return `https://ghchart.rshah.org/${HEATMAP_COLOR}/${safeUsername}`;
 }
 
+// The per-day series behind the sparkline, parsed by the Worker out of the same
+// grid it already fetches - one upstream call, one cache entry. There is no
+// direct fallback for this one: ghchart sends no Access-Control-Allow-Origin,
+// so the browser can read the bytes only through our own origin.
+function resolveHeatmapJsonUrl(username) {
+  const safeUsername = encodeURIComponent(String(username || '').trim());
+  return `${resolveApiBase()}/api/heatmap/${safeUsername}?format=json`;
+}
+
 function truncateSummary(text) {
   if (text.length <= MAX_SUMMARY_LENGTH) {
     return text;
@@ -226,6 +235,7 @@ export {
   resolveBadgeApiUrl,
   resolveHeatmapApiUrl,
   resolveHeatmapDirectUrl,
+  resolveHeatmapJsonUrl,
   truncateSummary,
   validateSummary,
   callSummaryApiOnce,

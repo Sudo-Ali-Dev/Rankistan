@@ -511,6 +511,27 @@ function buildHeatmapUpstreamUrl(username) {
   return `${HEATMAP_UPSTREAM}/${HEATMAP_COLOR}/${encodeURIComponent(username)}`;
 }
 
+// Each cell carries the day it stands for and GitHub's own 0-4 intensity for
+// that day, so the same response that draws the calendar also answers "what did
+// the last N days look like" without a second upstream call.
+//
+// `level` is an intensity band, NOT a count of events - ghchart publishes no raw
+// figure, and inventing one from a monthly total is the thing 5eae21d removed.
+// Anything rendering this has to say intensity, not events.
+const HEATMAP_DAY_RE = /data-score="(\d+)"\s+data-date="(\d{4}-\d{2}-\d{2})"/g;
+const HEATMAP_JSON_MAX_DAYS = 90;
+
+function parseHeatmapDays(svg, limit = HEATMAP_JSON_MAX_DAYS) {
+  const days = [];
+  for (const match of String(svg).matchAll(HEATMAP_DAY_RE)) {
+    days.push({ date: match[2], level: Number(match[1]) });
+  }
+  // The grid is emitted oldest-first; the tail is the recent window.
+  days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const size = Math.max(1, Math.min(limit, HEATMAP_JSON_MAX_DAYS));
+  return days.slice(-size);
+}
+
 // The upstream is a third party we do not control. Serve its bytes only as an
 // SVG image, never with a Content-Type it chose: reflecting that header meant a
 // compromised or changed upstream could return text/html and have us serve
@@ -540,12 +561,23 @@ async function handleHeatmapRequest(request, env) {
   const cache = typeof caches === 'undefined' ? null : caches.default;
   const cacheKey = new Request(upstreamUrl, { method: 'GET' });
 
+  // `?format=json` answers with the per-day series parsed out of the same grid,
+  // so the sparkline and the calendar are one upstream call and one cache entry
+  // rather than two. The cache key deliberately ignores the parameter.
+  const wantsJson = new URL(request.url).searchParams.get('format') === 'json';
+
   // Only the SVG body is cached, with no CORS header on it. Previously the
   // cached entry carried the Access-Control-Allow-Origin of whichever origin
   // asked first, while the cache key (the upstream URL) had no Origin in it -
   // so that first caller's ACAO was replayed to everyone for an hour.
-  const serve = (svg) =>
-    new Response(svg, { headers: { ...buildCorsHeaders(corsOrigin), ...HEATMAP_SVG_HEADERS } });
+  const serve = (svg) => {
+    if (wantsJson) {
+      return jsonResponse({ username, days: parseHeatmapDays(svg) }, 200, corsOrigin);
+    }
+    return new Response(svg, {
+      headers: { ...buildCorsHeaders(corsOrigin), ...HEATMAP_SVG_HEADERS }
+    });
+  };
 
   try {
     const cached = cache ? await cache.match(cacheKey) : null;
@@ -753,6 +785,7 @@ export {
   isRateLimitedInIsolate,
   isHeatmapSvg,
   themeHeatmap,
+  parseHeatmapDays,
   buildHeatmapUpstreamUrl,
   GITHUB_USERNAME_RE,
   RATE_LIMIT_MAX_REQUESTS

@@ -9,6 +9,7 @@ import {
   isRateLimitedInIsolate,
   isHeatmapSvg,
   themeHeatmap,
+  parseHeatmapDays,
   buildHeatmapUpstreamUrl,
   GITHUB_USERNAME_RE,
   RATE_LIMIT_MAX_REQUESTS
@@ -306,5 +307,40 @@ describe('buildHeatmapUpstreamUrl', () => {
 
   it('encodes the username rather than letting it alter the path', () => {
     expect(buildHeatmapUpstreamUrl('a/../b')).not.toContain('/../');
+  });
+});
+
+describe('parseHeatmapDays', () => {
+  const cell = (date, score) =>
+    `<rect style="fill:#50b85e;" data-score="${score}" data-date="${date}"/>`;
+  const grid =
+    '<svg>' +
+    cell('2026-09-03', '0') +
+    cell('2026-09-01', '4') +
+    cell('2026-09-02', '2') +
+    '</svg>';
+
+  it('reads the real day and intensity off each cell', () => {
+    expect(parseHeatmapDays(grid)).toEqual([
+      { date: '2026-09-01', level: 4 },
+      { date: '2026-09-02', level: 2 },
+      { date: '2026-09-03', level: 0 }
+    ]);
+  });
+
+  it('returns the most recent days when a window is asked for', () => {
+    expect(parseHeatmapDays(grid, 2).map((d) => d.date)).toEqual(['2026-09-02', '2026-09-03']);
+  });
+
+  it('caps the window, so one caller cannot ask for the whole calendar', () => {
+    const many = Array.from({ length: 400 }, (_, i) =>
+      cell(`2026-01-${String((i % 28) + 1).padStart(2, '0')}`, String(i % 5))
+    ).join('');
+    expect(parseHeatmapDays(`<svg>${many}</svg>`, 9999).length).toBeLessThanOrEqual(90);
+  });
+
+  it('returns nothing for a body that carries no cells', () => {
+    expect(parseHeatmapDays('<svg></svg>')).toEqual([]);
+    expect(parseHeatmapDays('Payment required')).toEqual([]);
   });
 });

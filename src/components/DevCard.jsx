@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { resolveHeatmapApiUrl, resolveHeatmapDirectUrl } from '../utils/groq.js';
+import ActivitySparkline from './ActivitySparkline';
 
 const GitHubIcon = ({ size = 16 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" width={size} height={size} aria-hidden="true">
@@ -246,6 +247,14 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Outside the 12-column grid, so it runs the full width of the card.
+              Inside `md:col-span-8` it was two thirds of it. This is where #50
+              put it, and the long shallow band is the point of the panel: 30
+              days only read as a trend when they have the width to spread out. */}
+          <div className="mt-8">
+            <ActivitySparkline username={username} />
           </div>
         </div>
 
