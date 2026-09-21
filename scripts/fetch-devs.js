@@ -21,6 +21,32 @@ const ACTIVITY_THRESHOLDS = {
 };
 const REQUEST_TIMEOUT_MS = 20000;
 const RATE_LIMIT_RETRY_DELAY_MS = 60000;
+
+// A secondary rate limit is not the primary budget running out, and the two
+// need different waits. The old handler computed its wait from
+// `rateLimit.resetAt`, which tracks the *primary* limit - untouched during a
+// secondary block, so it is already in the past and the wait collapsed to the
+// +5000 floor. The pipeline therefore answered "please wait a few minutes"
+// by waiting five seconds, retrying into the same block, and giving up: on
+// 2026-09-21 batch 14 went from first 403 to fatal in eight seconds.
+//
+// GitHub's guidance is to honour `retry-after`, and to wait at least a minute
+// when it is absent. Backs off linearly so a busy window is not hammered.
+const SECONDARY_RATE_LIMIT_MIN_WAIT_MS = 60000;
+export const MAX_RATE_LIMIT_RETRIES = 3;
+
+export function rateLimitWaitMs(body, headers, attempt = 0, now = Date.now()) {
+  const retryAfter = parseInt(headers?.get?.('retry-after'), 10);
+  if (retryAfter > 0) return retryAfter * 1000 + 5000;
+
+  if (String(body).includes('secondary rate limit')) {
+    return SECONDARY_RATE_LIMIT_MIN_WAIT_MS * (attempt + 1);
+  }
+
+  // Primary budget: wait for the documented reset, never less than a minute.
+  const untilReset = Math.max(0, rateLimit.resetAt * 1000 - now);
+  return Math.max(untilReset, SECONDARY_RATE_LIMIT_MIN_WAIT_MS) + 5000;
+}
 const USER_CALL_DELAY_MIN_MS = 100;
 const USER_CALL_DELAY_MAX_MS = 150;
 
@@ -178,7 +204,7 @@ async function waitForRateLimit() {
 }
 
 async function githubRequest(endpoint, token, options = {}) {
-  const { allow404 = false, retriedAfter429 = false } = options;
+  const { allow404 = false, retriedAfter429 = false, rateLimitAttempt = 0 } = options;
 
   await waitForRateLimit();
 
@@ -222,11 +248,14 @@ async function githubRequest(endpoint, token, options = {}) {
 
   if (!response.ok) {
     const body = await response.text();
-    if (response.status === 403 && body.includes('rate limit') && !retriedAfter429) {
-      const waitMs = Math.max(0, rateLimit.resetAt * 1000 - Date.now()) + 5000;
-      console.warn(`Rate limited (403) on ${endpoint}; waiting ${Math.ceil(waitMs / 1000)}s and retrying.`);
+    if (response.status === 403 && body.includes('rate limit') && rateLimitAttempt < MAX_RATE_LIMIT_RETRIES) {
+      const waitMs = rateLimitWaitMs(body, response.headers, rateLimitAttempt);
+      console.warn(
+        `Rate limited (403) on ${endpoint}; waiting ${Math.ceil(waitMs / 1000)}s ` +
+        `(attempt ${rateLimitAttempt + 1}/${MAX_RATE_LIMIT_RETRIES}) and retrying.`
+      );
       await sleep(waitMs);
-      return githubRequest(endpoint, token, { ...options, retriedAfter429: true });
+      return githubRequest(endpoint, token, { ...options, rateLimitAttempt: rateLimitAttempt + 1 });
     }
     throw new Error(`GitHub API error ${response.status} for ${endpoint}: ${body}`);
   }
