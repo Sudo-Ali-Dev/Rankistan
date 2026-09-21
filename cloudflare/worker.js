@@ -466,29 +466,70 @@ async function callGroqWithKeyFallback(dev, apiKeys) {
   throw lastError || new Error('All Groq keys failed.');
 }
 
-const HEATMAP_UPSTREAM = 'https://github-readme-activity-graph.vercel.app/graph';
+// Was github-readme-activity-graph.vercel.app. That project's Vercel deployment
+// was switched off and every request now answers `402 DEPLOYMENT_DISABLED`, so
+// the route could only ever 502 (issue #94). ghchart draws GitHub's own
+// contribution calendar rather than a line chart, and takes its colour as a
+// path segment. It is real per-day data, which is the bar here: the fabricated
+// sparkline built from the single `events_30d` total was removed in 5eae21d.
+const HEATMAP_UPSTREAM = 'https://ghchart.rshah.org';
 const HEATMAP_COLOR = '50b85e';
-const HEATMAP_BG = '10141a';
 const HEATMAP_CACHE_SECONDS = 3600;
-const HEATMAP_ERROR_MARKERS = ["Can't fetch any contribution", 'Please check your username'];
 const GITHUB_USERNAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i;
 
-function isHeatmapErrorCard(svg) {
-  return HEATMAP_ERROR_MARKERS.some((marker) => svg.includes(marker));
+// ghchart's ramp runs the wrong way for a dark page: an empty day is `#EEEEEE`,
+// the brightest thing in the panel, and activity gets *darker* as it rises
+// (`#9dffab` at one contribution down to `#40934b` at the busiest). Remapped
+// onto the app's surface and tertiary tokens so an empty day recedes and the
+// busiest day is the brightest cell. `#767676` is the month/weekday lettering.
+const HEATMAP_PALETTE = {
+  '#eeeeee': '#181c22',
+  '#9dffab': '#235c31',
+  '#83eb91': '#3a8a47',
+  '#50b85e': '#50b85e',
+  '#40934b': '#74dd7e',
+  '#767676': '#8b919d'
+};
+
+function themeHeatmap(svg) {
+  return svg.replace(
+    /#(?:eeeeee|9dffab|83eb91|50b85e|40934b|767676)\b/gi,
+    (match) => HEATMAP_PALETTE[match.toLowerCase()] ?? match
+  );
+}
+
+// The old check looked for two error strings the previous upstream printed
+// *inside* a valid SVG. It could not catch what actually took the route down: a
+// 78-byte `Payment required` plain-text body, which was relabelled
+// image/svg+xml and cached as a success for an hour. Assert the shape required
+// rather than listing the failures already seen.
+function isHeatmapSvg(body) {
+  return typeof body === 'string' && body.includes('<svg') && body.includes('</svg>');
 }
 
 function buildHeatmapUpstreamUrl(username) {
-  const params = new URLSearchParams({
-    username,
-    theme: 'react-dark',
-    hide_border: 'true',
-    area: 'true',
-    color: HEATMAP_COLOR,
-    line: HEATMAP_COLOR,
-    point: HEATMAP_COLOR,
-    bg_color: HEATMAP_BG
-  });
-  return `${HEATMAP_UPSTREAM}?${params.toString()}`;
+  return `${HEATMAP_UPSTREAM}/${HEATMAP_COLOR}/${encodeURIComponent(username)}`;
+}
+
+// Each cell carries the day it stands for and GitHub's own 0-4 intensity for
+// that day, so the same response that draws the calendar also answers "what did
+// the last N days look like" without a second upstream call.
+//
+// `level` is an intensity band, NOT a count of events - ghchart publishes no raw
+// figure, and inventing one from a monthly total is the thing 5eae21d removed.
+// Anything rendering this has to say intensity, not events.
+const HEATMAP_DAY_RE = /data-score="(\d+)"\s+data-date="(\d{4}-\d{2}-\d{2})"/g;
+const HEATMAP_JSON_MAX_DAYS = 90;
+
+function parseHeatmapDays(svg, limit = HEATMAP_JSON_MAX_DAYS) {
+  const days = [];
+  for (const match of String(svg).matchAll(HEATMAP_DAY_RE)) {
+    days.push({ date: match[2], level: Number(match[1]) });
+  }
+  // The grid is emitted oldest-first; the tail is the recent window.
+  days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const size = Math.max(1, Math.min(limit, HEATMAP_JSON_MAX_DAYS));
+  return days.slice(-size);
 }
 
 // The upstream is a third party we do not control. Serve its bytes only as an
@@ -520,19 +561,30 @@ async function handleHeatmapRequest(request, env) {
   const cache = typeof caches === 'undefined' ? null : caches.default;
   const cacheKey = new Request(upstreamUrl, { method: 'GET' });
 
+  // `?format=json` answers with the per-day series parsed out of the same grid,
+  // so the sparkline and the calendar are one upstream call and one cache entry
+  // rather than two. The cache key deliberately ignores the parameter.
+  const wantsJson = new URL(request.url).searchParams.get('format') === 'json';
+
   // Only the SVG body is cached, with no CORS header on it. Previously the
   // cached entry carried the Access-Control-Allow-Origin of whichever origin
   // asked first, while the cache key (the upstream URL) had no Origin in it -
   // so that first caller's ACAO was replayed to everyone for an hour.
-  const serve = (svg) =>
-    new Response(svg, { headers: { ...buildCorsHeaders(corsOrigin), ...HEATMAP_SVG_HEADERS } });
+  const serve = (svg) => {
+    if (wantsJson) {
+      return jsonResponse({ username, days: parseHeatmapDays(svg) }, 200, corsOrigin);
+    }
+    return new Response(svg, {
+      headers: { ...buildCorsHeaders(corsOrigin), ...HEATMAP_SVG_HEADERS }
+    });
+  };
 
   try {
     const cached = cache ? await cache.match(cacheKey) : null;
     if (cached) {
       const cachedSvg = await cached.text();
 
-      if (!isHeatmapErrorCard(cachedSvg)) {
+      if (isHeatmapSvg(cachedSvg)) {
         return serve(cachedSvg);
       }
 
@@ -543,8 +595,8 @@ async function handleHeatmapRequest(request, env) {
     // deployments, and the frontend points at the workers.dev hostname - so the
     // Cache API block above is inert in production today. This cf hint is a
     // separate mechanism and does work there, which matters because every
-    // uncached hit lands on the third-party upstream that rate-limits us into
-    // the error cards this route exists to suppress.
+    // uncached hit lands on a third-party upstream that rate-limits us, and
+    // whose outages this route exists to absorb.
     const upstream = await fetch(upstreamUrl, {
       cf: { cacheTtl: HEATMAP_CACHE_SECONDS }
     });
@@ -553,11 +605,15 @@ async function handleHeatmapRequest(request, env) {
       throw new Error(`Heatmap upstream returned ${upstream.status}.`);
     }
 
-    const svg = await upstream.text();
+    const body = await upstream.text();
 
-    if (isHeatmapErrorCard(svg)) {
-      throw new Error('Heatmap upstream returned an error card.');
+    if (!isHeatmapSvg(body)) {
+      throw new Error('Heatmap upstream did not return an SVG.');
     }
+
+    // Cache the recoloured copy, so the remap is paid once an hour per
+    // developer rather than on every card that is opened.
+    const svg = themeHeatmap(body);
 
     if (cache) {
       await cache.put(cacheKey, new Response(svg, { headers: HEATMAP_SVG_HEADERS }));
@@ -727,7 +783,10 @@ export {
   buildCorsHeaders,
   getClientIp,
   isRateLimitedInIsolate,
-  isHeatmapErrorCard,
+  isHeatmapSvg,
+  themeHeatmap,
+  parseHeatmapDays,
+  buildHeatmapUpstreamUrl,
   GITHUB_USERNAME_RE,
   RATE_LIMIT_MAX_REQUESTS
 };

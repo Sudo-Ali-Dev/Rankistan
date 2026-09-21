@@ -86,26 +86,32 @@ function resolveBadgeApiUrl(username) {
 }
 
 const HEATMAP_COLOR = '50b85e';
-const HEATMAP_BG = '10141a';
 
 function resolveHeatmapApiUrl(username) {
   const safeUsername = encodeURIComponent(String(username || '').trim());
   return `${resolveApiBase()}/api/heatmap/${safeUsername}`;
 }
 
+// The direct hit is the fallback for when the Worker is unreachable, so it must
+// name the same upstream the Worker proxies - both pointed at
+// github-readme-activity-graph.vercel.app, which was switched off and answers
+// `402 DEPLOYMENT_DISABLED` for every username (issue #94).
+//
+// This path serves ghchart's own palette, not the dark one the Worker remaps
+// to: an <img> cannot recolour its source. It is the degraded path, and only
+// renders when the proxy is already failing.
 function resolveHeatmapDirectUrl(username) {
-  const safeUsername = String(username || '').trim();
-  const params = new URLSearchParams({
-    username: safeUsername,
-    theme: 'react-dark',
-    hide_border: 'true',
-    area: 'true',
-    color: HEATMAP_COLOR,
-    line: HEATMAP_COLOR,
-    point: HEATMAP_COLOR,
-    bg_color: HEATMAP_BG
-  });
-  return `https://github-readme-activity-graph.vercel.app/graph?${params.toString()}`;
+  const safeUsername = encodeURIComponent(String(username || '').trim());
+  return `https://ghchart.rshah.org/${HEATMAP_COLOR}/${safeUsername}`;
+}
+
+// The per-day series behind the sparkline, parsed by the Worker out of the same
+// grid it already fetches - one upstream call, one cache entry. There is no
+// direct fallback for this one: ghchart sends no Access-Control-Allow-Origin,
+// so the browser can read the bytes only through our own origin.
+function resolveHeatmapJsonUrl(username) {
+  const safeUsername = encodeURIComponent(String(username || '').trim());
+  return `${resolveApiBase()}/api/heatmap/${safeUsername}?format=json`;
 }
 
 function truncateSummary(text) {
@@ -229,6 +235,7 @@ export {
   resolveBadgeApiUrl,
   resolveHeatmapApiUrl,
   resolveHeatmapDirectUrl,
+  resolveHeatmapJsonUrl,
   truncateSummary,
   validateSummary,
   callSummaryApiOnce,

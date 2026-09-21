@@ -7,6 +7,10 @@ import {
   buildCorsHeaders,
   getClientIp,
   isRateLimitedInIsolate,
+  isHeatmapSvg,
+  themeHeatmap,
+  parseHeatmapDays,
+  buildHeatmapUpstreamUrl,
   GITHUB_USERNAME_RE,
   RATE_LIMIT_MAX_REQUESTS
 } from './worker.js';
@@ -224,5 +228,119 @@ describe('pronouns in the prompt', () => {
     for (const line of prompt.split(String.fromCharCode(10))) {
       expect(line.startsWith('System:')).toBe(false);
     }
+  });
+});
+
+describe('isHeatmapSvg', () => {
+  // The regression that took this route down: the upstream stopped serving an
+  // SVG and started serving a 78-byte plain-text billing notice with a 2xx
+  // status, which was relabelled image/svg+xml and cached as a success.
+  it('rejects the upstream billing notice that broke the route', () => {
+    expect(isHeatmapSvg('Payment required\n\nDEPLOYMENT_DISABLED\n\nsin1::abc')).toBe(false);
+  });
+
+  it('rejects an HTML error page', () => {
+    expect(isHeatmapSvg('<!DOCTYPE html><html><body>502</body></html>')).toBe(false);
+  });
+
+  it('rejects a truncated response with no closing tag', () => {
+    expect(isHeatmapSvg('<svg width="663" height="104"><rect')).toBe(false);
+  });
+
+  it('rejects a non-string body', () => {
+    for (const body of [null, undefined, 0, {}]) {
+      expect(isHeatmapSvg(body)).toBe(false);
+    }
+  });
+
+  it('accepts a real grid', () => {
+    expect(isHeatmapSvg('<svg width="663" height="104"><rect/></svg>')).toBe(true);
+  });
+});
+
+describe('themeHeatmap', () => {
+  // Measured from the upstream: score 0 is #EEEEEE and the ramp *darkens* as
+  // activity rises, which is backwards on a dark surface.
+  const upstream =
+    '<svg><rect style="fill:#EEEEEE;" data-score="0"/><rect style="fill:#9dffab;" data-score="1"/>' +
+    '<rect style="fill:#83eb91;" data-score="2"/><rect style="fill:#50b85e;" data-score="3"/>' +
+    '<rect style="fill:#40934b;" data-score="4"/><text fill="#767676">Sep</text></svg>';
+
+  it('leaves no light fill that would glare on the dark panel', () => {
+    const themed = themeHeatmap(upstream);
+    expect(themed.toLowerCase()).not.toContain('#eeeeee');
+    expect(themed).not.toContain('#9dffab');
+  });
+
+  it('makes the busiest day the brightest cell, not the darkest', () => {
+    const themed = themeHeatmap(upstream);
+    const lum = (hex) => {
+      const n = parseInt(hex.slice(1), 16);
+      return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114;
+    };
+    const byScore = [...themed.matchAll(/fill:(#[0-9a-f]{6});" data-score="(\d)"/gi)].map((m) => ({
+      score: Number(m[2]),
+      lum: lum(m[1])
+    }));
+    expect(byScore).toHaveLength(5);
+    for (let i = 1; i < byScore.length; i += 1) {
+      expect(byScore[i].lum).toBeGreaterThan(byScore[i - 1].lum);
+    }
+  });
+
+  it('leaves colours it does not own alone', () => {
+    expect(themeHeatmap('<svg><rect style="fill:#ff00ff;"/></svg>')).toContain('#ff00ff');
+  });
+
+  it('is idempotent, so a cached copy re-themed does not drift', () => {
+    const once = themeHeatmap(upstream);
+    expect(themeHeatmap(once)).toBe(once);
+  });
+});
+
+describe('buildHeatmapUpstreamUrl', () => {
+  it('puts the colour and the username in the path', () => {
+    expect(buildHeatmapUpstreamUrl('ammarahm-ed')).toBe(
+      'https://ghchart.rshah.org/50b85e/ammarahm-ed'
+    );
+  });
+
+  it('encodes the username rather than letting it alter the path', () => {
+    expect(buildHeatmapUpstreamUrl('a/../b')).not.toContain('/../');
+  });
+});
+
+describe('parseHeatmapDays', () => {
+  const cell = (date, score) =>
+    `<rect style="fill:#50b85e;" data-score="${score}" data-date="${date}"/>`;
+  const grid =
+    '<svg>' +
+    cell('2026-09-03', '0') +
+    cell('2026-09-01', '4') +
+    cell('2026-09-02', '2') +
+    '</svg>';
+
+  it('reads the real day and intensity off each cell', () => {
+    expect(parseHeatmapDays(grid)).toEqual([
+      { date: '2026-09-01', level: 4 },
+      { date: '2026-09-02', level: 2 },
+      { date: '2026-09-03', level: 0 }
+    ]);
+  });
+
+  it('returns the most recent days when a window is asked for', () => {
+    expect(parseHeatmapDays(grid, 2).map((d) => d.date)).toEqual(['2026-09-02', '2026-09-03']);
+  });
+
+  it('caps the window, so one caller cannot ask for the whole calendar', () => {
+    const many = Array.from({ length: 400 }, (_, i) =>
+      cell(`2026-01-${String((i % 28) + 1).padStart(2, '0')}`, String(i % 5))
+    ).join('');
+    expect(parseHeatmapDays(`<svg>${many}</svg>`, 9999).length).toBeLessThanOrEqual(90);
+  });
+
+  it('returns nothing for a body that carries no cells', () => {
+    expect(parseHeatmapDays('<svg></svg>')).toEqual([]);
+    expect(parseHeatmapDays('Payment required')).toEqual([]);
   });
 });
