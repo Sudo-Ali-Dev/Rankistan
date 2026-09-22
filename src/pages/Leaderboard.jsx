@@ -381,31 +381,48 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
           )}
         </div>
 
-      {/* Compare selection indicator */}
+      {/* Compare selection indicator.
+
+          Pinned to the viewport, not left in the flow after the list. In flow it
+          rendered below all ten rows and the pagination - 600px past the fold at
+          1440 and 3.9 screens down at 375 - so selecting developers appeared to
+          do nothing at all: the checkboxes ticked and the only control that
+          opens the comparison was off screen with nothing to suggest it existed.
+
+          `bottom` clears the mobile tab bar, which is itself fixed and is hidden
+          at `xl` on this tab only, so the offset drops at the same breakpoint.
+          z-40 matches the tab bar and stays under the modal at z-50. */}
       {compareMode && compareSelection.length > 0 && (
-        <div className="mt-4 border border-tertiary bg-surface-container-lowest p-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 font-mono text-xs">
-            <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
-            <span className="text-tertiary uppercase tracking-widest">
-              {compareSelection.length} of 3 Nodes Selected
-            </span>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={() => setCompareOpen(true)}
-              disabled={compareSelection.length < 2}
-              className="border border-tertiary/60 px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-tertiary hover:bg-tertiary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Compare
-            </button>
-            <button
-              type="button"
-              onClick={handleCompareToggle}
-              className="text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
-            >
-              Exit
-            </button>
+        <div className="fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom,0px))] z-40 px-4 sm:px-6 lg:px-8 xl:bottom-6">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 border border-tertiary bg-surface-container-lowest p-3 shadow-[0_-4px_24px_rgba(0,0,0,0.35)]">
+            <div className="flex items-center gap-3 font-mono text-xs min-w-0">
+              <span className="w-2 h-2 bg-tertiary animate-pulse shrink-0"></span>
+              {/* Short form on a phone: the full string truncated to
+                  "2 OF 3 NODES SELE..." once this became the primary control. */}
+              <span className="text-tertiary uppercase tracking-widest truncate">
+                <span className="sm:hidden">{compareSelection.length}/3 selected</span>
+                <span className="hidden sm:inline">
+                  {compareSelection.length} of 3 Nodes Selected
+                </span>
+              </span>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCompareOpen(true)}
+                disabled={compareSelection.length < 2}
+                className="border border-tertiary/60 px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-tertiary hover:bg-tertiary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Compare
+              </button>
+              <button
+                type="button"
+                onClick={handleCompareToggle}
+                className="text-outline hover:text-primary transition-colors font-mono text-xs uppercase"
+              >
+                Exit
+              </button>
+            </div>
           </div>
         </div>
       )}
