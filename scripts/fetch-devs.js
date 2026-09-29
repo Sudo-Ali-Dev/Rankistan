@@ -75,7 +75,15 @@ const SEARCH_BATCHES = [
   { label: 'PK May2022-Aug2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-05-01..2022-08-31' },
   { label: 'PK Sep2022-Nov2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-09-01..2022-11-30' },
   { label: 'PK Dec2022-Feb2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-12-01..2023-02-28' },
-  { label: 'PK Mar2023-Jun2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-03-01..2023-06-30' },
+  {
+    label: 'PK Mar2023-Jun2023',
+    // This window matches ~1,090 accounts, above GitHub's 1,000-hit cap for one search (~472 + ~618 when
+    // split here), so a single query silently truncated it. Sharded the same way as PK 2025+.
+    queries: [
+      'location:pakistan type:user repos:>3 followers:>1 created:2023-03-01..2023-04-15',
+      'location:pakistan type:user repos:>3 followers:>1 created:2023-04-16..2023-06-30'
+    ]
+  },
   { label: 'PK Jul2023-Sep2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-07-01..2023-09-30' },
   { label: 'PK Oct2023-Dec2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-10-01..2023-12-31' },
   { label: 'PK Jan2024-Mar2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-01-01..2024-03-31' },
