@@ -40,6 +40,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageInput, setPageInput] = useState('');
+  const [highlightUsername, setHighlightUsername] = useState('');
   const devsPerPage = 10;
 
   useEffect(() => {
@@ -74,6 +75,18 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
           : [];
 
         setLeaderboard(ensureLeaderboardTags(rows));
+
+        const hash = window.location.hash.slice(1);
+        if (hash) {
+          const targetDev = rows.find(d => d.username?.toLowerCase() === hash.toLowerCase());
+          if (targetDev) {
+            const sorted = [...rows].sort(SORT_OPTIONS[0].fn);
+            const idx = sorted.findIndex(d => d.username === targetDev.username);
+            const page = Math.floor(idx / devsPerPage) + 1;
+            setCurrentPage(page);
+            setHighlightUsername(targetDev.username);
+          }
+        }
       } catch (loadError) {
         if (!alive) return;
         setError(loadError?.message || 'Failed to load frontend data.');
@@ -85,6 +98,40 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
     loadAll();
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (!highlightUsername || loading) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`dev-${highlightUsername}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [highlightUsername, loading, currentPage]);
+
+  useEffect(() => {
+    if (!highlightUsername) return;
+    const timer = setTimeout(() => setHighlightUsername(''), 15000);
+    return () => clearTimeout(timer);
+  }, [highlightUsername]);
+
+  useEffect(() => {
+    function handleHashChange() {
+      const hash = window.location.hash.slice(1);
+      if (!hash || leaderboard.length === 0) return;
+      const targetDev = leaderboard.find(d => d.username?.toLowerCase() === hash.toLowerCase());
+      if (targetDev) {
+        const sorted = [...leaderboard].sort(SORT_OPTIONS[0].fn);
+        const idx = sorted.findIndex(d => d.username === targetDev.username);
+        const page = Math.floor(idx / devsPerPage) + 1;
+        setCurrentPage(page);
+        setSelectedTag('All');
+        setSortIndex(0);
+        setHighlightUsername(targetDev.username);
+      }
+    }
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [leaderboard]);
 
   const tags = useMemo(() => ['All', ...getAvailableTags(leaderboard)], [leaderboard]);
 
@@ -303,6 +350,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                         compareMode={compareMode}
                         isCompareSelected={compareSelection.some(d => d.username === dev.username)}
                         onCompareSelect={handleCompareSelect}
+                        isHighlighted={dev.username === highlightUsername}
                       />
                     ))
                   )}
