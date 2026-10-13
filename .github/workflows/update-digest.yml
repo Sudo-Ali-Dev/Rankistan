@@ -1,15 +1,26 @@
 name: Update Leaderboard
 
 on:
+  # Primary trigger: cron-job.org dispatches at the top of every hour. External
+  # dispatches are immune to GitHub's 60-day auto-disable of scheduled
+  # workflows, which is why it stays primary.
   workflow_dispatch:
     inputs:
       batch:
         description: "Batch index (0-23), leave empty to auto-detect from current hour"
         required: false
         default: ""
+  # Backup trigger. On 2026-10-13 the external scheduler's token was revoked
+  # and the 14:00 UTC run never happened, with nothing failing to say so. This
+  # fires mid-hour and stands down if a dispatched run already covers the hour
+  # (scripts/should-run.js), so the two never process the same batch twice.
+  schedule:
+    - cron: '35 * * * *'
 
 permissions:
   contents: write
+  # Read by the guard job, to see whether a dispatched run covers this hour.
+  actions: read
   pages: write
   id-token: write
 
@@ -35,7 +46,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/should-run.js
+          sparse-checkout-cone-mode: false
+
+      - name: Decide whether this run goes ahead
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          gh api "repos/${{ github.repository }}/actions/workflows/update-digest.yml/runs?per_page=20" > "$RUNNER_TEMP/runs.json"
+          node scripts/should-run.js "$RUNNER_TEMP/runs.json" "${{ github.event_name }}" "${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
   update-leaderboard:
+    needs: guard
+    if: needs.guard.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     # deploy.yml declares this; this job deploys Pages too but did not,
