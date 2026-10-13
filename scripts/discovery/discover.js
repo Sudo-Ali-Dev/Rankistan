@@ -298,7 +298,7 @@ export async function discoverBatch({ label, queries }, client, options = {}) {
 }
 
 /** Escape a workflow-command message, so a reason cannot break or forge an annotation. */
-function annotation(text) {
+export function annotation(text) {
   return String(text).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 }
 

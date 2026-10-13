@@ -27,6 +27,10 @@
  *     qualifier rather than being appended to it, and toQuery refuses a base carrying either one.
  *   - An inverted range (`created:B..A`) is not empty: it counts as the forward range. assertSlice
  *     refuses to emit one.
+ *   - `location:` is never partitioned, so it stays in the base verbatim. Repeated `location:`
+ *     qualifiers OR together and `-location:` negations AND, so the city twin's base - fifteen
+ *     `location:` qualifiers and `-location:pakistan`, scripts/discovery/locations.js - is one
+ *     fixed filter, the same for every slice.
  */
 
 /** One GraphQL search request returns at most this many nodes. */

@@ -40,7 +40,12 @@ const OUTPUT_FIELDS = [
   'activity_score',
   'model_version',
   'scored_at',
-  'batch_index'
+  'batch_index',
+  // How discovery found the developer: `pakistan` (their location says so),
+  // `city` (it names a Pakistani city and not the country; see
+  // scripts/discovery/locations.js) or `registered`. Context only: nothing
+  // scores it, and a row measured before it existed has none.
+  'discovery_source'
 ];
 
 export function hasValidRankAndScore(entry) {

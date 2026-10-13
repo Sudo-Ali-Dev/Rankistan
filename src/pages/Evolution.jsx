@@ -154,6 +154,24 @@ const EVOLUTION_ENTRIES = [
     reasoning:
       'On 13 October 2026 the board held 1,000 developers but only 340 distinct rounded scores, so most positions were settled by the alphabet rather than by work. And with the formula written twice, Register agreed with the board only until someone changed one copy and not the other.',
   },
+  {
+    id: 'v9-city-names',
+    date: '2026-10-13',
+    title: 'A Pakistani city counts without the word "Pakistan"',
+    summary: 'Who is searched for changed; how anyone is scored did not.',
+    commit: null,
+    formula:
+      'search = location:pakistan, then location:lahore … location:mardan (15 cities) -location:pakistan',
+    changes: [
+      'GitHub matches a profile\'s location word by word. A location that said only "Lahore" never matched a search for "Pakistan", so the board could not find that developer however active they were.',
+      'Each hourly batch now runs a second search over the same account-creation dates: any of 15 cities (Lahore, Karachi, Islamabad, Rawalpindi, Peshawar, Faisalabad, Multan, Quetta, Sialkot, Gujranwala, Abbottabad, Bahawalpur, Sargodha, Sukkur and Mardan) and not "Pakistan", so nobody is found twice.',
+      'Developers found this way pass the same activity gates as everyone else. One whose location also names a place outside Pakistan, such as India, Bangladesh or Iran, is not counted.',
+      'Hyderabad, Mirpur, Gujrat, Punjab, Kashmir and Hub are not searched. Hyderabad matched mostly Hyderabad in India, Mirpur mostly Mirpur in Dhaka, and Gujrat mostly misspellings of Gujarat; Punjab and Kashmir span the border, and Hub is an ordinary word as well as a town. A developer there who adds "Pakistan" to their location is found as before.',
+      'Every developer measured from now on records which search found them.',
+    ],
+    reasoning:
+      'On 13 October 2026, 26,002 GitHub accounts with more than 3 repositories and more than 1 follower said "Pakistan" in their location, and 8,836 more named one of these 15 cities without it: a third as many again, none of whom could ever appear. Each city was kept only after a sample of 30 of its matches turned out to be 30 Pakistani developers.',
+  },
 ];
 
 const LAST_DOCUMENTED = EVOLUTION_ENTRIES[EVOLUTION_ENTRIES.length - 1].date;

@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import Contributors from '../components/Contributors';
 import { SCORE_CONFIG } from '../model/config.js';
 import { SCORING_WINDOW_DAYS } from '../model/activity.js';
+// The list discovery searches, read from the pipeline itself, so this page names exactly the
+// cities that are searched.
+import { CITY_TERMS } from '../../scripts/discovery/locations.js';
 
 // Every number in the scoring copy below comes from the model's config, so
 // the page cannot describe a formula the pipeline is not running.
@@ -33,8 +36,10 @@ const ACTIVITY_FILTERS = [
   { label: 'Followers', threshold: '> 1', icon: 'group' },
 ];
 
+const CITY_NAMES = CITY_TERMS.map((city) => city[0].toUpperCase() + city.slice(1)).join(', ');
+
 const PIPELINE_STEPS = [
-  { step: '01', title: 'DISCOVER', icon: 'search', desc: 'Search GitHub for Pakistani developers via location:pakistan in 24 batches by account creation date. Each batch is cut into slices small enough to list whole, so the 1,000-result search cap never truncates one.' },
+  { step: '01', title: 'DISCOVER', icon: 'search', desc: `Search GitHub for Pakistani developers in 24 batches by account creation date: location:pakistan, and a second search for locations that name one of ${CITY_TERMS.length} Pakistani cities without the country. Each search is cut into slices small enough to list whole, so the 1,000-result search cap never truncates one.` },
   { step: '02', title: 'FETCH', icon: 'download', desc: 'For each developer, fetch profile, up to 200 recent events (2 pages), and all public repositories.' },
   { step: '03', title: 'FILTER', icon: 'filter_alt', desc: 'Apply activity thresholds — contributions, inactivity gaps, account age. Only genuinely active developers pass.' },
   { step: '04', title: 'SCORE', icon: 'calculate', desc: 'Calculate a weighted score from stars, recent activity, followers, and repo count. Apply new-account penalties.' },
@@ -95,11 +100,11 @@ const AI_SUMMARY_STEPS = [
 
 const FAQ = [
   { q: 'How often is the leaderboard updated?', a: 'Every hour. An external cron service triggers the GitHub Actions workflow 24 times per day — one batch per hour. A full cycle through all developers completes in 24 hours.' },
-  { q: 'Why am I not on the leaderboard?', a: 'You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. Your GitHub profile must also include "Pakistan" in the location field.' },
+  { q: 'Why am I not on the leaderboard?', a: `You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. Your GitHub location must also say "Pakistan", or name one of ${CITY_TERMS.length} Pakistani cities: ${CITY_NAMES}. Some city names are not searched because they mostly mean somewhere else ("Hyderabad" alone is usually Hyderabad, India), so if yours is one of them, add "Pakistan".` },
   { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
   { q: 'Why is my score lower than expected?', a: `Stars are capped at ${MAX_STARS_FOR_SCORING} and followers are capped at ${MAX_FOLLOWERS_FOR_SCORING} for scoring purposes. Recent activity uses diminishing returns (base / log2(n+1) per event per UTC day) with daily caps per type — spamming pushes in one day earns far less than steady work spread across the month.${PUSH_RULE.maxCountedPerDay === null ? '' : ` Only the first ${PUSH_RULE.maxCountedPerDay} pushes per day count.`} Accounts younger than ${SIX_MONTHS_DAYS} days receive a ${AGE_PENALTY_MULTIPLIER}× penalty on their entire score.` },
   { q: 'What is the "new account penalty"?', a: `If your GitHub account is less than ${SIX_MONTHS_DAYS} days old, your final score is multiplied by ${AGE_PENALTY_MULTIPLIER}. This prevents newly created accounts from dominating the board.` },
-  { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It scans 40,000+ profiles, re-evaluates 20,000+ candidates for score changes, then applies strict activity gates before ranking.' },
+  { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026), re-evaluates 20,000+ candidates for score changes, then applies strict activity gates before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
   { q: 'Can I register manually?', a: 'Yes — use the Register tab to enter a GitHub username. It validates the profile against all pipeline criteria and shows you exactly which thresholds you pass or fail.' },

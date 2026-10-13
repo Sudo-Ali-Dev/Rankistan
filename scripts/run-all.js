@@ -532,14 +532,31 @@ export async function dispatchWorkflows({
   return workflows;
 }
 
+/**
+ * Everyone a run actually looked at and can therefore judge: developers fetched
+ * in full, whether or not they then pass the gate; developers screened out on
+ * their first events page, whose whole feed was read and failed it; and
+ * developers found by a city name whose fetched location names a place outside
+ * Pakistan. Anyone search did not return, or whose fetch errored, was never
+ * looked at and is carried forward instead.
+ */
+export function evaluatedLogins({ developers, screenedOut = [], locationRejected = [] }) {
+  return [
+    ...developers.map((d) => d.username),
+    ...screenedOut,
+    ...locationRejected.map((r) => r.username)
+  ];
+}
+
 /** Measures one batch on GitHub: discovery, fetch, activity gate, scoring. */
 export async function measureBatch({ batchIndex }) {
-  const { developers: rawDevs, screenedOut, discoveryComplete } = await fetchPakistaniDevelopers({
+  const fetched = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
     rawOnly: true,
     withScreening: true,
   });
+  const { developers: rawDevs, discoveryComplete } = fetched;
 
   console.log(`Fetched ${rawDevs.length} raw developers.`);
 
@@ -568,15 +585,11 @@ export async function measureBatch({ batchIndex }) {
     batch_index: batchIndex,
   }));
 
-  // Everyone this run actually fetched, whether or not they passed. Only these
-  // developers can be judged ineligible; anyone search did not return, or whose
-  // fetch errored, was never looked at and is carried forward instead.
-  // Screened-out developers count too: their whole feed was read, and it
-  // failed the gate. Only a developer this run never looked at is carried.
-  const evaluated = [...rawDevs.map((d) => d.username), ...screenedOut];
+  // Only these developers can be judged ineligible.
+  const evaluated = evaluatedLogins(fetched);
 
-  // False when this batch's search is known to be short; the merge then
-  // freezes miss counters rather than count absence from it.
+  // False when either of this batch's searches is known to be short; the merge
+  // then freezes miss counters rather than count absence from it.
   return { newEntries, evaluated, discoveryComplete };
 }
 

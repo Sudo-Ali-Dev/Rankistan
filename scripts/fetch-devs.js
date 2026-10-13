@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { matchTagsForDeveloper } from '../src/utils/tag-matcher.js';
 import { createSearchClient } from './discovery/graphql.js';
-import { describeDiscovery, discoverBatch } from './discovery/discover.js';
+import { annotation, describeDiscovery, discoverBatch } from './discovery/discover.js';
+import { DISCOVERY_SOURCES, cityTwinQuery, foreignMarker } from './discovery/locations.js';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const MAX_DEVELOPERS = 1000;
@@ -59,7 +60,9 @@ const MEANINGFUL_EVENT_TYPES = new Set([
 // The batch -> range table. Each batch owns the leaderboard rows for developers created in its
 // range (run-all.js merges by `batch_index`), so the ranges are fixed. They no longer need to stay
 // under GitHub's 1,000-result search cap: scripts/discovery/ partitions each range into leaves
-// that list in one request apiece, however many developers the range holds.
+// that list in one request apiece, however many developers the range holds. Each range is also
+// searched by its city twin (scripts/discovery/locations.js), derived from it at run time, so the
+// table stays the one place a batch's range is defined.
 const SEARCH_BATCHES = [
   { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
   { label: 'PK Jul2014-Jan2016', q: 'location:pakistan type:user repos:>3 followers:>1 created:2014-07-01..2016-01-31' },
@@ -327,6 +330,65 @@ function searchQueriesForBatch(batch) {
 }
 
 /**
+ * Discover one set of queries and judge it. Returns its candidates and whether the listing was
+ * complete: every leaf listed, and the leaves adding up to the range.
+ *
+ * `required` is the main query's policy, unchanged: a range that cannot be partitioned, or of
+ * which nobody lists completely, fails the run rather than publish a batch that was never
+ * measured. The city twin is not required. It only ever adds people, so when it cannot be
+ * measured the batch is still published from the main query, the twin is reported incomplete,
+ * and the merge freezes miss counters: a city-sourced row then waits, carried, for a run that
+ * can see it, rather than costing every other developer in the batch their refresh.
+ */
+async function discoverQueries({ label, queries }, client, { required }) {
+  let report;
+  try {
+    report = await discoverBatch({ label, queries }, client);
+  } catch (error) {
+    if (required) {
+      // A range that could not be counted has no leaves to judge, and a rejected credential will
+      // not recover for the next leaf either.
+      throw new Error(
+        `Discovery failed for batch "${label}". Refusing to publish a batch whose ` +
+        `search was not measured. Downstream error: ${error.message}`
+      );
+    }
+    console.warn(
+      `::warning title=Discovery::${annotation(
+        `${label}: could not be measured (${error.message}). Nobody it lists was evaluated this run.`
+      )}`
+    );
+    return { candidates: [], complete: false };
+  }
+
+  const { info, warnings } = describeDiscovery(report);
+  info.forEach((line) => console.log(line));
+  warnings.forEach((line) => console.warn(line));
+
+  // Counted in developers, not leaves: a split can leave an empty half, which is trivially
+  // complete and measures nobody.
+  const measured = report.leaves
+    .filter((leaf) => leaf.complete)
+    .reduce((total, leaf) => total + leaf.count, 0);
+  if (report.rootCount > 0 && measured === 0) {
+    if (required) {
+      throw new Error(
+        `Discovery for batch "${label}" listed none of its ${report.rootCount} developers ` +
+        `completely. Refusing to publish a batch that was never measured.`
+      );
+    }
+    console.warn(
+      `::warning title=Discovery::${annotation(
+        `${label}: listed none of its ${report.rootCount} developers completely.`
+      )}`
+    );
+  }
+
+  const complete = report.sum.valid && report.leaves.every((leaf) => leaf.complete);
+  return { candidates: report.candidates, complete };
+}
+
+/**
  * Every developer each batch's search matches, listed completely, leaf by leaf.
  *
  * This used to page `/search/users` sorted by followers, ten pages of 100 per range. A range over
@@ -336,16 +398,35 @@ function searchQueriesForBatch(batch) {
  * small enough to list in one GraphQL request apiece, and a leaf counts only if its listing is
  * provably complete.
  *
- * A leaf that is not is named in an Actions warning and contributes nobody. Its developers are then
- * not evaluated this run, and run-all.js carries their rows forward instead of removing them.
- * The run fails only when a range cannot be partitioned at all, or nobody in it lists completely.
+ * Each batch is searched twice over the same `created:` range: `location:pakistan`, and its city
+ * twin (scripts/discovery/locations.js), the developers who name a Pakistani city and not the
+ * country. The two are separate discoveries, because a batch's ranges must share one set of
+ * qualifiers, and their candidates are united by databaseId. Each candidate records which search
+ * found it; one both found - possible only if a location changed between the two - is `pakistan`.
+ *
+ * A leaf that is not complete is named in an Actions warning and contributes nobody. Its developers
+ * are then not evaluated this run, and run-all.js carries their rows forward instead of removing
+ * them. The run fails only when a main range cannot be partitioned at all, or nobody in it lists
+ * completely.
+ *
+ * @returns {{candidates: Array<{id, login, source}>, complete: boolean}}
  */
 async function discoverUsers(token, batches, { searchClient } = {}) {
   const client = searchClient || createSearchClient({ token });
-  const discovered = [];
-  // False when any batch's leaves did not add up to its range, or any leaf failed to list. The
-  // merge then freezes miss counters: absence from a search known to be incomplete is not a miss.
+  const byId = new Map();
+  // False when either search of any batch was incomplete. The merge then freezes miss counters:
+  // absence from a search known to be incomplete is not a miss.
   let complete = true;
+
+  const add = (candidates, source) => {
+    let added = 0;
+    for (const { id, login } of candidates) {
+      if (byId.has(id)) continue;
+      byId.set(id, { id, login, source });
+      added += 1;
+    }
+    return added;
+  };
 
   for (let index = 0; index < batches.length; index += 1) {
     const batch = batches[index];
@@ -357,40 +438,28 @@ async function discoverUsers(token, batches, { searchClient } = {}) {
     }
 
     console.log(`[discover ${index + 1}/${batches.length}] ${batch.label} (${queries.length} range(s))`);
+    const main = await discoverQueries({ label: batch.label, queries }, client, { required: true });
+    add(main.candidates, DISCOVERY_SOURCES.PAKISTAN);
 
-    let report;
-    try {
-      report = await discoverBatch({ label: batch.label, queries }, client);
-    } catch (error) {
-      // A range that could not be counted has no leaves to judge, and a rejected credential will
-      // not recover for the next leaf either.
-      throw new Error(
-        `Discovery failed for batch "${batch.label}". Refusing to publish a batch whose ` +
-        `search was not measured. Downstream error: ${error.message}`
+    const twinLabel = `${batch.label} cities`;
+    console.log(`[discover ${index + 1}/${batches.length}] ${twinLabel} (city names without "Pakistan")`);
+    const twin = await discoverQueries(
+      { label: twinLabel, queries: queries.map(cityTwinQuery) },
+      client,
+      { required: false }
+    );
+    const added = add(twin.candidates, DISCOVERY_SOURCES.CITY);
+    if (added < twin.candidates.length) {
+      console.log(
+        `  ${twin.candidates.length - added} city candidate(s) were also listed by ` +
+        'location:pakistan, and count once, as pakistan.'
       );
     }
 
-    const { info, warnings } = describeDiscovery(report);
-    info.forEach((line) => console.log(line));
-    warnings.forEach((line) => console.warn(line));
-
-    // Counted in developers, not leaves: a split can leave an empty half, which is trivially
-    // complete and measures nobody.
-    const measured = report.leaves
-      .filter((leaf) => leaf.complete)
-      .reduce((total, leaf) => total + leaf.count, 0);
-    if (report.rootCount > 0 && measured === 0) {
-      throw new Error(
-        `Discovery for batch "${batch.label}" listed none of its ${report.rootCount} developers ` +
-        `completely. Refusing to publish a batch that was never measured.`
-      );
-    }
-
-    if (!report.sum.valid || report.leaves.some((leaf) => !leaf.complete)) complete = false;
-    discovered.push(...report.candidates.map((candidate) => candidate.login));
+    if (!main.complete || !twin.complete) complete = false;
   }
 
-  return { logins: discovered, complete };
+  return { candidates: [...byId.values()], complete };
 }
 
 function isLikelyFakeFromProfile(profile) {
@@ -583,7 +652,26 @@ async function fetchAllUserRepos(username, token) {
   return allRepos;
 }
 
-async function fetchDeveloperActivity(username, token) {
+/**
+ * Why a city-sourced developer's fetched location rules them out, or null when it does not.
+ *
+ * The city twin finds people by a city name alone, and a few cities share a name with places
+ * elsewhere. So a developer it found is re-checked against the location their profile gives now,
+ * and one that also names a FOREIGN_MARKERS place (scripts/discovery/locations.js) is not counted.
+ * A developer `location:pakistan` found is never re-checked: the country was the evidence.
+ */
+function locationRejection(source, location) {
+  if (source !== DISCOVERY_SOURCES.CITY) return null;
+  const marker = foreignMarker(location);
+  return marker ? `found by a Pakistani city name, but the location also names "${marker}"` : null;
+}
+
+/**
+ * @param {string} username
+ * @param {string} token
+ * @param {{source?: string}} [options]  how discovery found them; see DISCOVERY_SOURCES
+ */
+async function fetchDeveloperActivity(username, token, { source } = {}) {
   // Events first: for most candidates this one call settles the gate.
   const firstPage = await githubRequest(
     `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=1`,
@@ -606,6 +694,12 @@ async function fetchDeveloperActivity(username, token) {
   if (!profile) {
     console.warn(`Skipping ${username}: user not found (404).`);
     return null;
+  }
+
+  // Before repos and social accounts: the profile alone settles it.
+  const rejection = locationRejection(source, profile.location);
+  if (rejection) {
+    return { locationRejected: true, username, location: profile.location, reason: rejection };
   }
 
   if (isLikelyFakeFromProfile(profile)) {
@@ -658,7 +752,8 @@ async function fetchDeveloperActivity(username, token) {
     longest_gap_days: activityMetrics.longest_gap_days,
     repos_active_7d: reposActive7d,
     digest_repos: digestRepos,
-    raw_events_60d: recentEvents
+    raw_events_60d: recentEvents,
+    ...(source ? { discovery_source: source } : {})
   };
 
   developer.tags = matchTagsForDeveloper(developer);
@@ -727,16 +822,31 @@ async function fetchPakistaniDevelopers(options = {}) {
       : `Running all ${batches.length} search batches`
   );
 
-  const { logins: discoveredUsers, complete: discoveryComplete } = await discoverUsers(token, batches, {
+  const { candidates, complete: discoveryComplete } = await discoverUsers(token, batches, {
     searchClient: options.searchClient
   });
   const registeredUsers = batchIndex === 0 || batchIndex == null
     ? await loadRegisteredDevelopers(repoRoot)
     : [];
 
-  const allUsernames = dedupeUsernames([...discoveredUsers, ...registeredUsers]);
+  // How each login was found. Search first, so a registered developer search also lists keeps the
+  // search's source.
+  const sourceOf = new Map();
+  for (const { login, source } of candidates) {
+    const key = login.toLowerCase();
+    if (!sourceOf.has(key)) sourceOf.set(key, source);
+  }
+  for (const login of dedupeUsernames(registeredUsers)) {
+    if (!sourceOf.has(login)) sourceOf.set(login, DISCOVERY_SOURCES.REGISTERED);
+  }
 
-  console.log(`Discovered ${discoveredUsers.length} users from search.`);
+  const allUsernames = dedupeUsernames([...candidates.map((c) => c.login), ...registeredUsers]);
+
+  const fromCities = candidates.filter((c) => c.source === DISCOVERY_SOURCES.CITY).length;
+  console.log(
+    `Discovered ${candidates.length} users from search: ${candidates.length - fromCities} ` +
+    `by location:pakistan, ${fromCities} by a Pakistani city name alone.`
+  );
   if (registeredUsers.length > 0) {
     console.log(`Loaded ${registeredUsers.length} registered users.`);
   }
@@ -744,6 +854,7 @@ async function fetchPakistaniDevelopers(options = {}) {
 
   const fetchedDevelopers = [];
   const screenedOut = [];
+  const locationRejected = [];
   let skippedProfile = 0;
   let skippedError = 0;
 
@@ -757,9 +868,18 @@ async function fetchPakistaniDevelopers(options = {}) {
     }
 
     try {
-      const developer = await fetchDeveloperActivity(username, token);
+      const developer = await fetchDeveloperActivity(username, token, {
+        source: sourceOf.get(username)
+      });
       if (developer?.screenedOut) {
         screenedOut.push(developer.username);
+      } else if (developer?.locationRejected) {
+        console.log(`Not counting ${username}: ${developer.reason} ("${developer.location}").`);
+        locationRejected.push({
+          username: developer.username,
+          location: developer.location,
+          reason: developer.reason
+        });
       } else if (developer) {
         fetchedDevelopers.push(developer);
       } else {
@@ -778,13 +898,17 @@ async function fetchPakistaniDevelopers(options = {}) {
   console.log(
     `Fetch complete: ${fetchedDevelopers.length} fetched in full, ` +
     `${screenedOut.length} rejected on their first events page, ` +
+    `${locationRejected.length} found by city name and rejected on their location, ` +
     `${skippedProfile} skipped (not found/fake), ${skippedError} errors`
   );
 
-  // Screened-out developers were observed and failed the gate, so a caller that
-  // asks for them can count them as evaluated - unlike a fetch that errored.
+  // Screened-out and location-rejected developers were observed and are not
+  // eligible, so a caller that asks for them can count them as evaluated -
+  // unlike a fetch that errored.
   const withScreening = (developers) =>
-    options.withScreening ? { developers, screenedOut, discoveryComplete } : developers;
+    options.withScreening
+      ? { developers, screenedOut, locationRejected, discoveryComplete }
+      : developers;
 
   if (rawOnly) {
     console.log(`Raw mode: returning ${fetchedDevelopers.length} unfiltered developers.`);

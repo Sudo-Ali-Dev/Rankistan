@@ -33,13 +33,13 @@ The map assigns each developer to a canonical place key using a deterministic no
 
 ## How It Works
 
-The pipeline discovers developers from GitHub's location search across all of Pakistan, fetches their recent activity, and ranks them by a weighted score. Only genuinely active developers make the cut. The leaderboard is updated incrementally — each batch refreshes its slice of the leaderboard every day.
+The pipeline discovers developers from GitHub's location search (profiles that say Pakistan, or name one of 15 Pakistani cities without it), fetches their recent activity, and ranks them by a weighted score. Only genuinely active developers make the cut. The leaderboard is updated incrementally — each batch refreshes its slice of the leaderboard every day.
 
 ### Daily Scanner Layer
 
 Rankistan operates as a rolling daily scanner rather than a one-shot leaderboard rebuild.
 
-1. Scan 40,000+ Pakistani developer profiles spanning account creation years from 2000 to present.
+1. Search 34,838 GitHub accounts spanning account creation years from 2000 to present: 26,002 whose location says Pakistan and 8,836 that name only a Pakistani city (counted on 13 October 2026).
 2. Re-evaluate 20,000+ candidates that show potential score movement from fresh profile/activity/repo signals.
 3. Apply strict ranking criteria and publish only developers who pass all gates.
 
@@ -49,7 +49,7 @@ The scanner is distributed across 24 hourly batches, so the full ecosystem is re
 
 | Stage | Script | Output |
 |---|---|---|
-| **Discover** | `scripts/fetch-devs.js` | Searches GitHub for developers in Pakistan, split into multiple date ranges to stay within API search result limits (< 1000) |
+| **Discover** | `scripts/fetch-devs.js`, [`scripts/discovery/`](scripts/discovery/) | Searches GitHub for developers whose location says Pakistan or names one of 15 Pakistani cities, by account-creation date, each range cut into slices that list whole in one request |
 | **Fetch** | `scripts/fetch-devs.js` | Fetches profile, events (up to 2 pages / 200 events, last 60 days), repos, and linked social accounts (for LinkedIn) for each developer |
 | **Score** | [`score-config.json`](score-config.json), [`src/model/`](src/model/), [`scripts/score.js`](scripts/score.js) | Weighted score from stars, 30-day activity (diminishing returns per UTC day), followers, and public repo count; Register runs the same code |
 | **Leaderboard** | `scripts/write-leaderboard.js` | Writes the final ranked `data.json` with public-safe fields |
@@ -81,6 +81,20 @@ One batch runs per hour (triggered by [cron-job.org](https://cron-job.org) via `
 GitHub returns at most 1,000 results for any one search, and several batches match more than that (`PK Aug2024-Dec2024` matched 1,354 on 2026-10-13). So a batch's range is never listed as a single query. [`scripts/discovery/`](scripts/discovery/) bisects it by creation date — whole days, then seconds — until every slice holds fewer than 30 developers, packs neighbouring slices back together up to 95, and lists each resulting leaf in one GraphQL request. A single request has no page boundary for a follower tie to straddle and no cursor for a rate-limit wait to invalidate.
 
 A leaf counts only when its listing is provably complete: an error-free response holding as many distinct accounts as GitHub says match. The leaves are also checked to add up to the batch's own count, and a mismatch is reported. A leaf that fails is named in a workflow warning and contributes nobody that run, so the merge carries its developers' existing rows forward rather than reading their absence as a departure. Measured on 2026-10-13, discovery costs 20–25 GraphQL points per batch and none of the REST search budget.
+
+#### City names without "Pakistan"
+
+GitHub matches the location field by whole word, so `location:pakistan` never finds a profile that says only "Lahore". Each batch therefore runs a second search over the same `created:` range, its **city twin**:
+
+```
+location:lahore location:karachi ... location:mardan -location:pakistan type:user repos:>3 followers:>1 created:...
+```
+
+Repeated `location:` qualifiers OR together and the negation excludes everyone the main search already lists. The 15 cities, and the names left out, are in [`scripts/discovery/locations.js`](scripts/discovery/locations.js): Lahore, Karachi, Islamabad, Rawalpindi, Peshawar, Faisalabad, Multan, Quetta, Sialkot, Gujranwala, Abbottabad, Bahawalpur, Sargodha, Sukkur and Mardan. Each was kept only after a sample of 30 of its matches was 30 Pakistani developers. Hyderabad (mostly India), Mirpur (mostly Dhaka), Gujrat (mostly a misspelling of Gujarat), Punjab, Kashmir and Hub are left out as ambiguous.
+
+On 13 October 2026 the twins matched 8,836 accounts across all 24 batches, against 26,002 for `location:pakistan`: from 241 (`PK Feb2016-Feb2017`) to 521 (`PK Aug2024-Dec2024`) for a single-range batch, 929 for the three ranges of `PK 2025+`, and 368 on average. The twin is discovered separately, with its own completeness check, and its candidates are united with the main search's by `databaseId`. A developer it found whose fetched location also names a place outside Pakistan (India, Bangladesh, Iran and a few others) is counted as evaluated and ineligible. If either search is incomplete, the batch's miss counters freeze. If the twin cannot be measured at all, the batch is still published from the main search, with a workflow warning. Every row measured from then on records `discovery_source`: `pakistan`, `city`, or `registered`.
+
+Measured live on 13 October 2026, the twin cost 9, 12 and 23 GraphQL points for batches 6, 22 and 23, and it adds 368 candidates to screen per batch on average. A live run of batch 6 spent 1.14 REST calls per candidate, 1.19 on its city candidates, so the twin adds roughly 400–450 REST calls a batch, against 5,000 an hour. In that run 9 of the 255 city candidates passed the activity gates and none was rejected on location.
 
 #### PK 2025+ (`batch-23`)
 
