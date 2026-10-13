@@ -317,7 +317,11 @@ describe('THRESHOLDS', () => {
       new URL('../.github/workflows/update-digest.yml', import.meta.url),
       'utf8'
     );
-    const configured = Number(/timeout-minutes:\s*(\d+)/.exec(workflow)?.[1]);
+    // The pipeline job's own timeout, not the first one in the file: the
+    // guard job ahead of it has a short timeout of its own.
+    const configured = Number(
+      /update-leaderboard:[\s\S]*?timeout-minutes:\s*(\d+)/.exec(workflow)?.[1]
+    );
     expect(configured).toBe(THRESHOLDS.PIPELINE_TIMEOUT_MINUTES);
   });
 });
