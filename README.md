@@ -76,7 +76,7 @@ Discovery searches GitHub for `location:pakistan type:user repos:>3 followers:>1
 PK 2000-Jun2014 → PK Jul2014-Jan2016 → ... → PK Aug2024-Dec2024 → PK 2025+
 ```
 
-One batch runs per hour (triggered by [cron-job.org](https://cron-job.org) via `workflow_dispatch`), completing a full cycle every 24 hours. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are replaced with fresh data.
+One batch runs per hour (triggered by [cron-job.org](https://cron-job.org) via `workflow_dispatch`), completing a full cycle every 24 hours. Behind it, the Cloudflare Worker's own cron dispatches a backup trigger and the watchdog at :35 every hour; the backup starts the pipeline only when no run covered that hour (`scripts/should-run.js`), so a missed external dispatch costs at most half an hour. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are replaced with fresh data.
 
 GitHub returns at most 1,000 results for any one search, and several batches match more than that (`PK Aug2024-Dec2024` matched 1,354 on 2026-10-13). So a batch's range is never listed as a single query. [`scripts/discovery/`](scripts/discovery/) bisects it by creation date — whole days, then seconds — until every slice holds fewer than 30 developers, packs neighbouring slices back together up to 95, and lists each resulting leaf in one GraphQL request. A single request has no page boundary for a follower tie to straddle and no cursor for a rate-limit wait to invalidate.
 

@@ -10,10 +10,9 @@ import {
   isHeatmapSvg,
   themeHeatmap,
   parseHeatmapDays,
-  buildHeatmapUpstreamUrl,
-  GITHUB_USERNAME_RE,
-  RATE_LIMIT_MAX_REQUESTS
+  buildHeatmapUpstreamUrl
 } from './worker.js';
+import { GITHUB_USERNAME_RE, RATE_LIMIT_MAX_REQUESTS } from './limits.js';
 
 const NL = String.fromCharCode(10);
 const CR = String.fromCharCode(13);
