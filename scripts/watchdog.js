@@ -19,8 +19,11 @@
 //
 //   SITE_STALE         live data older than 4 h. The worst gap in 83 days of
 //                      normal operation was 3.2 h.
-//   BATCH_STALE        a batch has not published for 49 h: two missed daily
-//                      turns, plus an hour of slack.
+//   BATCH_STALE        a batch has measured nobody for 49 h: two missed daily
+//                      turns, plus an hour of slack. Read from the newest
+//                      `scored_at` per `batch_index` in the latest state asset
+//                      on the `pipeline-state` release, since the pipeline no
+//                      longer commits anything to main to read it from.
 //   STUCK_RUN          any run queued, pending, waiting or requested for 90
 //                      min. Read by status filter, never from the newest page
 //                      of runs - the eight-day holder was older than the latest
@@ -42,6 +45,7 @@
 
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { STATE_TAG, createStateStore, makeGitHubClient } from './state-store.js';
 
 export const THRESHOLDS = {
   SITE_STALE_HOURS: 4,
@@ -109,7 +113,7 @@ export function evaluate(state, now = Date.now()) {
   }
 
   if (state.batches?.error) {
-    unreadable.push(`batch publish history (${state.batches.error})`);
+    unreadable.push(`pipeline state (${state.batches.error})`);
   } else {
     const stale = [];
     for (let batch = 0; batch < THRESHOLDS.BATCH_COUNT; batch += 1) {
@@ -124,7 +128,9 @@ export function evaluate(state, now = Date.now()) {
       alarms.push({
         code: 'BATCH_STALE',
         key: stale.join(','),
-        message: `No publish in ${THRESHOLDS.BATCH_STALE_HOURS} h for ${which}. Those rows on the board are frozen.`
+        message:
+          `Nothing measured in ${THRESHOLDS.BATCH_STALE_HOURS} h for ${which}. ` +
+          'Those rows on the board are frozen.'
       });
     }
   }
@@ -328,11 +334,30 @@ async function attempt(read) {
   }
 }
 
+/**
+ * When each batch last measured anyone: the newest `scored_at` among its rows.
+ * A batch with no rows, or only rows from before `scored_at` existed, is
+ * absent, which evaluate() reads as stale.
+ */
+export function lastMeasuredByBatch(rows) {
+  const lastPublished = {};
+  for (const row of rows || []) {
+    const batch = row?.batch_index;
+    const when = Date.parse(row?.scored_at);
+    if (!Number.isInteger(batch) || !Number.isFinite(when)) continue;
+    if (!lastPublished[batch] || when > Date.parse(lastPublished[batch])) {
+      lastPublished[batch] = new Date(when).toISOString();
+    }
+  }
+  return lastPublished;
+}
+
 export async function collectState({
   api,
   siteUrl,
   now = Date.now(),
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  loadState
 }) {
   const site = await attempt(async () => {
     const response = await fetchImpl(`${siteUrl}?watchdog=${now}`, { cache: 'no-store' });
@@ -342,20 +367,13 @@ export async function collectState({
   });
 
   const batches = await attempt(async () => {
-    const since = new Date(now - THRESHOLDS.BATCH_STALE_HOURS * 3_600_000).toISOString();
-    const commits = await api.getPages(
-      `/commits?sha=main&path=public/data.json&since=${since}`,
-      (list) => list
-    );
-    const lastPublished = {};
-    for (const commit of commits) {
-      const match = /\(batch (\d+)\)/.exec(commit?.commit?.message || '');
-      if (!match) continue;
-      const batch = Number(match[1]);
-      const when = commit.commit.committer?.date;
-      if (!lastPublished[batch] || when > lastPublished[batch]) lastPublished[batch] = when;
-    }
-    return { lastPublished };
+    if (!loadState) throw new Error('no state reader');
+    const latest = await loadState();
+    if (!latest) throw new Error(`no state saved on release ${STATE_TAG}`);
+    return {
+      lastPublished: lastMeasuredByBatch(latest.payload.leaderboard),
+      asset: { name: latest.asset?.name, createdAt: latest.asset?.created_at }
+    };
   });
 
   const runs = await attempt(async () => {
@@ -415,10 +433,19 @@ export function factsFrom(state, now, rateLimit) {
       : `${state.site?.lastUpdated} (${Number.isFinite(age) ? formatDuration(age) : '?'} old)`
   ]);
   if (!state.batches?.error) {
-    const seen = Object.keys(state.batches?.lastPublished || {}).length;
+    const seen = Object.values(state.batches?.lastPublished || {}).filter(
+      (when) => hoursSince(when, now) <= THRESHOLDS.BATCH_STALE_HOURS
+    ).length;
     facts.push([
-      `Batches published in last ${THRESHOLDS.BATCH_STALE_HOURS} h`,
+      `Batches measured in last ${THRESHOLDS.BATCH_STALE_HOURS} h`,
       `${seen} of ${THRESHOLDS.BATCH_COUNT}`
+    ]);
+    const asset = state.batches?.asset;
+    const assetAge = hoursSince(asset?.createdAt, now);
+    facts.push([
+      'Latest state asset',
+      `${asset?.name} (saved ${asset?.createdAt}, ` +
+        `${Number.isFinite(assetAge) ? formatDuration(assetAge) : '?'} old)`
     ]);
   }
   if (!state.runs?.error) {
@@ -504,7 +531,12 @@ async function runCli() {
     : null;
 
   const api = makeApi({ token, repo });
-  const state = await collectState({ api, siteUrl, now });
+  // The state store logs its fallbacks itself; the summary reports the rest.
+  const store = createStateStore({
+    client: makeGitHubClient({ token, repo, userAgent: 'rankistan-watchdog' }),
+    log: { log: () => {}, warn: (message) => console.log(message) }
+  });
+  const state = await collectState({ api, siteUrl, now, loadState: () => store.load() });
   const alarms = evaluate(state, now);
   const summary = renderSummary(alarms, factsFrom(state, now, api.rateLimit()), checkedAt);
 

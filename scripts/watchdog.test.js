@@ -9,7 +9,9 @@ import {
   readSignature,
   renderIssueBody,
   collectState,
-  reconcileIssue
+  reconcileIssue,
+  lastMeasuredByBatch,
+  factsFrom
 } from './watchdog.js';
 
 const NOW = Date.parse('2026-10-13T12:00:00Z');
@@ -237,7 +239,7 @@ describe('collectState', () => {
       },
       getPages: async (path, pick) => {
         seen.push(path);
-        return pick(path.includes('/commits') ? [] : { workflow_runs: [] });
+        return pick({ workflow_runs: [] });
       }
     };
     const fetchImpl = async () => ({ ok: true, json: async () => ({ last_updated: hoursAgo(1) }) });
@@ -252,7 +254,7 @@ describe('collectState', () => {
   it('reports a site it cannot reach as unreadable instead of throwing', async () => {
     const api = {
       request: async () => ({ workflow_runs: [], state: 'active' }),
-      getPages: async (path, pick) => pick(path.includes('/commits') ? [] : { workflow_runs: [] })
+      getPages: async (path, pick) => pick({ workflow_runs: [] })
     };
     const fetchImpl = async () => ({ ok: false, status: 502 });
     const state = await collectState({
@@ -262,6 +264,90 @@ describe('collectState', () => {
       fetchImpl
     });
     expect(state.site.error).toBe('HTTP 502');
+  });
+});
+
+describe('batch freshness, read from the pipeline state', () => {
+  // Nothing commits the board to main any more, so the time a batch last
+  // published is the newest `scored_at` among its rows in the latest state.
+  const quietApi = {
+    request: async () => ({ workflow_runs: [], state: 'active' }),
+    getPages: async (path, pick) => pick({ workflow_runs: [] })
+  };
+  const site = async () => ({ ok: true, json: async () => ({ last_updated: hoursAgo(1) }) });
+  const rowsFor = (batch, ...ages) =>
+    ages.map((h, i) => ({
+      username: `b${batch}-${i}`,
+      batch_index: batch,
+      scored_at: hoursAgo(h)
+    }));
+  const stateWith =
+    (rows, createdAt = hoursAgo(0.5)) =>
+    async () => ({
+      payload: { leaderboard: rows },
+      asset: { name: 'state-38413673323-1.json.gz', created_at: createdAt }
+    });
+
+  it('takes the newest scored_at per batch, and skips rows from before it existed', () => {
+    const last = lastMeasuredByBatch([
+      ...rowsFor(0, 30, 20),
+      { username: 'legacy', batch_index: 1, score: 5 },
+      ...rowsFor(2, 70)
+    ]);
+    expect(last).toEqual({ 0: hoursAgo(20), 2: hoursAgo(70) });
+  });
+
+  it('flags the one batch whose rows have not been measured in 49 hours', async () => {
+    const rows = [];
+    for (let b = 0; b < THRESHOLDS.BATCH_COUNT; b += 1) rows.push(...rowsFor(b, b === 9 ? 50 : 20));
+    const state = await collectState({
+      api: quietApi,
+      siteUrl: 'https://example.test/data.json',
+      now: NOW,
+      fetchImpl: site,
+      loadState: stateWith(rows)
+    });
+    const alarms = evaluate(state, NOW);
+    expect(codes(alarms)).toEqual(['BATCH_STALE']);
+    expect(alarms[0].key).toBe('9');
+    expect(alarms[0].message).toMatch(/Nothing measured in 49 h for batch 9/);
+  });
+
+  it('treats a missing or unreadable state as a failed check, not a pass', async () => {
+    for (const loadState of [
+      async () => null,
+      async () => {
+        throw new Error('None of the newest 5 state assets could be read');
+      }
+    ]) {
+      const state = await collectState({
+        api: quietApi,
+        siteUrl: 'https://example.test/data.json',
+        now: NOW,
+        fetchImpl: site,
+        loadState
+      });
+      const alarms = evaluate(state, NOW);
+      expect(codes(alarms)).toEqual(['CHECK_FAILED']);
+      expect(alarms[0].message).toMatch(/pipeline state/);
+    }
+  });
+
+  it("records the state asset's age among the facts", async () => {
+    const rows = [];
+    for (let b = 0; b < THRESHOLDS.BATCH_COUNT; b += 1) rows.push(...rowsFor(b, b === 3 ? 60 : 2));
+    const state = await collectState({
+      api: quietApi,
+      siteUrl: 'https://example.test/data.json',
+      now: NOW,
+      fetchImpl: site,
+      loadState: stateWith(rows, hoursAgo(1.5))
+    });
+    const facts = Object.fromEntries(factsFrom(state, NOW, null));
+    expect(facts['Latest state asset']).toBe(
+      `state-38413673323-1.json.gz (saved ${hoursAgo(1.5)}, 1.5 h old)`
+    );
+    expect(facts['Batches measured in last 49 h']).toBe('23 of 24');
   });
 });
 
