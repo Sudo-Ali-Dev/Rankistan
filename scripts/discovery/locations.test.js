@@ -9,7 +9,7 @@ import {
   locationTokens
 } from './locations.js';
 import { parseShardQuery, toQuery } from './partition.js';
-import { makePopulation, matcher } from './fake-search.js';
+import { makePopulation, matcher, MULTI_RANGE_QUERIES } from './fake-search.js';
 import { SEARCH_BATCHES } from '../fetch-devs.js';
 
 const MAIN_QUERIES = SEARCH_BATCHES.flatMap((b) => b.queries || [b.q]);
@@ -43,12 +43,12 @@ describe('the city list', () => {
 
 describe('cityTwinQuery', () => {
   it('swaps location:pakistan for every city and its negation, and keeps the rest in place', () => {
-    const main = SEARCH_BATCHES[22].q;
+    const main = 'location:pakistan type:user repos:>3 followers:>1 created:2024-08-01..2024-12-31';
     expect(cityTwinQuery(main)).toBe(`${TWIN_BASE} followers:>1 created:2024-08-01..2024-12-31`);
   });
 
   it('gives every batch range a twin the partitioner accepts and rebuilds byte for byte', () => {
-    expect(MAIN_QUERIES).toHaveLength(26);
+    expect(MAIN_QUERIES).toHaveLength(24);
     for (const main of MAIN_QUERIES) {
       const twin = cityTwinQuery(main);
       const { base, root } = parseShardQuery(twin);
@@ -60,7 +60,7 @@ describe('cityTwinQuery', () => {
   });
 
   it("gives a multi-range batch's twins one shared base, as discoverBatch requires", () => {
-    const bases = SEARCH_BATCHES[23].queries.map((q) => parseShardQuery(cityTwinQuery(q)).base);
+    const bases = MULTI_RANGE_QUERIES.map((q) => parseShardQuery(cityTwinQuery(q)).base);
     expect(new Set(bases).size).toBe(1);
   });
 

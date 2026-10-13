@@ -73,12 +73,14 @@ Not everyone with a GitHub account qualifies. Developers must pass these thresho
 Discovery searches GitHub for `location:pakistan type:user repos:>3 followers:>1`, split into 24 batches by account creation date:
 
 ```
-PK 2000-Jun2014 → PK Jul2014-Jan2016 → ... → PK Aug2024-Dec2024 → PK 2025+
+PK 2000-Dec2014 → PK Jan2015-Aug2016 → ... → PK Jun2025-Nov2025 → PK Dec2025+
 ```
+
+The ranges are cut by measured size, not by hand, so each batch screens about the same number of candidates: 1,240 to 1,640 on 13 October 2026, with the newest batch held to 915 so it can absorb the accounts that join each month ([`scripts/discovery/batches.js`](scripts/discovery/batches.js)). Until that day they were tuned to stay under GitHub's 1,000-result search cap, and once discovery lifted the cap the 2025-onward batch grew to 3,724 candidates, an hourly run that took most of its hour. A row belongs to the batch whose range holds its `created_at`, re-derived on every run, so [`scripts/discovery/rebalance.js`](scripts/discovery/rebalance.js) can recut the table whenever the counts drift, without stranding anyone.
 
 One batch runs per hour, dispatched at :00 by the Cloudflare Worker's cron via `workflow_dispatch`, completing a full cycle every 24 hours. At :35 the same cron dispatches a backup trigger, which starts the pipeline only when no run covered that hour (`scripts/should-run.js`), and the watchdog, so a missed dispatch costs at most half an hour. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are replaced with fresh data.
 
-GitHub returns at most 1,000 results for any one search, and several batches match more than that (`PK Aug2024-Dec2024` matched 1,354 on 2026-10-13). So a batch's range is never listed as a single query. [`scripts/discovery/`](scripts/discovery/) bisects it by creation date — whole days, then seconds — until every slice holds fewer than 30 developers, packs neighbouring slices back together up to 95, and lists each resulting leaf in one GraphQL request. A single request has no page boundary for a follower tie to straddle and no cursor for a rate-limit wait to invalidate.
+GitHub returns at most 1,000 results for any one search, and most batches match more than that (`PK Dec2019-May2020` matched 1,233 on 2026-10-13). So a batch's range is never listed as a single query. [`scripts/discovery/`](scripts/discovery/) bisects it by creation date — whole days, then seconds — until every slice holds fewer than 30 developers, packs neighbouring slices back together up to 95, and lists each resulting leaf in one GraphQL request. A single request has no page boundary for a follower tie to straddle and no cursor for a rate-limit wait to invalidate.
 
 A leaf counts only when its listing is provably complete: an error-free response holding as many distinct accounts as GitHub says match. The leaves are also checked to add up to the batch's own count, and a mismatch is reported. A leaf that fails is named in a workflow warning and contributes nobody that run, so the merge carries its developers' existing rows forward rather than reading their absence as a departure. Measured on 2026-10-13, discovery costs 20–25 GraphQL points per batch and none of the REST search budget.
 
@@ -92,13 +94,9 @@ location:lahore location:karachi ... location:mardan -location:pakistan type:use
 
 Repeated `location:` qualifiers OR together and the negation excludes everyone the main search already lists. The 15 cities, and the names left out, are in [`scripts/discovery/locations.js`](scripts/discovery/locations.js): Lahore, Karachi, Islamabad, Rawalpindi, Peshawar, Faisalabad, Multan, Quetta, Sialkot, Gujranwala, Abbottabad, Bahawalpur, Sargodha, Sukkur and Mardan. Each was kept only after a sample of 30 of its matches was 30 Pakistani developers. Hyderabad (mostly India), Mirpur (mostly Dhaka), Gujrat (mostly a misspelling of Gujarat), Punjab, Kashmir and Hub are left out as ambiguous.
 
-On 13 October 2026 the twins matched 8,836 accounts across all 24 batches, against 26,002 for `location:pakistan`: from 241 (`PK Feb2016-Feb2017`) to 521 (`PK Aug2024-Dec2024`) for a single-range batch, 929 for the three ranges of `PK 2025+`, and 368 on average. The twin is discovered separately, with its own completeness check, and its candidates are united with the main search's by `databaseId`. A developer it found whose fetched location also names a place outside Pakistan (India, Bangladesh, Iran and a few others) is counted as evaluated and ineligible. If either search is incomplete, the batch's miss counters freeze. If the twin cannot be measured at all, the batch is still published from the main search, with a workflow warning. Every row measured from then on records `discovery_source`: `pakistan`, `city`, or `registered`.
+On 13 October 2026 the twins matched 8,836 accounts across all 24 batches, against 26,002 for `location:pakistan`, 368 a batch on average; under the rebalanced table each batch's twin holds 214 to 443. The twin is discovered separately, with its own completeness check, and its candidates are united with the main search's by `databaseId`. A developer it found whose fetched location also names a place outside Pakistan (India, Bangladesh, Iran and a few others) is counted as evaluated and ineligible. If either search is incomplete, the batch's miss counters freeze. If the twin cannot be measured at all, the batch is still published from the main search, with a workflow warning. Every row measured from then on records `discovery_source`: `pakistan`, `city`, or `registered`.
 
-Measured live on 13 October 2026, the twin cost 9, 12 and 23 GraphQL points for batches 6, 22 and 23, and it adds 368 candidates to screen per batch on average. A live run of batch 6 spent 1.14 REST calls per candidate, 1.19 on its city candidates, so the twin adds roughly 400–450 REST calls a batch, against 5,000 an hour. In that run 9 of the 255 city candidates passed the activity gates and none was rejected on location.
-
-#### PK 2025+ (`batch-23`)
-
-`batch_index` 23 covers three `created:` ranges, defined as a `queries` list on that entry in `SEARCH_BATCHES`. They are partitioned together in the same hourly run, and every row from this cohort still carries **`batch_index` 23**.
+Measured live on 13 October 2026, under the earlier table, the twin cost 9, 12 and 23 GraphQL points for the May–Sep 2019, Aug–Dec 2024 and 2025-onward batches, and it adds 368 candidates to screen per batch on average. A live run of the May–Sep 2019 batch spent 1.14 REST calls per candidate, 1.19 on its city candidates, so the twin adds roughly 400–450 REST calls a batch, against 5,000 an hour. In that run 9 of the 255 city candidates passed the activity gates and none was rejected on location.
 
 ### Registration and Opt-out
 
@@ -290,32 +288,34 @@ Nothing that runs the pipeline can report its own failure, so an outside monitor
 
 ### Batch Schedule (PKT)
 
-| PKT | Batch | Description |
-|---|---|---|
-| 12:00 AM | `batch-0` | PK accounts created 2000–Jun 2014 |
-| 1:00 AM | `batch-1` | PK accounts created Jul 2014–Jan 2016 |
-| 2:00 AM | `batch-2` | PK accounts created Feb 2016–Feb 2017 |
-| 3:00 AM | `batch-3` | PK accounts created Mar 2017–Dec 2017 |
-| 4:00 AM | `batch-4` | PK accounts created Jan 2018–Sep 2018 |
-| 5:00 AM | `batch-5` | PK accounts created Oct 2018–Apr 2019 |
-| 6:00 AM | `batch-6` | PK accounts created May 2019–Sep 2019 |
-| 7:00 AM | `batch-7` | PK accounts created Oct 2019–Feb 2020 |
-| 8:00 AM | `batch-8` | PK accounts created Mar 2020–Jun 2020 |
-| 9:00 AM | `batch-9` | PK accounts created Jul 2020–Nov 2020 |
-| 10:00 AM | `batch-10` | PK accounts created Dec 2020–Mar 2021 |
-| 11:00 AM | `batch-11` | PK accounts created Apr 2021–Aug 2021 |
-| 12:00 PM | `batch-12` | PK accounts created Sep 2021–Dec 2021 |
-| 1:00 PM | `batch-13` | PK accounts created Jan 2022–Apr 2022 |
-| 2:00 PM | `batch-14` | PK accounts created May 2022–Aug 2022 |
-| 3:00 PM | `batch-15` | PK accounts created Sep 2022–Nov 2022 |
-| 4:00 PM | `batch-16` | PK accounts created Dec 2022–Feb 2023 |
-| 5:00 PM | `batch-17` | PK accounts created Mar 2023–Jun 2023 |
-| 6:00 PM | `batch-18` | PK accounts created Jul 2023–Sep 2023 |
-| 7:00 PM | `batch-19` | PK accounts created Oct 2023–Dec 2023 |
-| 8:00 PM | `batch-20` | PK accounts created Jan 2024–Mar 2024 |
-| 9:00 PM | `batch-21` | PK accounts created Apr 2024–Jul 2024 |
-| 10:00 PM | `batch-22` | PK accounts created Aug 2024–Dec 2024 |
-| 11:00 PM | `batch-23` | PK accounts created 2025+ |
+| PKT | Batch | Accounts created | `location:pakistan` | City twin | Candidates |
+|---|---|---|---:|---:|---:|
+| 12:00 AM | `batch-0` | 2000–Dec 2014 | 1,222 | 307 | 1,529 |
+| 1:00 AM | `batch-1` | Jan 2015–Aug 2016 | 1,156 | 340 | 1,496 |
+| 2:00 AM | `batch-2` | Sep 2016–Oct 2017 | 1,226 | 345 | 1,571 |
+| 3:00 AM | `batch-3` | Nov 2017–Sep 2018 | 1,134 | 350 | 1,484 |
+| 4:00 AM | `batch-4` | Oct 2018–May 2019 | 1,131 | 339 | 1,470 |
+| 5:00 AM | `batch-5` | Jun 2019–Nov 2019 | 1,161 | 375 | 1,536 |
+| 6:00 AM | `batch-6` | Dec 2019–May 2020 | 1,233 | 386 | 1,619 |
+| 7:00 AM | `batch-7` | Jun 2020–Nov 2020 | 1,214 | 394 | 1,608 |
+| 8:00 AM | `batch-8` | Dec 2020–Apr 2021 | 1,123 | 377 | 1,500 |
+| 9:00 AM | `batch-9` | May 2021–Sep 2021 | 1,067 | 334 | 1,401 |
+| 10:00 AM | `batch-10` | Oct 2021–Jan 2022 | 973 | 365 | 1,338 |
+| 11:00 AM | `batch-11` | Feb 2022–May 2022 | 981 | 350 | 1,331 |
+| 12:00 PM | `batch-12` | Jun 2022–Sep 2022 | 1,197 | 443 | 1,640 |
+| 1:00 PM | `batch-13` | Oct 2022–Dec 2022 | 871 | 369 | 1,240 |
+| 2:00 PM | `batch-14` | Jan 2023–Mar 2023 | 1,013 | 361 | 1,374 |
+| 3:00 PM | `batch-15` | Apr 2023–Jul 2023 | 1,104 | 420 | 1,524 |
+| 4:00 PM | `batch-16` | Aug 2023–Oct 2023 | 1,027 | 394 | 1,421 |
+| 5:00 PM | `batch-17` | Nov 2023–Jan 2024 | 1,020 | 405 | 1,425 |
+| 6:00 PM | `batch-18` | Feb 2024–Apr 2024 | 1,153 | 440 | 1,593 |
+| 7:00 PM | `batch-19` | May 2024–Aug 2024 | 1,185 | 396 | 1,581 |
+| 8:00 PM | `batch-20` | Sep 2024–Dec 2024 | 1,029 | 420 | 1,449 |
+| 9:00 PM | `batch-21` | Jan 2025–May 2025 | 962 | 371 | 1,333 |
+| 10:00 PM | `batch-22` | Jun 2025–Nov 2025 | 1,128 | 348 | 1,476 |
+| 11:00 PM | `batch-23` | Dec 2025 onward | 701 | 214 | 915 |
+
+Candidate counts were measured on 13 October 2026 (34,854 in all), and the ranges were cut from them by [`scripts/discovery/rebalance.js`](scripts/discovery/rebalance.js) so every batch screens about the same number of people; see [`scripts/discovery/batches.js`](scripts/discovery/batches.js).
 
 ### Manual Trigger
 

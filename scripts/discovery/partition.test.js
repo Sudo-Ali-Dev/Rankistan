@@ -15,7 +15,7 @@ import {
   splitSlice,
   toQuery
 } from './partition.js';
-import { makePopulation, matcher } from './fake-search.js';
+import { makePopulation, matcher, MULTI_RANGE_QUERIES } from './fake-search.js';
 import { SEARCH_BATCHES } from '../fetch-devs.js';
 
 const BASE_QUERY =
@@ -58,7 +58,7 @@ describe('parseShardQuery', () => {
 
   it('round-trips every SEARCH_BATCHES range byte for byte, so eligibility is unchanged', () => {
     const queries = SEARCH_BATCHES.flatMap((b) => b.queries || [b.q]);
-    expect(queries).toHaveLength(26);
+    expect(queries).toHaveLength(24);
     for (const q of queries) {
       const { base, root } = parseShardQuery(q);
       expect(base).toBe('location:pakistan type:user repos:>3');
@@ -369,7 +369,7 @@ describe('packLeaves', () => {
 
 describe('partitionRoots', () => {
   const { base } = parseShardQuery(BASE_QUERY);
-  const ranges = SEARCH_BATCHES[23].queries.map((q) => parseShardQuery(q).root);
+  const ranges = MULTI_RANGE_QUERIES.map((q) => parseShardQuery(q).root);
 
   it('partitions several ranges in one breadth-first pass and packs each into single pages', async () => {
     const population = ranges.flatMap((r, i) =>

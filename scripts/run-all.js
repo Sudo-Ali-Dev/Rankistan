@@ -50,7 +50,8 @@ import {
   loadRegistry,
   applyOptOuts,
   withoutOptedOut,
-  emptyRegistry
+  emptyRegistry,
+  batchForCreatedAt
 } from './registry.js';
 
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
@@ -111,6 +112,27 @@ export function createFileStore({ readPath, writePath = readPath }) {
 // MIN_COHORT_FOR_RATIO_CHECK avoids false alarms on the small batches, where
 // natural variance is large: batch sizes currently range from about 12 to 217,
 // and a 12-developer cohort losing half its members is ordinary noise.
+/**
+ * Give every row the batch whose range holds its `created_at` under the current table.
+ *
+ * Ownership decides what a batch may remove: a run judges, and counts misses for, only the rows it
+ * owns. So when SEARCH_BATCHES changes (scripts/discovery/batches.js), a row left with its old
+ * `batch_index` would belong to a batch that no longer searches for it - missed there daily until
+ * removed, and never removable by the batch that now measures it. Re-deriving ownership on load
+ * makes a table change take effect at once, for every row. A row whose `created_at` is missing or
+ * outside every range keeps the index it has. Pure; returns the rows and how many moved.
+ */
+export function reownRows(rows, batches = SEARCH_BATCHES) {
+  let moved = 0;
+  const reowned = rows.map((row) => {
+    const owner = batchForCreatedAt(row?.created_at, batches);
+    if (owner === null || owner === row.batch_index) return row;
+    moved += 1;
+    return { ...row, batch_index: owner };
+  });
+  return { rows: reowned, moved };
+}
+
 export const MIN_REPLACEMENT_RATIO = 0.5;
 
 // Absence from search is not evidence that a developer left.
@@ -441,13 +463,20 @@ export async function runBatch({
     loaded = { payload: { leaderboard: [] }, source: 'an empty board' };
   }
 
-  const previous = loaded.payload.leaderboard;
+  const ownership = reownRows(loaded.payload.leaderboard);
+  const previous = ownership.rows;
   const source = loaded.asset
     ? `${loaded.asset.name} (saved ${loaded.asset.created_at})`
     : loaded.source;
   log.log(`Loaded ${previous.length} developers from ${source}.`);
   for (const skip of loaded.skipped || []) {
     log.warn(`Skipped unreadable state ${skip.name}: ${skip.error}`);
+  }
+  if (ownership.moved > 0) {
+    log.log(
+      `Ownership: ${ownership.moved} row(s) moved to the batch whose range now holds their ` +
+        'created_at (scripts/discovery/batches.js).'
+    );
   }
 
   // Opt-outs leave the board on every run, whatever batch owns the row, and a

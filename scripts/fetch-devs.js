@@ -5,6 +5,7 @@ import { matchTagsForDeveloper } from '../src/utils/tag-matcher.js';
 import { createSearchClient } from './discovery/graphql.js';
 import { annotation, describeDiscovery, discoverBatch } from './discovery/discover.js';
 import { DISCOVERY_SOURCES, cityTwinQuery, foreignMarker } from './discovery/locations.js';
+import { SEARCH_BATCHES } from './discovery/batches.js';
 import { admitFetched, joinRegistry } from './registry.js';
 
 const GITHUB_API_BASE = 'https://api.github.com';
@@ -58,46 +59,10 @@ const MEANINGFUL_EVENT_TYPES = new Set([
   'ReleaseEvent'
 ]);
 
-// The batch -> range table. Each batch owns the leaderboard rows for developers created in its
-// range (run-all.js merges by `batch_index`), so the ranges are fixed. They no longer need to stay
-// under GitHub's 1,000-result search cap: scripts/discovery/ partitions each range into leaves
-// that list in one request apiece, however many developers the range holds. Each range is also
-// searched by its city twin (scripts/discovery/locations.js), derived from it at run time, so the
-// table stays the one place a batch's range is defined.
-const SEARCH_BATCHES = [
-  { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
-  { label: 'PK Jul2014-Jan2016', q: 'location:pakistan type:user repos:>3 followers:>1 created:2014-07-01..2016-01-31' },
-  { label: 'PK Feb2016-Feb2017', q: 'location:pakistan type:user repos:>3 followers:>1 created:2016-02-01..2017-02-28' },
-  { label: 'PK Mar2017-Dec2017', q: 'location:pakistan type:user repos:>3 followers:>1 created:2017-03-01..2017-12-31' },
-  { label: 'PK Jan2018-Sep2018', q: 'location:pakistan type:user repos:>3 followers:>1 created:2018-01-01..2018-09-30' },
-  { label: 'PK Oct2018-Apr2019', q: 'location:pakistan type:user repos:>3 followers:>1 created:2018-10-01..2019-04-30' },
-  { label: 'PK May2019-Sep2019', q: 'location:pakistan type:user repos:>3 followers:>1 created:2019-05-01..2019-09-30' },
-  { label: 'PK Oct2019-Feb2020', q: 'location:pakistan type:user repos:>3 followers:>1 created:2019-10-01..2020-02-29' },
-  { label: 'PK Mar2020-Jun2020', q: 'location:pakistan type:user repos:>3 followers:>1 created:2020-03-01..2020-06-30' },
-  { label: 'PK Jul2020-Nov2020', q: 'location:pakistan type:user repos:>3 followers:>1 created:2020-07-01..2020-11-30' },
-  { label: 'PK Dec2020-Mar2021', q: 'location:pakistan type:user repos:>3 followers:>1 created:2020-12-01..2021-03-31' },
-  { label: 'PK Apr2021-Aug2021', q: 'location:pakistan type:user repos:>3 followers:>1 created:2021-04-01..2021-08-31' },
-  { label: 'PK Sep2021-Dec2021', q: 'location:pakistan type:user repos:>3 followers:>1 created:2021-09-01..2021-12-31' },
-  { label: 'PK Jan2022-Apr2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-01-01..2022-04-30' },
-  { label: 'PK May2022-Aug2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-05-01..2022-08-31' },
-  { label: 'PK Sep2022-Nov2022', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-09-01..2022-11-30' },
-  { label: 'PK Dec2022-Feb2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2022-12-01..2023-02-28' },
-  { label: 'PK Mar2023-Jun2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-03-01..2023-06-30' },
-  { label: 'PK Jul2023-Sep2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-07-01..2023-09-30' },
-  { label: 'PK Oct2023-Dec2023', q: 'location:pakistan type:user repos:>3 followers:>1 created:2023-10-01..2023-12-31' },
-  { label: 'PK Jan2024-Mar2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-01-01..2024-03-31' },
-  { label: 'PK Apr2024-Jul2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-04-01..2024-07-31' },
-  { label: 'PK Aug2024-Dec2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-08-01..2024-12-31' },
-  {
-    label: 'PK 2025+',
-    // Three ranges, one batch. Discovery partitions all three together.
-    queries: [
-      'location:pakistan type:user repos:>3 followers:>1 created:2025-01-01..2025-06-30',
-      'location:pakistan type:user repos:>3 followers:>1 created:2025-07-01..2025-12-31',
-      'location:pakistan type:user repos:>3 followers:>1 created:2026-01-01..2099-12-31'
-    ]
-  },
-];
+// The batch -> range table lives in scripts/discovery/batches.js, with how its ranges were cut.
+// Each batch owns the leaderboard rows for developers created in its range; run-all.js re-derives
+// that ownership from `created_at` on every load. Each range is also searched by its city twin
+// (scripts/discovery/locations.js), derived from it at run time.
 
 const rateLimit = { remaining: Infinity, resetAt: 0 };
 

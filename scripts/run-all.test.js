@@ -11,6 +11,7 @@ import {
   evaluatedLogins,
   createFileStore,
   dispatchWorkflows,
+  reownRows,
   MIN_REPLACEMENT_RATIO,
   MIN_COHORT_FOR_RATIO_CHECK,
   MAX_MISSED_RUNS,
@@ -21,6 +22,7 @@ import {
 } from './run-all.js';
 import { MAX_DEVELOPERS } from './fetch-devs.js';
 import { emptyRegistry } from './registry.js';
+import { BATCH_RANGES } from './discovery/batches.js';
 import { SCORE_CONFIG } from '../src/model/config.js';
 
 const call = (over = {}) =>
@@ -72,9 +74,7 @@ describe('assertReplacementIsSafe', () => {
   });
 
   it('still refuses a total wipe even for a small cohort', () => {
-    expect(() => call({ removedCount: 3, replacementCount: 0 })).toThrow(
-      /without replacing them/
-    );
+    expect(() => call({ removedCount: 3, replacementCount: 0 })).toThrow(/without replacing them/);
   });
 
   it('honours the ALLOW_LEADERBOARD_SHRINK escape hatch', () => {
@@ -88,8 +88,9 @@ describe('assertReplacementIsSafe', () => {
   });
 
   it('names the batch so a CI failure is diagnosable', () => {
-    expect(() => call({ batchIndex: 23, batchLabel: 'PK Apr2025-Now', replacementCount: 0 }))
-      .toThrow(/batch 23 \(PK Apr2025-Now\)/);
+    expect(() =>
+      call({ batchIndex: 23, batchLabel: 'PK Apr2025-Now', replacementCount: 0 })
+    ).toThrow(/batch 23 \(PK Apr2025-Now\)/);
   });
 });
 
@@ -170,7 +171,10 @@ describe('mergeBatch', () => {
 
     it('removes a developer on the second consecutive miss, a day apart, and says so', () => {
       const { board, removed } = merge(
-        [row('seen', 0, 500), row('missed', 0, 400, { missed_runs: 1, missed_since: hoursBefore(25) })],
+        [
+          row('seen', 0, 500),
+          row('missed', 0, 400, { missed_runs: 1, missed_since: hoursBefore(25) })
+        ],
         { newEntries: [row('seen', 0, 600)], evaluated: ['seen'] }
       );
       expect(MAX_MISSED_RUNS).toBe(2);
@@ -338,9 +342,7 @@ describe('mergeBatch', () => {
   });
 
   it(`names who falls below the ${MAX_DEVELOPERS} cap`, () => {
-    const existing = Array.from({ length: MAX_DEVELOPERS }, (_, i) =>
-      row(`u${i}`, 5, 10_000 - i)
-    );
+    const existing = Array.from({ length: MAX_DEVELOPERS }, (_, i) => row(`u${i}`, 5, 10_000 - i));
     const { board, removed } = merge(existing, {
       newEntries: [row('new-1', 0, 20_000), row('new-2', 0, 19_000)]
     });
@@ -604,7 +606,7 @@ describe('runBatch', () => {
     expect(store.saved.board.last_updated).toBe(new Date(NOW + 50 * 60_000).toISOString());
   });
 
-  it("takes the clock from the loaded board when asked, as the dry run does", async () => {
+  it('takes the clock from the loaded board when asked, as the dry run does', async () => {
     const calls = [];
     const store = memoryStore(state([row('old', 0, 5, { scored_at: at(30) })]), calls);
     await runBatch({
@@ -743,6 +745,67 @@ describe('runBatch', () => {
       expect(reg).toMatchObject({ batch_index: 0, github_id: 9, discovery_source: 'registered' });
       expect(result.removed).toEqual([]);
     });
+  });
+});
+
+describe('reownRows', () => {
+  // Noon on the first day of a batch's range in the current table.
+  const createdIn = (batch) => `${BATCH_RANGES[batch].from}T12:00:00Z`;
+
+  it('gives each row the batch whose range holds its created_at, and counts who moved', () => {
+    const stays = row('stays', 5, 1, { created_at: createdIn(5) });
+    const { rows, moved } = reownRows([
+      stays,
+      row('moves', 23, 1, { created_at: createdIn(5) }),
+      row('undated', 9, 1),
+      row('unreadable', 9, 1, { created_at: 'not a date' })
+    ]);
+    expect(moved).toBe(1);
+    expect(rows.map((r) => r.batch_index)).toEqual([5, 5, 9, 9]);
+    // Unmoved rows are the same objects; a moved one is a copy with nothing else changed.
+    expect(rows[0]).toBe(stays);
+    expect(rows[1]).toEqual(row('moves', 5, 1, { created_at: createdIn(5) }));
+  });
+
+  it('lets the batch that now holds a row judge it, after the table changed', async () => {
+    // Under the old table this developer belonged to batch 23. Batch 5 now searches their range,
+    // fetched them, and they failed the gate: they must leave, not be kept as another batch's row.
+    const store = {
+      saved: null,
+      async load() {
+        return {
+          payload: {
+            last_updated: at(1),
+            total_devs: 3,
+            leaderboard: [
+              row('moved', 23, 300, { created_at: createdIn(5) }),
+              row('measured', 5, 250, { created_at: createdIn(5) }),
+              row('other', 23, 200, { created_at: createdIn(23) })
+            ]
+          },
+          source: 'memory'
+        };
+      },
+      async save(board) {
+        this.saved = board;
+        return { asset: { name: 'x' }, bytes: 1 };
+      }
+    };
+    const lines = [];
+    const result = await runBatch({
+      registry: noIntents,
+      batchIndex: 5,
+      store,
+      measure: async () => ({
+        newEntries: [row('measured', 5, 260, { created_at: createdIn(5) })],
+        evaluated: ['moved', 'measured']
+      }),
+      now: NOW,
+      log: { log: (l) => lines.push(l), warn: () => {} }
+    });
+    expect(result.removed).toEqual([{ username: 'moved', batch_index: 5, reason: 'ineligible' }]);
+    expect(names(store.saved)).toEqual(['measured', 'other']);
+    expect(lines.some((l) => /^Ownership: 1 row\(s\) moved/.test(l))).toBe(true);
   });
 });
 

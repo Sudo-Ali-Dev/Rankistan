@@ -22,6 +22,9 @@ import {
   RATE_LIMIT
 } from './discovery/fake-search.js';
 
+// The batch most of these tests run, by its label in the current table.
+const BATCH16 = SEARCH_BATCHES[16].label;
+
 describe('rateLimitWaitMs', () => {
   const headers = (map = {}) => ({ get: (k) => map[k.toLowerCase()] ?? null });
   const SECONDARY =
@@ -265,7 +268,9 @@ describe('fetchPakistaniDevelopers discovery', () => {
     // The warning names the leaf, and that leaf is exactly who was not fetched.
     const named = warnings
       .map((line) =>
-        /^::warning title=Discovery::PK Dec2022-Feb2023: leaf (\S+ \S+) is incomplete/.exec(line)
+        new RegExp(`^::warning title=Discovery::${BATCH16}: leaf (\\S+ \\S+) is incomplete`).exec(
+          line
+        )
       )
       .filter(Boolean);
     expect(named).toHaveLength(1);
@@ -455,7 +460,7 @@ describe('fetchPakistaniDevelopers with the city twin', () => {
 
     expect(result.discoveryComplete).toBe(false);
     expect(
-      warnings.some((line) => /PK Dec2022-Feb2023 cities: leaf .* is incomplete/.test(line))
+      warnings.some((line) => new RegExp(`${BATCH16} cities: leaf .* is incomplete`).test(line))
     ).toBe(true);
     // The main query's developers are all measured all the same.
     const main = population.filter((u) => u.location === 'Pakistan').map((u) => u.login);
@@ -476,7 +481,9 @@ describe('fetchPakistaniDevelopers with the city twin', () => {
     expect(result.discoveryComplete).toBe(false);
     expect(
       warnings.some((line) =>
-        /^::warning title=Discovery::PK Dec2022-Feb2023 cities: could not be measured/.test(line)
+        new RegExp(`^::warning title=Discovery::${BATCH16} cities: could not be measured`).test(
+          line
+        )
       )
     ).toBe(true);
     expect(Object.values(source(result))).toEqual(
@@ -493,7 +500,7 @@ describe('fetchPakistaniDevelopers with the city twin', () => {
     stubRest(population);
     quietConsole();
     await expect(run(searchFor(population, fake))).rejects.toThrow(
-      /Discovery failed for batch "PK Dec2022-Feb2023"/
+      new RegExp(`Discovery failed for batch "${BATCH16}"`)
     );
   });
 });
