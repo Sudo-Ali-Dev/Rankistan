@@ -400,6 +400,39 @@ function extractRecentEvents(events, maxAgeDays) {
   });
 }
 
+// How far back a developer's events read reached, which is how much of the window the activity
+// term actually saw. The feed is capped by count, not by time, so the busier the account the less
+// time 200 events span: one top-30 developer's covered 6 of 30 days, and nothing in a row said so.
+//
+//   fetched    events read
+//   truncated  the read stopped at its page ceiling on a full page, so older events may exist
+//   days       days of history read back from `readAt`, to a tenth, at most INACTIVE_DAYS_CUTOFF.
+//              A read that was not truncated holds every event GitHub serves, so it covers the
+//              whole window however old its oldest event is: a quiet month is not a short window.
+//
+// A truncated read is measured to the newest event among its last EVENTS_TAIL, not to its oldest.
+// The feed is not reliably time-ordered (139 of 1,000 sampled feeds were out of order by over a
+// day), so the oldest event read can be a straggler with unread events newer than it; the newest
+// of the tail understates the window rather than overstating it. Context only: nothing scores it.
+const EVENTS_TAIL = 10;
+
+function eventsWindow(events, { truncated, readAt }) {
+  const fetched = Array.isArray(events) ? events.length : 0;
+  if (!truncated) {
+    return { fetched, truncated: false, days: INACTIVE_DAYS_CUTOFF };
+  }
+  const tail = events
+    .slice(-EVENTS_TAIL)
+    .map((event) => new Date(event?.created_at).getTime())
+    .filter((ts) => Number.isFinite(ts));
+  const days = tail.length === 0 ? 0 : (readAt - Math.max(...tail)) / (24 * 60 * 60 * 1000);
+  return {
+    fetched,
+    truncated: true,
+    days: Math.min(INACTIVE_DAYS_CUTOFF, Math.max(0, Math.floor(days * 10) / 10))
+  };
+}
+
 function filterMeaningfulEvents(events) {
   return (events || []).filter((event) => MEANINGFUL_EVENT_TYPES.has(event.type));
 }
@@ -623,6 +656,8 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
   }
 
   const events = Array.isArray(firstPage) ? [...firstPage] : [];
+  // Whether the last page read was full: if so, older events may exist that were not read.
+  let eventsTruncated = !screen.complete;
   for (let page = 2; page <= USER_EVENTS_MAX_PAGES && !screen.complete; page += 1) {
     const eventsResponse = await githubRequest(
       `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=${page}`,
@@ -630,10 +665,12 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
     );
     const pageEvents = Array.isArray(eventsResponse) ? eventsResponse : [];
     events.push(...pageEvents);
+    eventsTruncated = pageEvents.length >= USER_EVENTS_PER_PAGE;
     if (pageEvents.length < USER_EVENTS_PER_PAGE) {
       break;
     }
   }
+  const eventsReadAt = Date.now();
 
   const repos = await fetchAllUserRepos(username, token);
   const socials = await fetchUserSocials(username, token);
@@ -667,6 +704,7 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
     event_counts_30d: activityMetrics.event_counts_30d,
     total_contributions_60d: activityMetrics.total_contributions_60d,
     longest_gap_days: activityMetrics.longest_gap_days,
+    events_window: eventsWindow(events, { truncated: eventsTruncated, readAt: eventsReadAt }),
     repos_active_7d: reposActive7d,
     digest_repos: digestRepos,
     raw_events_60d: recentEvents,
@@ -863,6 +901,7 @@ export {
   passesActivityGate,
   screenFirstPage,
   computeActivityMetrics,
+  eventsWindow,
   SEARCH_BATCHES,
   MAX_DEVELOPERS,
   ACTIVITY_THRESHOLDS

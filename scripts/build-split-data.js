@@ -9,9 +9,11 @@
 // src/utils/split-data.js, shared with the browser so its data.json fallback
 // computes the same thing.
 //
-// dist/data.json must stay byte-identical to public/data.json - the Worker
-// and outside readers fetch it from the site root - so this checks the copy
-// Vite made rather than trusting it.
+// dist/data.json is what the Worker and outside readers fetch from the site
+// root. It is public/data.json with the pipeline-only fields removed from every
+// row (PIPELINE_ONLY_FIELDS in split-data.js: the shadow measurement of the
+// next model's inputs), and byte-identical to it when no row carries one. This
+// checks the copy Vite made rather than trusting it, then rewrites it.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,7 +23,9 @@ import {
   buildBoard,
   buildDeveloperFile,
   buildDigest,
-  developerFileName
+  buildPublicPayload,
+  developerFileName,
+  hasPipelineOnlyFields
 } from '../src/utils/split-data.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -55,6 +59,11 @@ export function buildSplitData({ sourcePath, outDir, log = console }) {
         'so it must be published unchanged.'
     );
   }
+  // Same serialisation as the pipeline's (scripts/write-leaderboard.js): compact.
+  const publicBytes = hasPipelineOnlyFields(payload)
+    ? Buffer.from(JSON.stringify(buildPublicPayload(payload)))
+    : sourceBytes;
+  if (publicBytes !== sourceBytes) fs.writeFileSync(published, publicBytes);
 
   // Vite copies public/ into the output first, so a committed file at one of
   // these paths - scripts/generate-digest.js writes public/digest.json - would
@@ -107,7 +116,14 @@ export function buildSplitData({ sourcePath, outDir, log = console }) {
       `build-split-data: no detail file for ${skipped.length} row(s): ${skipped.join(', ')}`
     );
   }
-  return { board, digest, developers, skipped };
+  return {
+    board,
+    digest,
+    developers,
+    skipped,
+    published: publicBytes.length,
+    stripped: sourceBytes.length - publicBytes.length
+  };
 }
 
 function gzipSize(file) {
@@ -131,7 +147,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(
       `build-split-data: board.json ${kb(result.board)} (${kb(gzipSize(path.join(outDir, 'board.json')))} gzip), ` +
         `digest.json ${kb(result.digest)} (${kb(gzipSize(path.join(outDir, 'digest.json')))} gzip), ` +
-        `${result.developers} developer files`
+        `${result.developers} developer files, data.json ${kb(result.published)}` +
+        (result.stripped > 0 ? ` (${kb(result.stripped)} of pipeline-only fields left out)` : '')
     );
   } catch (error) {
     console.error(`build-split-data: ${error.message}`);

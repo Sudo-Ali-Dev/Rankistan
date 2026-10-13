@@ -10,6 +10,7 @@ import {
   applyActivityFilter,
   fetchDeveloperActivity,
   fetchPakistaniDevelopers,
+  eventsWindow,
   SEARCH_BATCHES
 } from './fetch-devs.js';
 import { createSearchClient } from './discovery/graphql.js';
@@ -102,6 +103,40 @@ describe('screenFirstPage', () => {
   });
 });
 
+describe('eventsWindow', () => {
+  const at = (iso) => ({ type: 'PushEvent', created_at: iso });
+  const readAt = Date.parse('2026-10-14T00:00:00Z');
+
+  it('covers the whole window when the read was not cut, however old its oldest event', () => {
+    // One event two days ago is a quiet month, not a two-day window.
+    expect(eventsWindow([at('2026-10-12T00:00:00Z')], { truncated: false, readAt })).toEqual({
+      fetched: 1,
+      truncated: false,
+      days: 60
+    });
+  });
+
+  it('measures a cut read to the newest of its last events, not to a straggler', () => {
+    const events = [
+      ...Array.from({ length: 190 }, () => at('2026-10-12T00:00:00Z')),
+      // The last ten read: nine from six days ago and one straggler from August.
+      ...Array.from({ length: 9 }, () => at('2026-10-08T00:00:00Z')),
+      at('2026-08-01T00:00:00Z')
+    ];
+    expect(eventsWindow(events, { truncated: true, readAt })).toEqual({
+      fetched: 200,
+      truncated: true,
+      days: 6
+    });
+  });
+
+  it('rounds down, and never claims more than the window', () => {
+    const cut = (iso) => eventsWindow([at(iso)], { truncated: true, readAt }).days;
+    expect(cut('2026-10-12T14:24:00Z')).toBe(1.4);
+    expect(cut('2026-01-01T00:00:00Z')).toBe(60);
+  });
+});
+
 describe('fetchDeveloperActivity', () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -166,8 +201,27 @@ describe('fetchDeveloperActivity', () => {
   it('still reads page 2 when page 1 is full', async () => {
     const full = Array.from({ length: 100 }, (_, i) => pushEvent(i * 0.3));
     const seen = stubGitHub({ pages: [full, quietFeed()] });
-    await fetchDeveloperActivity('dev', 'token');
+    const result = await fetchDeveloperActivity('dev', 'token');
     expect(seen.some((p) => p.includes('page=2'))).toBe(true);
+    // Page 2 was short, so the read reached the end of the feed.
+    expect(result.events_window).toEqual({ fetched: 110, truncated: false, days: 60 });
+  });
+
+  it('records that a read stopped on a full last page, and how far back it reached', async () => {
+    const page = (from) => Array.from({ length: 100 }, (_, i) => pushEvent(from + i * 0.05));
+    stubGitHub({ pages: [page(0), page(5)] });
+    const result = await fetchDeveloperActivity('dev', 'token');
+    expect(result.events_window.fetched).toBe(200);
+    expect(result.events_window.truncated).toBe(true);
+    // The tail ends near 9.95 days back; the newest of its last ten is 9.5 days back.
+    expect(result.events_window.days).toBeGreaterThanOrEqual(9.4);
+    expect(result.events_window.days).toBeLessThanOrEqual(9.5);
+  });
+
+  it('calls a complete first page not truncated', async () => {
+    stubGitHub({ pages: [activeFeed()] });
+    const result = await fetchDeveloperActivity('dev', 'token');
+    expect(result.events_window).toEqual({ fetched: 40, truncated: false, days: 60 });
   });
 
   it('does not count a city-sourced developer whose location names a place abroad', async () => {

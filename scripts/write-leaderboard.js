@@ -13,7 +13,7 @@ const STRIP_FIELDS = new Set([
   'event_counts_30d'
 ]);
 
-const OUTPUT_FIELDS = [
+export const OUTPUT_FIELDS = [
   'rank',
   'username',
   // The account id. Logins change and can be reclaimed by someone else; opt-outs
@@ -48,7 +48,15 @@ const OUTPUT_FIELDS = [
   // `city` (it names a Pakistani city and not the country; see
   // scripts/discovery/locations.js) or `registered`. Context only: nothing
   // scores it, and a row measured before it existed has none.
-  'discovery_source'
+  'discovery_source',
+  // How far back the events read that `activity_score` came from reached
+  // (scripts/fetch-devs.js, eventsWindow). Context only.
+  'events_window',
+  // The next activity model's inputs, measured and dated, scored by nothing
+  // (scripts/measure/contributions.js). Kept here so the state carries them
+  // for the model that will read them; split-data.js keeps both out of every
+  // file the browser reads.
+  'shadow_contributions'
 ];
 
 export function hasValidRankAndScore(entry) {

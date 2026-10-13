@@ -42,6 +42,7 @@ import {
 } from './fetch-devs.js';
 import { fetchPronouns, attachPronouns } from './fetch-pronouns.js';
 import { scoreDevelopers } from './score.js';
+import { createShadowClient, shadowContributionsStep } from './measure/contributions.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
 import { verifyPublished } from './verify-published.js';
 import { makeGitHubClient, createStateStore, stateAssetName, DEFAULT_REPO } from './state-store.js';
@@ -597,8 +598,12 @@ export function evaluatedLogins({ developers, screenedOut = [], locationRejected
   ];
 }
 
-/** Measures one batch on GitHub: discovery, fetch, activity gate, scoring. */
-export async function measureBatch({ batchIndex, registry }) {
+/**
+ * Measures one batch on GitHub: discovery, fetch, activity gate, scoring, and the shadow
+ * measurement of the next model's inputs. `existing` is the loaded board, where a developer this
+ * run cannot shadow-measure finds their previous block.
+ */
+export async function measureBatch({ batchIndex, registry, existing = [] }) {
   const fetched = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
@@ -630,7 +635,17 @@ export async function measureBatch({ batchIndex, registry }) {
   const scored = scoreDevelopers(withPronouns);
   console.log(`Scored ${scored.length} developers.`);
 
-  const newEntries = scored.map((d) => ({
+  // The next model's inputs, measured for the developers this batch publishes - a block is kept
+  // on a row, so measuring the gate's rejects would buy nothing - and attached after scoring, so
+  // nothing in it can reach a score (scripts/measure/contributions.js). Never fails the batch.
+  const token = process.env.MY_GITHUB_PAT || process.env.GITHUB_TOKEN;
+  const shadow = await shadowContributionsStep(scored, {
+    existing,
+    client: token ? createShadowClient({ token }) : null,
+    now: Date.now()
+  });
+
+  const newEntries = shadow.developers.map((d) => ({
     ...stripInternalFields(d),
     batch_index: batchIndex,
   }));

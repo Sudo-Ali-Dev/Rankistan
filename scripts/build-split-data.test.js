@@ -78,6 +78,27 @@ describe('buildSplitData', () => {
     expect(fs.readFileSync(path.join(outDir, 'data.json')).equals(before)).toBe(true);
   });
 
+  it('serves data.json without the pipeline-only fields, and everything else as it was', () => {
+    const shadowed = {
+      ...PAYLOAD,
+      leaderboard: PAYLOAD.leaderboard.map((row, i) =>
+        i === 0
+          ? { ...row, shadow_contributions: { v: 1, at: 'x' }, events_window: { days: 2 } }
+          : row
+      )
+    };
+    publish(shadowed);
+    const result = buildSplitData({ sourcePath, outDir, log: quiet });
+    const served = fs.readFileSync(path.join(outDir, 'data.json'), 'utf8');
+    expect(JSON.parse(served)).toEqual(PAYLOAD);
+    expect(served).not.toMatch(/shadow_contributions|events_window/);
+    // Compact, like the pipeline writes it, and keyed in the same order.
+    expect(served).toBe(JSON.stringify(PAYLOAD));
+    expect(result.stripped).toBeGreaterThan(0);
+    // The state itself is left alone.
+    expect(fs.readFileSync(sourcePath, 'utf8')).toMatch(/shadow_contributions/);
+  });
+
   it('writes nothing outside the output directory', () => {
     publish();
     const beside = fs.readdirSync(dir).sort();

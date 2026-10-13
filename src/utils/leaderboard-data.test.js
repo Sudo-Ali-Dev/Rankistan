@@ -267,6 +267,21 @@ describe('loadDeveloperDetail', () => {
     expect(developer).toEqual(FULL.leaderboard[1]);
   });
 
+  it('gives the fallback row as the file would, without the pipeline-only fields', async () => {
+    const measured = {
+      ...FULL,
+      leaderboard: FULL.leaderboard.map((row) => ({
+        ...row,
+        shadow_contributions: { v: 1 },
+        events_window: { fetched: 1, truncated: false, days: 60 }
+      }))
+    };
+    const fetchImpl = serve({ './data.json': measured });
+    const { developer } = await loadDeveloperDetail('sara', { fetchImpl, now: 1_000 });
+    expect(developer).toEqual(FULL.leaderboard[1]);
+    expect(developer).toEqual(SPLIT['./dev/sara.json'].developer);
+  });
+
   it('does not take a file for someone else as this developer', async () => {
     const misrouted = {
       ...SPLIT,

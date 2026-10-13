@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   BOARD_FIELDS,
+  PIPELINE_ONLY_FIELDS,
   SPLIT_SCHEMA,
   buildBoard,
   buildDeveloperFile,
@@ -161,12 +162,38 @@ describe('buildDigest', () => {
 });
 
 describe('buildDeveloperFile', () => {
-  it('carries the full row, untouched, with its schema and date', () => {
+  it('carries the row as the browser is given it, with its schema and date', () => {
     const row = REAL.leaderboard[0];
     const file = buildDeveloperFile(REAL, row);
     expect(file).toEqual({ schema: SPLIT_SCHEMA, last_updated: REAL.last_updated, developer: row });
     expect(isDeveloperFileFor(file, row.username.toUpperCase())).toBe(true);
     expect(isDeveloperFileFor(file, 'someone-else')).toBe(false);
+  });
+});
+
+describe('pipeline-only fields', () => {
+  const measured = {
+    ...REAL,
+    leaderboard: REAL.leaderboard.map((row) => ({
+      ...row,
+      shadow_contributions: { v: 1, at: '2026-10-14T00:00:00Z', cal60: [1, 2, 3] },
+      events_window: { fetched: 200, truncated: true, days: 6.1 }
+    }))
+  };
+
+  it('are named, and none is a board field', () => {
+    expect(PIPELINE_ONLY_FIELDS).toEqual(['shadow_contributions', 'events_window']);
+    for (const field of PIPELINE_ONLY_FIELDS) expect(BOARD_FIELDS).not.toContain(field);
+  });
+
+  it('reach no file the browser reads, which stay byte for byte what they were', () => {
+    expect(JSON.stringify(buildBoard(measured))).toBe(JSON.stringify(buildBoard(REAL)));
+    expect(JSON.stringify(buildDigest(measured))).toBe(JSON.stringify(buildDigest(REAL)));
+    measured.leaderboard.forEach((row, i) => {
+      expect(JSON.stringify(buildDeveloperFile(measured, row))).toBe(
+        JSON.stringify(buildDeveloperFile(REAL, REAL.leaderboard[i]))
+      );
+    });
   });
 });
 

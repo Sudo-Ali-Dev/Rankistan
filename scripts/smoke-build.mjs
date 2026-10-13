@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Window } from 'happy-dom';
+import { buildPublicPayload, hasPipelineOnlyFields } from '../src/utils/split-data.js';
 
 const DIST = path.join(process.cwd(), 'dist');
 const failures = [];
@@ -66,10 +67,24 @@ const source = path.join(process.cwd(), 'public', 'data.json');
 const published = path.join(DIST, 'data.json');
 if (!fs.existsSync(published)) {
   fail('dist/data.json missing - the Worker reads it from the site root');
-} else if (fs.existsSync(source) && !fs.readFileSync(source).equals(fs.readFileSync(published))) {
-  fail('dist/data.json differs from public/data.json');
+} else if (fs.existsSync(source)) {
+  // The served copy is the state without its pipeline-only fields (split-data.js), and the state
+  // itself when no row has any.
+  const sourceBytes = fs.readFileSync(source);
+  const payload = JSON.parse(sourceBytes.toString('utf8'));
+  const expected = hasPipelineOnlyFields(payload)
+    ? Buffer.from(JSON.stringify(buildPublicPayload(payload)))
+    : sourceBytes;
+  if (!expected.equals(fs.readFileSync(published))) {
+    fail('dist/data.json is not public/data.json without its pipeline-only fields');
+  } else {
+    note(
+      `board.json, digest.json and ${devFiles} developer files present; data.json ` +
+        (expected === sourceBytes ? 'unchanged' : `${sourceBytes.length - expected.length} bytes of pipeline-only fields left out`)
+    );
+  }
 } else {
-  note(`board.json, digest.json and ${devFiles} developer files present; data.json unchanged`);
+  note(`board.json, digest.json and ${devFiles} developer files present`);
 }
 
 // 3. Boot the real bundle and assert it mounts.
