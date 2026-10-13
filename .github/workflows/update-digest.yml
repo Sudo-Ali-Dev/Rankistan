@@ -12,9 +12,10 @@ name: Update Leaderboard
 # serialized writer and a single deployer, none of that is needed.
 
 on:
-  # Primary trigger: cron-job.org dispatches at the top of every hour. External
-  # dispatches are immune to GitHub's 60-day auto-disable of scheduled
-  # workflows, which is why it stays primary.
+  # Primary trigger: the Cloudflare Worker's cron dispatches at the top of every
+  # hour (cloudflare/scheduled.js). External dispatches are immune to GitHub's
+  # 60-day auto-disable of scheduled workflows, and GitHub's scheduler has not
+  # fired in this repository since 2026-04-03.
   workflow_dispatch:
     inputs:
       batch:
@@ -24,7 +25,7 @@ on:
   # No `schedule` here, deliberately: GitHub disables a scheduled workflow
   # after 60 days without repository activity, and a disabled workflow cannot
   # be dispatched. The backup trigger lives in pipeline-backup.yml instead,
-  # which dispatches this one when cron-job.org has not.
+  # which dispatches this one when the :00 dispatch has not run.
 
 # The repository default is read-only; this is everything the job does.
 permissions:

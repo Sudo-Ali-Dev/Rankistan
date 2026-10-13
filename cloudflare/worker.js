@@ -2,6 +2,7 @@
 // wrangler to bind it.
 export { RateLimiter } from './rate-limiter.js';
 import { dispatchScheduledWorkflows } from './scheduled.js';
+import { handleHealthRequest } from './health.js';
 import { RATE_LIMIT_MAX_REQUESTS, GITHUB_USERNAME_RE } from './limits.js';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
@@ -687,10 +688,10 @@ async function handleBadgeRequest(request, env) {
 }
 
 export default {
-  // The hourly cron in wrangler.toml: dispatches the backup trigger and the watchdog, since
+  // The crons in wrangler.toml: the pipeline at :00, the backup trigger and the watchdog at :35.
   // GitHub's own scheduler has not fired in this repository since April (see scheduled.js).
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(dispatchScheduledWorkflows(env));
+    ctx.waitUntil(dispatchScheduledWorkflows(env, { cron: controller.cron }));
   },
 
   async fetch(request, env) {
@@ -707,6 +708,10 @@ export default {
 
     if (url.pathname.startsWith('/api/heatmap/')) {
       return handleHeatmapRequest(request, env);
+    }
+
+    if (url.pathname === '/api/health') {
+      return handleHealthRequest();
     }
 
     if (url.pathname !== '/api/dev-summary') {

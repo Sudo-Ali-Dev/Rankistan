@@ -149,7 +149,7 @@ describe('evaluate', () => {
   it('flags a disabled backup trigger, the part GitHub can auto-disable', () => {
     const alarms = evaluate(healthy({ backupWorkflow: { state: 'disabled_inactivity' } }), NOW);
     expect(codes(alarms)).toEqual(['BACKUP_DISABLED']);
-    expect(alarms[0].message).toContain('cron-job.org is now the only thing');
+    expect(alarms[0].message).toContain("the Worker's :00 dispatch is now the only thing");
   });
 
   it('treats an unreadable backup trigger as a failed check', () => {

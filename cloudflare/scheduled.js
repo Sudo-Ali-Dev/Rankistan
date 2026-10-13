@@ -1,32 +1,55 @@
-// The Worker's cron trigger: an hourly clock that does not depend on GitHub's scheduler.
+// The Worker's cron triggers: the pipeline's clock, independent of GitHub's scheduler.
 //
 // On 2026-10-13 no workflow in this repository had run on a `schedule` since 2026-04-03. The
 // watchdog (cron :17, merged 13:03 UTC) missed five slots in a row, and the backup trigger (cron
 // :35) missed its first two, while every workflow_dispatch ran at once. Both workflows were
-// `active`, on the default branch, valid, and last edited by the owner's account. So the backup
-// that was meant to cover an hour cron-job.org missed, and the watchdog meant to notice, ran only
-// when the pipeline itself dispatched them - and nothing at all would run if cron-job.org stopped.
+// `active`, on the default branch, valid, and last edited by the owner's account. The pipeline
+// itself was dispatched by cron-job.org, whose token had been revoked that afternoon.
 //
-// This dispatches both workflows from Cloudflare instead. Dispatching is safe to repeat:
-// pipeline-backup.yml runs scripts/should-run.js and starts the pipeline only when no run already
-// covers the hour, so this never processes a batch twice, and a second watchdog run in an hour
-// only re-reads the same state. If GitHub's own schedule starts firing again, the two coexist.
+// So both clocks live here now, in DISPATCH_PLAN:
+//
+//   :00  update-digest.yml - the hour's batch, the primary trigger. Dispatched directly, as
+//        cron-job.org did; the batch is chosen from the Asia/Karachi hour inside the run.
+//   :35  pipeline-backup.yml, which starts the pipeline only when no run covered the hour
+//        (scripts/should-run.js), so a missed :00 costs half an hour, never a double batch;
+//        and watchdog.yml, so the alarms run hourly.
+//
+// Nothing here can report its own failure, so an outside monitor watches the result instead:
+// cron-job.org requests /api/health (health.js), which answers 503 once the board is stale.
 //
 // The token is a fine-grained personal access token limited to this repository with
 // Actions: read and write, stored as the Worker secret GITHUB_DISPATCH_TOKEN. Nothing else.
 
 export const DISPATCH_REPO = 'Sudo-Ali-Dev/Rankistan';
 export const DISPATCH_REF = 'main';
-export const SCHEDULED_WORKFLOWS = ['pipeline-backup.yml', 'watchdog.yml'];
+export const DISPATCH_PLAN = Object.freeze({
+  '0 * * * *': Object.freeze(['update-digest.yml']),
+  '35 * * * *': Object.freeze(['pipeline-backup.yml', 'watchdog.yml'])
+});
+
+/** The workflows a cron expression dispatches. An expression with no plan is a config error. */
+export function workflowsFor(cron) {
+  const workflows = DISPATCH_PLAN[cron];
+  if (!workflows) {
+    throw new Error(
+      `No dispatch plan for cron "${cron}". Known: ${Object.keys(DISPATCH_PLAN).join(', ')}.`
+    );
+  }
+  return workflows;
+}
 const GITHUB_API = 'https://api.github.com';
 const DISPATCH_TIMEOUT_MS = 15000;
 
 /**
- * Dispatch every SCHEDULED_WORKFLOWS entry on DISPATCH_REF. Each is attempted even if another
+ * Dispatch every workflow `cron` plans, on DISPATCH_REF. Each is attempted even if another
  * fails, and the run throws afterwards if any did, so Cloudflare records the cron as failed
  * rather than as a success that dispatched nothing. A failure message never includes the token.
  */
-export async function dispatchScheduledWorkflows(env, { fetchImpl = fetch, log = console } = {}) {
+export async function dispatchScheduledWorkflows(
+  env,
+  { cron, fetchImpl = fetch, log = console } = {}
+) {
+  const workflows = workflowsFor(cron);
   const token =
     typeof env?.GITHUB_DISPATCH_TOKEN === 'string' ? env.GITHUB_DISPATCH_TOKEN.trim() : '';
   if (!token) {
@@ -34,7 +57,7 @@ export async function dispatchScheduledWorkflows(env, { fetchImpl = fetch, log =
   }
 
   const failures = [];
-  for (const workflow of SCHEDULED_WORKFLOWS) {
+  for (const workflow of workflows) {
     const url = `${GITHUB_API}/repos/${DISPATCH_REPO}/actions/workflows/${workflow}/dispatches`;
     try {
       const response = await fetchImpl(url, {
@@ -62,9 +85,9 @@ export async function dispatchScheduledWorkflows(env, { fetchImpl = fetch, log =
   }
 
   if (failures.length > 0) {
-    const message = `Hourly dispatch failed for ${failures.length} of ${SCHEDULED_WORKFLOWS.length}: ${failures.join('; ')}`;
+    const message = `Hourly dispatch failed for ${failures.length} of ${workflows.length}: ${failures.join('; ')}`;
     log.error(message);
     throw new Error(message);
   }
-  return SCHEDULED_WORKFLOWS.length;
+  return workflows.length;
 }

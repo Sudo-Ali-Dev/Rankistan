@@ -2,11 +2,12 @@ name: Pipeline Backup Trigger
 
 # A second way for the leaderboard pipeline to run, kept in its own file.
 #
-# The pipeline (update-digest.yml) is dispatched hourly by cron-job.org. On
-# 2026-10-13 that scheduler's token was revoked and the 14:00 UTC run never
-# happened. This workflow fires mid-hour and dispatches the pipeline only when
-# no dispatched run already covers the hour (scripts/should-run.js), so the two
-# never process the same batch twice.
+# The pipeline (update-digest.yml) is dispatched at :00 by the Cloudflare
+# Worker's cron. It used to be cron-job.org, whose token was revoked on
+# 2026-10-13, after which the 14:00 UTC run never happened. This workflow runs
+# mid-hour and dispatches the pipeline only when no dispatched run already
+# covers the hour (scripts/should-run.js), so the two never process the same
+# batch twice.
 #
 # Why a separate file: GitHub disables a workflow that has a `schedule` trigger
 # after 60 days without repository activity, and a disabled workflow cannot be
