@@ -13,8 +13,9 @@ npm install
 npm run dev
 ```
 
-That is all you need for **frontend work**. The dev server reads the committed
-`public/data.json`, so no tokens are required.
+That is all you need for **frontend work**. The first `npm run dev` downloads
+the latest board to `public/data.json` (`npm run state:pull` refreshes it), and
+no token is required.
 
 For **pipeline work** (`scripts/`), copy `.env.example` to `.env` and set
 `MY_GITHUB_PAT`. Only public data is read, so a token with no scopes is enough —
@@ -88,12 +89,15 @@ Explain **why** in the body when it isn't obvious from the diff.
 | `scripts/` | The Node data pipeline. `run-all.js` is the only entry point CI calls. |
 | `cloudflare/` | Worker serving AI summaries, rank badges, and the heatmap proxy. |
 | `score-config.json` | All scoring weights and caps, validated by `src/model/config.js`. Change it here, never inline. |
-| `public/data.json` | Generated. Never edit by hand; the pipeline rewrites it hourly. |
+| `public/data.json` | Not in git. The board lives on the `pipeline-state` release; `npm run state:pull` downloads it here. |
+| `fixtures/data.sample.json` | A 50-row sample of the board. CI builds, verifies and dry-runs against it, never against live data. |
 
 ## Things worth knowing before you touch them
 
-- **`public/data.json` is generated and committed by CI** 24 times a day. Do
-  not include it in a PR; you will conflict with the bot immediately.
+- **The board is pipeline state, not a file in git.** Each pipeline run loads
+  it from the `pipeline-state` release, merges one batch, saves it back, and
+  dispatches `deploy.yml`, the only workflow that deploys Pages. See
+  `scripts/state-store.js` and the README's "Where the Board Lives".
 - **The scoring formula exists once, in `src/model/`.** The pipeline and the
   Register preview both call it; neither does any arithmetic of its own. If a
   change can move any developer's score, bump the major `MODEL_VERSION` in
@@ -102,7 +106,10 @@ Explain **why** in the body when it isn't obvious from the diff.
 - **Worker changes need a deploy.** `npm run cf:deploy` is a separate step from
   merging; a merged PR does not update the Worker.
 - **`update-digest.yml` is dispatched by an external cron job** by filename. Do
-  not rename that workflow.
+  not rename that workflow, and do not give it a `schedule`: GitHub disables a
+  scheduled workflow after 60 days without repository activity, and a disabled
+  workflow cannot be dispatched. The backup, `pipeline-backup.yml`, dispatches
+  it at `:35` when no dispatched run covers the hour (`scripts/should-run.js`).
 
 ## Reporting bugs
 

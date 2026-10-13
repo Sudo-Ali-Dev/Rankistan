@@ -556,7 +556,8 @@ async function runCli(argv = process.argv.slice(2), env = process.env) {
     await restoreLatest({
       store: createStateStore({ client }),
       target,
-      verify: (payload) => verifyPublished(payload),
+      verify: (payload) =>
+        verifyPublished(payload, { allowMixedVersions: env.ALLOW_MIXED_MODELS === '1' }),
       force: flags.force
     });
     console.log(

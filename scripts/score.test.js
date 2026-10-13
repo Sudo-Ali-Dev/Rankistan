@@ -1,10 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { describe, it, expect } from 'vitest';
 import { scoreDevelopers } from './score.js';
 import { stripInternalFields } from './write-leaderboard.js';
-import { mergeBatchIntoLeaderboard } from './run-all.js';
+import { mergeBatch } from './run-all.js';
 import { verifyPublished } from './verify-published.js';
 import { scoreFromPublished, recomputePublished } from '../src/model/score.js';
 import { compareRows } from '../src/model/order.js';
@@ -96,17 +93,6 @@ describe('scoreDevelopers', () => {
 });
 
 describe('the merged board', () => {
-  let tmp;
-  beforeEach(() => {
-    tmp = path.join(
-      os.tmpdir(),
-      `rankistan-model-${process.pid}-${Math.random().toString(16).slice(2)}.json`
-    );
-  });
-  afterEach(() => {
-    if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
-  });
-
   it('verifies when fresh rows land on a board of legacy rows', () => {
     // A board as published before this change: rounded scores only.
     const legacy = Array.from({ length: 60 }, (_, i) => ({
@@ -115,28 +101,26 @@ describe('the merged board', () => {
       batch_index: 5,
       rank: i + 1
     }));
-    fs.writeFileSync(
-      tmp,
-      JSON.stringify({ last_updated: 'x', total_devs: 60, leaderboard: legacy })
-    );
 
     const fresh = publishBatch(
       Array.from({ length: 40 }, (_, i) => developer(i)),
       0
     );
-    const output = mergeBatchIntoLeaderboard({
+    const { board } = mergeBatch({
+      existing: legacy,
       batchIndex: 0,
       newEntries: fresh,
       evaluated: fresh.map((r) => r.username),
-      targetPath: tmp
+      now: NOW,
+      log: { log: () => {}, warn: () => {} }
     });
 
-    const report = verifyPublished(JSON.parse(fs.readFileSync(tmp, 'utf8')));
+    const report = verifyPublished(board);
     expect(report.errors).toEqual([]);
     expect(report.stamped).toBe(40);
     expect(report.legacy).toBe(60);
     expect(report.recomputed).toBe(40);
     expect(report.orderAsserted).toBe(true);
-    expect(output.leaderboard).toHaveLength(100);
+    expect(board.leaderboard).toHaveLength(100);
   });
 });

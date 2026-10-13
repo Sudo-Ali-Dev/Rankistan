@@ -33,6 +33,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # public/data.json is not in git: the live board lives on the
+      # `pipeline-state` release (scripts/state-store.js). CI builds and checks
+      # a committed 50-row sample instead, so no result here depends on live
+      # data or on the network.
+      - name: Use the committed sample board
+        run: cp fixtures/data.sample.json public/data.json
+
       - name: Lint
         run: npm run lint
 
@@ -48,7 +55,7 @@ jobs:
       - name: Smoke test the build
         run: npm run smoke
 
-  # Guards the pipeline's own logic without touching GitHub or public/data.json.
+  # Guards the pipeline's own logic without touching GitHub or live data.
   pipeline-dry-run:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -68,10 +75,15 @@ jobs:
       - name: Verify activity scoring invariants
         run: npm run verify:activity
 
-      # Recomputes every versioned row of the committed board from its own
-      # published fields, and checks the board is in the model's order.
-      - name: Verify the published leaderboard against the scoring model
+      - name: Use the committed sample board
+        run: cp fixtures/data.sample.json public/data.json
+
+      # Recomputes every versioned row of the sample from its own published
+      # fields, and checks the board is in the model's order.
+      - name: Verify the sample leaderboard against the scoring model
         run: npm run verify:published
 
-      - name: Pipeline dry run (no GitHub calls, writes gitignored output)
+      # Replays batch 0 of the sample through the real merge and guards,
+      # writing gitignored output.
+      - name: Pipeline dry run (no GitHub calls)
         run: node scripts/run-all.js --incremental 0 --dry-run

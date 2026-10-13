@@ -4,6 +4,9 @@ cloudflare/.wrangler/
 cloudflare/.wrangler
 node_modules/
 PkDevIndex-brain.md
+# The board is pipeline state on the `pipeline-state` release, not a git
+# file. `npm run state:pull` (or `npm run dev`) downloads it here.
+public/data.json
 public/test-*.json
 public/score-test*.json
 public/data.dry-run.json

@@ -4,11 +4,12 @@
 //
 // Writes dist/board.json, dist/digest.json and dist/dev/<login>.json, and
 // nothing outside the output directory: these are build products, derived
-// from the committed data.json on every deploy, and never committed
-// themselves. The shapes live in src/utils/split-data.js, shared with the
-// browser so its data.json fallback computes the same thing.
+// from public/data.json on every deploy (deploy.yml downloads it from the
+// pipeline-state release first), and never committed. The shapes live in
+// src/utils/split-data.js, shared with the browser so its data.json fallback
+// computes the same thing.
 //
-// dist/data.json must stay byte-identical to the committed file - the Worker
+// dist/data.json must stay byte-identical to public/data.json - the Worker
 // and outside readers fetch it from the site root - so this checks the copy
 // Vite made rather than trusting it.
 

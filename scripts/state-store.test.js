@@ -18,7 +18,7 @@ import {
   restoreLatest
 } from './state-store.js';
 import { verifyPublished } from './verify-published.js';
-import { mergeBatchIntoLeaderboard } from './run-all.js';
+import { readBoardFile, mergeBatch, runBatch, dispatchWorkflows } from './run-all.js';
 
 const REPO = 'owner/repo';
 const API = `https://api.github.com/repos/${REPO}`;
@@ -59,6 +59,8 @@ function fakeGitHub({ withRelease = false } = {}) {
     bytes: new Map(),
     calls: [],
     created: [],
+    dispatched: [],
+    workflowStates: {},
     clock: START,
     nextId: 500,
     intercept: null
@@ -145,6 +147,18 @@ function fakeGitHub({ withRelease = false } = {}) {
     if (match) {
       const asset = gh.assets.find((a) => a.name === match[1]);
       return asset ? response(200, gh.bytes.get(asset.id)) : response(404, 'Not Found');
+    }
+    match = /^GET api\.github\.com\/repos\/owner\/repo\/actions\/workflows\/([^/]+)$/.exec(route);
+    if (match) {
+      return response(200, { path: match[1], state: gh.workflowStates[match[1]] ?? 'active' });
+    }
+    match =
+      /^POST api\.github\.com\/repos\/owner\/repo\/actions\/workflows\/(.+)\/dispatches$/.exec(
+        route
+      );
+    if (match) {
+      gh.dispatched.push({ workflow: match[1], ...JSON.parse(init.body) });
+      return response(204);
     }
     match = /^DELETE api\.github\.com\/repos\/owner\/repo\/releases\/assets\/(\d+)$/.exec(route);
     if (match) {
@@ -482,7 +496,7 @@ describe('restoreLatest, the rollback path', () => {
       }))
     });
 
-  it('writes the newest state, verified, as a file the main-branch pipeline continues from', async () => {
+  it('writes the newest state, verified, as a file the pipeline continues from', async () => {
     const gh = fakeGitHub({ withRelease: true });
     const text = JSON.stringify(ranked(['a', 'b', 'c'], 4));
     gh.seed('state-1-1.json.gz', zlib.gzipSync(text));
@@ -491,12 +505,13 @@ describe('restoreLatest, the rollback path', () => {
     await restoreLatest({ store: storeFor(gh), target, verify: verifyPublished, log: quiet });
     expect(fs.readFileSync(target, 'utf8')).toBe(text);
 
-    // The next batch on the old pipeline merges onto it like any committed file.
-    const next = mergeBatchIntoLeaderboard({
+    // The next batch merges onto it like any board it loaded itself.
+    const { board: next } = mergeBatch({
+      existing: readBoardFile(target).leaderboard,
       batchIndex: 4,
       newEntries: [{ username: 'a', batch_index: 4, score: 950 }],
       evaluated: ['a', 'b', 'c'],
-      targetPath: target
+      log: quiet
     });
     expect(next.leaderboard.map((r) => r.username)).toEqual(['a']);
   });
@@ -534,5 +549,102 @@ describe('restoreLatest, the rollback path', () => {
         log: quiet
       })
     ).rejects.toThrow(/nothing to restore/);
+  });
+});
+
+describe('one pipeline run against the release', () => {
+  // runBatch over the real store and dispatch, with only fetch faked: load the
+  // newest state, merge one batch into it, guard, save it as a new asset,
+  // prune, and dispatch the deploy and the watchdog.
+  const rows = (batch, names, score) =>
+    names.map((username, i) => ({ username, batch_index: batch, score: score - i }));
+
+  it('saves the merged board as the newest state, then dispatches', async () => {
+    const gh = fakeGitHub({ withRelease: true });
+    const before = board([]);
+    before.leaderboard = [...rows(3, ['a', 'b'], 900), ...rows(8, ['c'], 500)].map((r, i) => ({
+      ...r,
+      rank: i + 1
+    }));
+    gh.seed('state-41-1.json.gz', gz(before));
+
+    const client = makeGitHubClient({
+      token: 'test-token',
+      repo: REPO,
+      fetchImpl: gh.fetch,
+      sleep: async () => {}
+    });
+    const store = createStateStore({ client, log: quiet, now: () => gh.clock });
+    const result = await runBatch({
+      batchIndex: 8,
+      store,
+      measure: async () => ({ newEntries: rows(8, ['c', 'd'], 950), evaluated: ['c', 'd'] }),
+      dispatch: () => dispatchWorkflows({ client, log: quiet }),
+      name: 'state-42-1.json.gz',
+      now: START,
+      log: quiet
+    });
+
+    const loaded = await store.load();
+    expect(loaded.asset.name).toBe('state-42-1.json.gz');
+    expect(loaded.asset.label).toBe('batch 8, 4 developers');
+    expect(loaded.payload.leaderboard.map((r) => [r.username, r.rank])).toEqual([
+      ['c', 1],
+      ['d', 2],
+      ['a', 3],
+      ['b', 4]
+    ]);
+    expect(result.source).toMatch(/^state-41-1\.json\.gz/);
+    expect(gh.dispatched).toEqual([
+      { workflow: 'deploy.yml', ref: 'main' },
+      { workflow: 'watchdog.yml', ref: 'main' }
+    ]);
+  });
+
+  it('saves and deploys, then fails the run, when the watchdog has been disabled', async () => {
+    const gh = fakeGitHub({ withRelease: true });
+    gh.seed('state-41-1.json.gz', gz(board(['a'])));
+    gh.workflowStates['watchdog.yml'] = 'disabled_inactivity';
+    const client = makeGitHubClient({ token: 't', repo: REPO, fetchImpl: gh.fetch });
+    const store = createStateStore({ client, log: quiet });
+
+    await expect(
+      runBatch({
+        batchIndex: 0,
+        store,
+        measure: async () => ({ newEntries: [], evaluated: [] }),
+        dispatch: () => dispatchWorkflows({ client, log: quiet }),
+        name: 'state-42-1.json.gz',
+        now: START,
+        log: quiet
+      })
+    ).rejects.toThrow(/watchdog\.yml \(it is `disabled_inactivity`/);
+    expect((await store.load()).asset.name).toBe('state-42-1.json.gz');
+    expect(gh.dispatched).toEqual([{ workflow: 'deploy.yml', ref: 'main' }]);
+  });
+
+  it('leaves the state as it was when the guard refuses', async () => {
+    const gh = fakeGitHub({ withRelease: true });
+    const before = board(['a', 'b']);
+    gh.seed('state-41-1.json.gz', gz(before));
+    const client = makeGitHubClient({ token: 't', repo: REPO, fetchImpl: gh.fetch });
+    const store = createStateStore({ client, log: quiet });
+
+    await expect(
+      runBatch({
+        batchIndex: 0,
+        store,
+        // A versioned row with nothing to recompute it from: verification refuses.
+        measure: async () => ({
+          newEntries: [{ username: 'z', batch_index: 0, score: 1, model_version: '2.0.0' }]
+        }),
+        dispatch: () => dispatchWorkflows({ client, log: quiet }),
+        name: 'state-42-1.json.gz',
+        now: START,
+        log: quiet
+      })
+    ).rejects.toThrow(/Refusing to save/);
+    expect(gh.assets.map((a) => a.name)).toEqual(['state-41-1.json.gz']);
+    expect(gh.dispatched).toEqual([]);
   });
 });

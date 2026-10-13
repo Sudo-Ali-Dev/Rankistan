@@ -97,6 +97,18 @@ Every developer entry in `data.json` is tagged with a `batch_index`. When batch 
 
 This means developers from batch 23 stay on the leaderboard all day until batch 23 re-runs and refreshes them. No downtime, no daily wipe.
 
+### Where the Board Lives
+
+The board is pipeline state, not a file in git. Each run of `update-digest.yml` loads the newest state from the [`pipeline-state`](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/pipeline-state) release, merges its batch in, and saves the whole board back as a new asset, `state-<run_id>-<run_attempt>.json.gz` (the shape of `data.json`, gzipped). The newest 72 are kept. See [`scripts/state-store.js`](scripts/state-store.js).
+
+Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, or displaced below the 1,000 cap. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. A code push and a data update therefore both deploy the latest of each.
+
+`public/data.json` used to be committed every hour, and was 98.4% of the repository's packed size.
+
+- `npm run state:pull` downloads the latest board to `public/data.json`. No token needed.
+- `node scripts/state-store.js list` shows the saved states.
+- **Rollback.** Revert the change that moved state off main, run `node scripts/state-store.js restore`, which writes the latest state to `public/data.json` only if it verifies, then commit that file. The previous pipeline resumes from it.
+
 ### On-Demand AI Summary System
 
 AI summaries are generated only when a user expands a developer card.
@@ -196,7 +208,8 @@ For a plain-language history of how the formula changed (and why), open the **Ev
 # Install dependencies
 npm install
 
-# Start the frontend dev server (no token needed - reads public/data.json)
+# Start the frontend dev server (no token needed - the first run downloads
+# the latest board to public/data.json; `npm run state:pull` refreshes it)
 npm run dev
 ```
 
@@ -233,7 +246,7 @@ Node 20 is expected (`.nvmrc`, `engines` in `package.json`). See
 
 The repo root is ESM (`"type": "module"` in `package.json`); pipeline scripts use `import`/`export` and import JSON with `with { type: 'json' }`.
 
-Dry-run reuses the local `public/data.json` leaderboard as sample data and writes to `public/data.dry-run.json` only. It does not run fetch, scoring, or per-batch merge — use a real incremental run when testing those steps. Production writes use an atomic temp-file + rename flow so `public/data.json` is never left partially written.
+Dry-run replays the batch's own rows from `public/data.json` as though they had just been measured, through the real merge and guards, and writes `public/data.dry-run.json` only. It does not fetch or score; use a real incremental run when testing those steps. CI dry-runs against the committed 50-row sample, `fixtures/data.sample.json`. A local run reads and writes `public/data.json` and never touches the published state; only `--state release`, which the workflow passes, does.
 
 > Do not set `SKIP_GITHUB=true` in GitHub Actions; CI must run the full incremental pipeline.
 
