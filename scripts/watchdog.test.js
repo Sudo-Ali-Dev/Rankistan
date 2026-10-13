@@ -10,6 +10,7 @@ import {
   renderIssueBody,
   collectState,
   reconcileIssue,
+  isNewTrouble,
   lastMeasuredByBatch,
   factsFrom
 } from './watchdog.js';
@@ -288,6 +289,21 @@ describe('batch freshness, read from the pipeline state', () => {
       asset: { name: 'state-38413673323-1.json.gz', created_at: createdAt }
     });
 
+  it('dates a batch by its recorded run, even with no rows left on the board', () => {
+    // A batch can run and still lose every row to the 1,000 cap; its run is the evidence.
+    const last = lastMeasuredByBatch(rowsFor(0, 30), {
+      0: { at: hoursAgo(2) },
+      5: { at: hoursAgo(1) },
+      bad: { at: 'x' }
+    });
+    expect(last).toEqual({ 0: hoursAgo(2), 5: hoursAgo(1) });
+  });
+
+  it('keeps the later of a recorded run and a row', () => {
+    const last = lastMeasuredByBatch(rowsFor(3, 1), { 3: { at: hoursAgo(10) } });
+    expect(last).toEqual({ 3: hoursAgo(1) });
+  });
+
   it('takes the newest scored_at per batch, and skips rows from before it existed', () => {
     const last = lastMeasuredByBatch([
       ...rowsFor(0, 30, 20),
@@ -397,34 +413,62 @@ describe('reconcileIssue', () => {
     };
   }
   const alarms = [{ code: 'SITE_STALE', key: 'site', message: 'old' }];
+  const run = async (api, current) => reconcileIssue({ api, alarms: current, checkedAt: 'now' });
 
-  it('opens one issue when the first alarm appears', async () => {
+  it('opens one issue when the first alarm appears, as new trouble', async () => {
     const api = fakeApi([]);
-    expect(await reconcileIssue({ api, alarms, checkedAt: 'now' })).toBe('opened #77');
+    expect(await run(api, alarms)).toEqual({ outcome: 'opened #77', newTrouble: true });
     expect(api.calls.map((c) => c.method)).toEqual(['POST']);
   });
 
   it('stays quiet while the same alarms persist', async () => {
     const body = renderIssueBody(alarms, { checkedAt: 'earlier' });
     const api = fakeApi([{ number: 5, body }]);
-    expect(await reconcileIssue({ api, alarms, checkedAt: 'now' })).toContain('already describes');
+    const result = await run(api, alarms);
+    expect(result.outcome).toContain('already describes');
+    expect(result.newTrouble).toBe(false);
     expect(api.calls).toEqual([]);
   });
 
-  it('comments when the set of alarms changes', async () => {
+  it('comments, and reports new trouble, when a new check alarms', async () => {
     const body = renderIssueBody(alarms, { checkedAt: 'earlier' });
     const api = fakeApi([{ number: 5, body }]);
     const more = [...alarms, { code: 'STUCK_RUN', key: '9', message: 'held' }];
-    expect(await reconcileIssue({ api, alarms: more, checkedAt: 'now' })).toBe('updated #5');
+    expect(await run(api, more)).toEqual({
+      outcome: 'updated #5 with new problems',
+      newTrouble: true
+    });
     expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       'PATCH /issues/5',
       'POST /issues/5/comments'
     ]);
   });
 
+  it('updates the issue without a comment while stale batches recover', async () => {
+    // 2026-10-13: 21 batches stale after the outage, clearing one an hour. Each hour the set
+    // shrinks; none of that is news, and none of it should email anyone.
+    const stale = (batches) => [
+      { code: 'BATCH_STALE', key: batches.join(','), message: `stale ${batches.join(',')}` }
+    ];
+    const body = renderIssueBody(stale([0, 1, 2, 3]), { checkedAt: 'earlier' });
+    const api = fakeApi([{ number: 5, body }]);
+    const result = await run(api, stale([1, 2, 3]));
+    expect(result.newTrouble).toBe(false);
+    expect(result.outcome).toMatch(/quietly/);
+    expect(api.calls.map((c) => `${c.method} ${c.path}`)).toEqual(['PATCH /issues/5']);
+  });
+
+  it('reports new trouble when a batch joins the stale set', async () => {
+    const stale = (batches) => [{ code: 'BATCH_STALE', key: batches.join(','), message: 'x' }];
+    const body = renderIssueBody(stale([1, 2]), { checkedAt: 'earlier' });
+    const api = fakeApi([{ number: 5, body }]);
+    expect((await run(api, stale([1, 2, 7]))).newTrouble).toBe(true);
+    expect(api.calls.at(-1).path).toBe('/issues/5/comments');
+  });
+
   it('closes the issue once every check passes again', async () => {
     const api = fakeApi([{ number: 5, body: renderIssueBody(alarms, { checkedAt: 'x' }) }]);
-    expect(await reconcileIssue({ api, alarms: [], checkedAt: 'now' })).toBe('closed #5');
+    expect(await run(api, [])).toEqual({ outcome: 'closed #5', newTrouble: false });
     expect(api.calls.at(-1)).toMatchObject({ method: 'PATCH', body: { state: 'closed' } });
   });
 
@@ -433,15 +477,36 @@ describe('reconcileIssue', () => {
       { number: 3, body: 'somebody else' },
       { number: 4, pull_request: {}, body: ISSUE_MARKER }
     ]);
-    expect(await reconcileIssue({ api, alarms: [], checkedAt: 'now' })).toContain('nothing to do');
+    expect((await run(api, [])).outcome).toContain('nothing to do');
   });
 
   it('writes nothing on a dry run', async () => {
     const api = fakeApi([]);
-    expect(await reconcileIssue({ api, alarms, checkedAt: 'now', dryRun: true })).toContain(
-      'would open'
-    );
+    const result = await reconcileIssue({ api, alarms, checkedAt: 'now', dryRun: true });
+    expect(result.outcome).toContain('would open');
     expect(api.calls).toEqual([]);
+  });
+});
+
+describe('isNewTrouble', () => {
+  const sig = (alarms) => signatureOf(alarms);
+  const a = (code, key) => ({ code, key, message: '' });
+
+  it('treats everything as new when nothing was reported', () => {
+    expect(isNewTrouble(null, [a('SITE_STALE', 'site')])).toBe(true);
+    expect(isNewTrouble(null, [])).toBe(false);
+  });
+
+  it('is not new for the same, or fewer, members of a reported check', () => {
+    const before = sig([a('BATCH_STALE', '0,1,2'), a('SITE_STALE', 'site')]);
+    expect(isNewTrouble(before, [a('BATCH_STALE', '0,1,2')])).toBe(false);
+    expect(isNewTrouble(before, [a('BATCH_STALE', '2')])).toBe(false);
+  });
+
+  it('is new for a new check, or a new member of a reported one', () => {
+    const before = sig([a('BATCH_STALE', '0,1')]);
+    expect(isNewTrouble(before, [a('BATCH_STALE', '0,1,5')])).toBe(true);
+    expect(isNewTrouble(before, [a('BATCH_STALE', '0'), a('STUCK_RUN', '9')])).toBe(true);
   });
 });
 

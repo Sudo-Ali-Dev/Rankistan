@@ -463,6 +463,28 @@ describe('runBatch', () => {
     expect(result.dispatched).toEqual(['deploy.yml']);
   });
 
+  it('records when this batch ran, and carries every other batch run forward', async () => {
+    const calls = [];
+    const earlier = { 7: { at: at(1), measured: 3, complete: true } };
+    const store = memoryStore({ ...state(existing), batch_runs: earlier }, calls);
+    await runBatch({
+      registry: noIntents,
+      batchIndex: 0,
+      store,
+      measure: async () => ({
+        newEntries: [row('a', 0, 900)],
+        evaluated: ['a', 'b'],
+        discoveryComplete: false
+      }),
+      now: NOW,
+      log: quiet
+    });
+    expect(store.saved.board.batch_runs).toEqual({
+      ...earlier,
+      0: { at: new Date(NOW).toISOString(), measured: 1, complete: false }
+    });
+  });
+
   it('saves nothing and dispatches nothing when a guard refuses', async () => {
     const calls = [];
     const store = memoryStore(state(existing), calls);
