@@ -36,7 +36,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          sparse-checkout: scripts/should-run.js
+          # .nvmrc too: setup-node below reads the version from it, and a
+          # non-cone sparse checkout includes only the paths listed here.
+          sparse-checkout: |
+            /scripts/should-run.js
+            /.nvmrc
           sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
