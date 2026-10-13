@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-split-data.js",
     "smoke": "node scripts/smoke-build.mjs",
     "verify:activity": "node scripts/verify-activity-score.js",
     "verify:published": "node scripts/verify-published.js",

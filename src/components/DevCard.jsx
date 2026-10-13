@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { resolveHeatmapApiUrl, resolveHeatmapDirectUrl } from '../utils/groq.js';
+import { loadDeveloperDetail } from '../utils/leaderboard-data';
 import ActivitySparkline from './ActivitySparkline';
 
 const GitHubIcon = ({ size = 16 }) => (
@@ -63,17 +64,38 @@ function ContributionHeatmap({ username }) {
 
 export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  
+  // The list hands this card a board row: what the collapsed row shows. The
+  // bio, top repos and LinkedIn link come from the developer's own file,
+  // fetched on first expand. A full data.json row (the fallback) already has
+  // them.
+  const [detail, setDetail] = useState({ state: 'idle', row: null });
+  const hasFullRow = Boolean(dev) && Object.hasOwn(dev, 'top_repos');
+  const detailState = hasFullRow ? 'ready' : detail.state;
+  // Board fields win, so the open card agrees with the row that was clicked.
+  const full = detail.row ? { ...detail.row, ...dev } : dev;
+
   const tagsColors = [
     { bg: "bg-secondary-container/20", text: "text-on-secondary-container", border: "border-secondary-container/50" },
     { bg: "bg-[#001c38]", text: "text-[#a2c9ff]", border: "border-[#004882]" },
     { bg: "bg-[#002106]", text: "text-[#90fa97]", border: "border-[#00531b]" }
   ];
 
+  const loadDetail = () => {
+    if (detailState === 'loading' || detailState === 'ready') return;
+    setDetail({ state: 'loading', row: null });
+    loadDeveloperDetail(dev?.username).then(
+      ({ developer }) => setDetail({ state: 'ready', row: developer }),
+      () => setDetail({ state: 'failed', row: null })
+    );
+  };
+
   const toggleExpand = async () => {
     const wasCollapsed = !isExpanded;
     setIsExpanded(prev => !prev);
+    if (wasCollapsed) loadDetail();
     if (wasCollapsed && !summary) {
+      // The board row is enough here: the Worker takes only the username from
+      // the request and builds the prompt from its own copy of data.json.
       await onGenerateSummary(dev);
     }
   };
@@ -82,8 +104,17 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
   const githubUrl = `https://github.com/${username}`;
   const avatar = dev?.avatar_url || dev?.avatar || `https://github.com/${username}.png?size=80`;
   const cleanLocation = normalizeLocationForDisplay(dev?.location);
-  const linkedinUrl = typeof dev?.linkedin_url === 'string' ? dev.linkedin_url.trim() : '';
+  const linkedinUrl = typeof full?.linkedin_url === 'string' ? full.linkedin_url.trim() : '';
   const hasLinkedin = linkedinUrl !== '';
+  // Never claim an absence the card has not checked: until the detail file
+  // answers, these say so rather than "No biography available."
+  const bioFallback = detailState === 'ready'
+    ? full.bio || "No biography available."
+    : detailState === 'failed' ? "Biography unavailable." : "Loading profile...";
+  const topRepos = detailState === 'ready' && Array.isArray(full.top_repos) ? full.top_repos : [];
+  const topReposEmpty = detailState === 'ready'
+    ? "No public repositories found."
+    : detailState === 'failed' ? "Repositories unavailable." : "Loading repositories...";
   
   return (
     <div className="border-b border-outline-variant">
@@ -170,7 +201,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
               <div>
                 <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4">Bio_Data</h3>
                 <p className="text-sm text-on-surface-variant leading-relaxed font-body">
-                  {loadingSummaryUser === username ? "Generating AI Summary..." : (summary && summary !== 'error') ? summary : dev.bio || "No biography available."}
+                  {loadingSummaryUser === username ? "Generating AI Summary..." : (summary && summary !== 'error') ? summary : bioFallback}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -198,9 +229,9 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
                 <div className="flex flex-col">
                   <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4">Top_Repos</h3>
                   <div className="flex-grow bg-surface border border-outline-variant p-3 overflow-y-auto h-[160px]">
-                    {Array.isArray(dev.top_repos) && dev.top_repos.length > 0 ? (
+                    {topRepos.length > 0 ? (
                       <ul className="text-xs text-on-surface-variant space-y-2">
-                        {dev.top_repos.map(r => (
+                        {topRepos.map(r => (
                           <li key={r.name} className="flex justify-between items-center border-b border-surface-container pb-1">
                             <a href={r.url} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate font-mono mr-2">{r.name}</a>
                             <span className="text-tertiary text-[10px]">⭐ {r.stars}</span>
@@ -208,7 +239,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
                         ))}
                       </ul>
                     ) : (
-                      <div className="text-xs text-outline font-mono mt-4 text-center">No public repositories found.</div>
+                      <div className="text-xs text-outline font-mono mt-4 text-center">{topReposEmpty}</div>
                     )}
                   </div>
                 </div>
@@ -232,10 +263,12 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
                     type="button"
                     disabled
                     aria-disabled="true"
-                    title="This developer has not linked a LinkedIn profile on GitHub."
+                    title={detailState === 'ready'
+                      ? "This developer has not linked a LinkedIn profile on GitHub."
+                      : detailState === 'failed' ? "Profile details could not be loaded." : "Loading profile details."}
                     className="text-center bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase text-outline opacity-60 cursor-not-allowed"
                   >
-                    Contact Unavailable
+                    {detailState === 'loading' ? 'Loading Contact' : 'Contact Unavailable'}
                   </button>
                 )}
                 <button

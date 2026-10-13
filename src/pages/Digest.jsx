@@ -1,13 +1,15 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { loadLeaderboardData } from '../utils/leaderboard-data';
+import React, { useEffect, useState } from 'react';
+import { loadDigest } from '../utils/leaderboard-data';
 
 function formatNum(n) {
   const v = Number(n);
   return Number.isFinite(v) ? v.toLocaleString() : '0';
 }
 
+const EMPTY_DIGEST = { topRepos: [], topContributors: [], totalRepos: 0, devsWithRepos: 0, activeDevs: 0 };
+
 export default function Digest({ onChangeTab }) {
-  const [leaderboard, setLeaderboard] = useState([]);
+  const [digest, setDigest] = useState(EMPTY_DIGEST);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState('');
@@ -20,11 +22,12 @@ export default function Digest({ onChangeTab }) {
       setError('');
 
       try {
-        const { payload: data } = await loadLeaderboardData();
+        // Precomputed at build time by summarizeDigest() in split-data.js,
+        // which is also what runs here when digest.json is unavailable.
+        const { payload: data } = await loadDigest();
         if (!alive) return;
 
-        const rows = Array.isArray(data?.leaderboard) ? data.leaderboard : [];
-        setLeaderboard(rows);
+        setDigest({ ...EMPTY_DIGEST, ...data });
         setLastUpdated(data.last_updated || '');
       } catch (e) {
         if (!alive) return;
@@ -38,37 +41,7 @@ export default function Digest({ onChangeTab }) {
     return () => { alive = false; };
   }, []);
 
-  const { topRepos, topContributors, totalRepos, devsWithRepos } = useMemo(() => {
-    const devs = Array.isArray(leaderboard) ? leaderboard : [];
-    const repos = devs.flatMap(d =>
-      (d.digest_repos || []).map(r => ({
-        ...r,
-        stars: r.stars || 0,
-        dev: d.username,
-        devAvatar: d.avatar_url,
-      }))
-    );
-    repos.sort((a, b) => b.stars - a.stars);
-
-    const contribMap = new Map();
-    for (const r of repos) {
-      if (!contribMap.has(r.dev)) {
-        contribMap.set(r.dev, { username: r.dev, avatar: r.devAvatar, repoCount: 0, totalStars: 0 });
-      }
-      const entry = contribMap.get(r.dev);
-      entry.repoCount += 1;
-      entry.totalStars += r.stars;
-    }
-    const contributors = Array.from(contribMap.values())
-      .sort((a, b) => b.totalStars - a.totalStars);
-
-    return {
-      topRepos: repos.slice(0, 100),
-      topContributors: contributors.slice(0, 10),
-      totalRepos: repos.length,
-      devsWithRepos: devs.filter(d => d.digest_repos?.length > 0).length,
-    };
-  }, [leaderboard]);
+  const { topRepos, topContributors, totalRepos, devsWithRepos, activeDevs } = digest;
 
   const generatedDate = lastUpdated
     ? new Date(lastUpdated).toLocaleString('en-US', {
@@ -165,7 +138,7 @@ export default function Digest({ onChangeTab }) {
           </div>
           <div className="border border-outline-variant bg-surface-container-lowest p-3 sm:p-5">
             <span className="material-symbols-outlined text-primary-container text-lg sm:text-2xl mb-2">trending_up</span>
-            <div className="font-headline text-lg sm:text-2xl font-bold text-primary-container">{formatNum(leaderboard.length)}</div>
+            <div className="font-headline text-lg sm:text-2xl font-bold text-primary-container">{formatNum(activeDevs)}</div>
             <div className="font-mono text-[10px] text-outline uppercase tracking-widest mt-1">Active Devs</div>
           </div>
         </div>

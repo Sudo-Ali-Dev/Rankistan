@@ -53,6 +53,24 @@ if (!reactV || !reactDomV) {
 }
 void pkg;
 
+// 2b. The split data files the browser reads, and data.json byte-for-byte as
+//     committed: the Worker and outside readers fetch it from the site root.
+for (const file of ['board.json', 'digest.json']) {
+  if (!fs.existsSync(path.join(DIST, file))) fail(`dist/${file} missing - did build-split-data run?`);
+}
+const devDir = path.join(DIST, 'dev');
+const devFiles = fs.existsSync(devDir) ? fs.readdirSync(devDir).length : 0;
+if (devFiles === 0) fail('dist/dev/ has no developer files');
+const committed = path.join(process.cwd(), 'public', 'data.json');
+const published = path.join(DIST, 'data.json');
+if (!fs.existsSync(published)) {
+  fail('dist/data.json missing - the Worker reads it from the site root');
+} else if (fs.existsSync(committed) && !fs.readFileSync(committed).equals(fs.readFileSync(published))) {
+  fail('dist/data.json differs from public/data.json');
+} else {
+  note(`board.json, digest.json and ${devFiles} developer files present; data.json unchanged`);
+}
+
 // 3. Boot the real bundle and assert it mounts.
 const entry = refs.find((r) => r.endsWith('.js'));
 if (!entry) {
@@ -67,14 +85,16 @@ if (!entry) {
 
   document.body.innerHTML = '<div id="root"></div>';
 
-  // The app fetches data.json on mount; serve the real file so the render path
-  // is the production one rather than an error branch.
-  const dataPath = path.join(DIST, 'data.json');
-  const dataJson = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : '{"leaderboard":[]}';
+  // Serve dist/ itself, as Pages does, so the render path is the production
+  // one (board.json, not the data.json fallback) rather than an error branch.
+  const requested = [];
   window.fetch = async (url) => {
-    const u = String(url);
-    if (u.includes('data.json')) {
-      return { ok: true, status: 200, json: async () => JSON.parse(dataJson), text: async () => dataJson };
+    const rel = decodeURIComponent(new URL(String(url), 'https://rankistan.dev/').pathname).replace(/^\/+/, '');
+    requested.push(rel);
+    const file = path.join(DIST, rel);
+    if (rel && file.startsWith(DIST + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+      const text = fs.readFileSync(file, 'utf8');
+      return { ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text };
     }
     return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
   };
@@ -97,6 +117,18 @@ if (!entry) {
     fail('#root is empty after mount - the app did not render (this is the outage signature)');
   } else {
     note(`app mounted, #root contains ${rendered.length} chars of markup`);
+  }
+
+  // The point of the split: the first screen must not download the 1.65 MB file.
+  if (!requested.includes('board.json')) {
+    fail(`the leaderboard did not request board.json (requested: ${requested.join(', ') || 'nothing'})`);
+  } else if (requested.includes('data.json')) {
+    fail('the first mount downloaded data.json; it should read board.json');
+  } else {
+    const board = JSON.parse(fs.readFileSync(path.join(DIST, 'board.json'), 'utf8'));
+    const first = board.leaderboard?.[0]?.username;
+    if (first && !rendered.includes(first)) fail(`board.json loaded but its first row (${first}) did not render`);
+    else note(`first mount read board.json only, and rendered its rows`);
   }
 
   const fatal = consoleErrors.filter((e) => /Minified React error|Invalid hook|Cannot read/i.test(e));

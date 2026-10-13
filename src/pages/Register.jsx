@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { loadLeaderboardData } from '../utils/leaderboard-data';
+import { loadBoard, loadDeveloperDetail } from '../utils/leaderboard-data';
 import { isLikelyPakistaniLocation, normalizeLocationForDisplay } from '../utils/location';
 import ScoreBreakdownPanel from '../components/ScoreBreakdownPanel';
 import { computeDeveloperScoreBreakdown } from '../utils/score-breakdown.js';
@@ -109,18 +109,30 @@ export default function Register({ onChangeTab }) {
 
       let lb = [];
       try {
-        const { payload: leaderboardPayload } = await loadLeaderboardData();
+        const { payload: leaderboardPayload } = await loadBoard();
         lb = Array.isArray(leaderboardPayload?.leaderboard) ? leaderboardPayload.leaderboard : [];
       } catch { /* ignored */ }
+
+      // The board carries no bios (they would nearly double it), so the ten
+      // shown here come from each developer's own file. A row whose file
+      // cannot be read shows its location alone, as a row without a bio does.
+      const shown = lb.slice(0, RECENT_SYNC_LIMIT);
+      const bios = await Promise.all(
+        shown.map((d) =>
+          loadDeveloperDetail(d.username)
+            .then(({ developer }) => developer.bio || '')
+            .catch(() => '')
+        )
+      );
 
       // Only what the published row actually says. These rows used to carry
       // an invented job title ('Systems Engineer' when there was no bio), a
       // seniority guessed from repo count ('Senior' / 'Mid-Level'), and a
       // fabricated "(index + 1) * 14m ago" sync time for real people.
-      const formattedLb = lb.slice(0, RECENT_SYNC_LIMIT).map((d) => ({
+      const formattedLb = shown.map((d, i) => ({
         avatar: d.avatar_url,
         username: d.username || d.login,
-        role: d.bio || '',
+        role: bios[i],
         location: normalizeLocationForDisplay(d.location),
         score: d.score,
         rank: d.rank,

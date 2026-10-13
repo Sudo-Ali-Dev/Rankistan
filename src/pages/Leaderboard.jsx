@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DevCard from '../components/DevCard';
 import CompareModal from '../components/CompareModal';
-import { loadLeaderboardData } from '../utils/leaderboard-data';
+import { loadBoard } from '../utils/leaderboard-data';
 import { freshnessOf, formatAge } from '../utils/freshness';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { ensureLeaderboardTags, getAvailableTags } from '../utils/tags';
@@ -91,7 +91,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
       setError('');
 
       try {
-        const { payload: leaderboardPayload, fromCache } = await loadLeaderboardData();
+        const { payload: leaderboardPayload, fromCache } = await loadBoard();
 
         if (!alive) return;
 
