@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { loadLeaderboardData } from '../utils/leaderboard-data';
 import { isLikelyPakistaniLocation, normalizeLocationForDisplay } from '../utils/location';
-import scoreConfig from '../../score-config.json';
 import ScoreBreakdownPanel from '../components/ScoreBreakdownPanel';
 import { computeDeveloperScoreBreakdown } from '../utils/score-breakdown.js';
 
@@ -255,12 +254,12 @@ export default function Register({ onChangeTab }) {
       const hasNoLongGaps = longestGap <= CRITERIA.MAX_INACTIVITY_GAP_DAYS;
 
       const breakdown = computeDeveloperScoreBreakdown({
-        config: scoreConfig,
         events: allEvents,
         totalStars,
         followers: data.followers,
         publicRepos: data.public_repos,
-        createdAt: data.created_at
+        createdAt: data.created_at,
+        now: Date.now()
       });
 
       const calculatedScore = breakdown.finalScore;

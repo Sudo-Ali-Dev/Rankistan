@@ -22,10 +22,9 @@ body:
     attributes:
       label: Does this change the scoring formula?
       description: >
-        Scoring changes need matching updates to scripts/score.js,
-        src/utils/score-breakdown.js, score-config.json, the About and
-        Evolution pages, and the README - so they are usually batched
-        rather than merged one at a time.
+        Scoring changes go in score-config.json and src/model/, and need a
+        MODEL_VERSION bump, a dated Evolution entry, and a README update - so
+        they are usually batched rather than merged one at a time.
       options:
         - label: Yes, this changes how developers are scored or ranked
 

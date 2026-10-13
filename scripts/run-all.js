@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compareRows } from '../src/model/order.js';
 import {
   fetchPakistaniDevelopers,
   applyActivityFilter,
@@ -315,13 +316,10 @@ export function mergeBatchIntoLeaderboard({
     map.set(key(dev), dev);
   }
 
+  // The whole board is re-sorted on every merge, carried rows included, so it
+  // is always in one order: see src/model/order.js.
   let leaderboard = [...map.values()];
-  leaderboard.sort((a, b) => {
-    const diff = (b.score || 0) - (a.score || 0);
-    return diff !== 0
-      ? diff
-      : String(a.username || '').localeCompare(String(b.username || ''));
-  });
+  leaderboard.sort(compareRows);
   leaderboard = leaderboard.slice(0, MAX_DEVELOPERS);
   leaderboard.forEach((d, i) => {
     d.rank = i + 1;

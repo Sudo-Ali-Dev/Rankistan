@@ -1,9 +1,9 @@
-import config from '../score-config.json' with { type: 'json' };
+import { SCORE_CONFIG as config } from '../src/model/config.js';
 import {
   marginalPoints,
   computeActivityScore30d,
   scoreDayType
-} from '../src/utils/activity-score.js';
+} from '../src/model/activity.js';
 
 const BASE = 2;
 const REFERENCE_N = [1, 2, 5, 10, 20];
