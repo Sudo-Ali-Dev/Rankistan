@@ -1,0 +1,46 @@
+name: Pipeline Watchdog
+
+# Watches the leaderboard pipeline from outside it. See scripts/watchdog.js for
+# what each check answers and where its threshold comes from.
+#
+# Deliberately independent of everything it watches: its own schedule, its own
+# concurrency group, and no `environment:` - the eight-day outage of October
+# 2026 was a run stuck at the github-pages environment gate, and a watchdog
+# that waited at the same gate would have stalled with it.
+
+on:
+  schedule:
+    # Off the hour, so it never lands on the external scheduler's dispatch at
+    # :00 and is less exposed to GitHub's top-of-the-hour cron delays.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: pipeline-watchdog
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # Built-ins and fetch only, so there is no `npm ci` to fail first.
+      - name: Check the pipeline
+        run: node scripts/watchdog.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WATCHDOG_OWNER: ${{ github.repository_owner }}
+          SITE_URL: https://rankistan.dev/data.json

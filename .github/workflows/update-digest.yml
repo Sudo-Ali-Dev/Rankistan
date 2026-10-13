@@ -14,14 +14,20 @@ permissions:
   id-token: write
 
 concurrency:
-  # Renamed from `pages-deploy` on 2026-10-13. That group wedged: from the
-  # 13:00 UTC run on 2026-10-05 onward every dispatch sat at `pending` with no
-  # job allocated, waited an hour, and was displaced by the next one - 39 runs,
-  # eight days of stale data, and no email, because GitHub only notifies on
-  # failure and a displaced run is `cancelled`. Nothing held the lock: no run
-  # was in progress anywhere in the repo, and marking the one statusless Pages
-  # deployment inactive did not release it. GitHub has no API to free a
-  # concurrency lock, so a new name is the only way to get a fresh one.
+  # Renamed from `pages-deploy` on 2026-10-13. Run 37313510144, dispatched at
+  # 13:00 UTC on 2026-10-05, created its Pages deployment and then stopped at
+  # the github-pages environment gate without ever getting a runner. A run held
+  # at a gate still counts as running, so the group admitted nothing else: each
+  # of the next 190 hourly dispatches sat `pending`, waited an hour, and was
+  # displaced by the one after. Eight days of stale data, and nothing failed,
+  # because a displaced run concludes `cancelled`.
+  #
+  # The holder was easy to miss. The API listed it as `queued`, and it was
+  # older than the newest 100 runs, so a check that read only the latest page
+  # found nothing in progress and concluded the lock was empty. A new group
+  # name sidestepped it; it has since been cancelled. watchdog.yml now alarms
+  # on any run held for more than 90 minutes, by status filter over all
+  # history rather than the newest page.
   #
   # Still deliberately not shared with deploy.yml (`pages-deploy-push`); see
   # the comment there.
