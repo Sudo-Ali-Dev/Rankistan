@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { CACHE_KEYS, cache } from '../utils/cache';
+import { loadLeaderboardData } from '../utils/leaderboard-data';
 import { findCityKey, normalizeLocationForDisplay } from '../utils/location';
 
 const PROVINCES = [
@@ -166,20 +166,7 @@ export default function DevMap() {
   useEffect(() => {
     async function load() {
       try {
-        let lb;
-        try {
-          const res = await fetch('./data.json', { cache: 'no-store' });
-          if (res.ok) {
-            lb = await res.json();
-            cache.set(CACHE_KEYS.LEADERBOARD, lb);
-          }
-        } catch {
-          lb = cache.get(CACHE_KEYS.LEADERBOARD);
-        }
-        if (!lb) lb = cache.get(CACHE_KEYS.LEADERBOARD);
-        if (!lb) {
-          throw new Error('Could not load data.json and no cached copy is available.');
-        }
+        const { payload: lb } = await loadLeaderboardData();
         setData(lb);
       } catch (e) {
         console.error('Failed to load leaderboard data', e);

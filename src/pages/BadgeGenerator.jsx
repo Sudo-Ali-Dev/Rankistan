@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { resolveBadgeApiUrl } from "../utils/groq.js";
+import { loadLeaderboardData } from "../utils/leaderboard-data";
 
 const STYLES = [
   { id: "flat", label: "Flat" },
@@ -123,8 +124,7 @@ export default function BadgeGenerator({
       setAvatarUrl(null);
       try {
         if (!leaderboardRef.current) {
-          const res = await fetch("./data.json");
-          leaderboardRef.current = await res.json();
+          leaderboardRef.current = (await loadLeaderboardData()).payload;
         }
 
         const data = leaderboardRef.current;
