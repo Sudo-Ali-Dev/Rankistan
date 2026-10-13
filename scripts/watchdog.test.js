@@ -144,6 +144,21 @@ describe('evaluate', () => {
     expect(evaluate(state, NOW)).toEqual([]);
   });
 
+  it('flags a disabled backup trigger, the part GitHub can auto-disable', () => {
+    const alarms = evaluate(healthy({ backupWorkflow: { state: 'disabled_inactivity' } }), NOW);
+    expect(codes(alarms)).toEqual(['BACKUP_DISABLED']);
+    expect(alarms[0].message).toContain('cron-job.org is now the only thing');
+  });
+
+  it('treats an unreadable backup trigger as a failed check', () => {
+    const alarms = evaluate(healthy({ backupWorkflow: { error: 'HTTP 404' } }), NOW);
+    expect(codes(alarms)).toEqual(['CHECK_FAILED']);
+  });
+
+  it('is quiet when the backup trigger is active', () => {
+    expect(evaluate(healthy({ backupWorkflow: { state: 'active' } }), NOW)).toEqual([]);
+  });
+
   it('flags a disabled pipeline workflow', () => {
     const alarms = evaluate(healthy({ workflow: { state: 'disabled_inactivity' } }), NOW);
     expect(codes(alarms)).toEqual(['WORKFLOW_DISABLED']);
