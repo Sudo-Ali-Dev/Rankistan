@@ -40,10 +40,13 @@
 //   CHECK_FAILED       one of the above could not be read. A check that cannot
 //                      see is not a check that passed.
 //
-// Any alarm fails this run, which GitHub can email, and keeps one open issue
-// that mentions the owner. The issue gets a comment only when the set of
-// alarms changes, so an outage is one thread rather than an hourly flood, and
-// it is closed automatically once every check passes again.
+// Alarms keep one open issue that mentions the owner, updated to the current
+// findings on every run and closed automatically once every check passes. Only
+// new trouble - the issue opening, or a check or batch that was not already in
+// it - comments on the issue and fails this run, which is what GitHub emails.
+// A problem that persists, or shrinks as batches recover, updates the issue
+// quietly: on 2026-10-13 a migration left 21 batches stale for a day, and
+// failing every run would have sent two emails an hour for all of it.
 
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -243,6 +246,33 @@ export function evaluate(state, now = Date.now()) {
   return alarms;
 }
 
+/**
+ * Whether `alarms` hold anything the issue did not already report: a check
+ * whose code is new, or a member of its key that is new (a key such as
+ * BATCH_STALE's lists its batches, comma-separated). Fewer batches, or the same
+ * ones, is not new. With nothing reported before, everything is new.
+ */
+export function isNewTrouble(previousSignature, alarms) {
+  if (alarms.length === 0) return false;
+  if (!previousSignature) return true;
+  const members = (signature) => {
+    const out = new Set();
+    for (const part of signature.split('|').filter(Boolean)) {
+      const at = part.indexOf(':');
+      const code = at === -1 ? part : part.slice(0, at);
+      const key = at === -1 ? '' : part.slice(at + 1);
+      out.add(code);
+      for (const member of key.split(',')) out.add(`${code}:${member}`);
+    }
+    return out;
+  };
+  const before = members(previousSignature);
+  for (const member of members(signatureOf(alarms))) {
+    if (!before.has(member)) return true;
+  }
+  return false;
+}
+
 /** Order-independent identity of an alarm set, so a re-run that finds the
  *  same problems does not post the same comment again. */
 export function signatureOf(alarms) {
@@ -359,12 +389,21 @@ async function attempt(read) {
 }
 
 /**
- * When each batch last measured anyone: the newest `scored_at` among its rows.
- * A batch with no rows, or only rows from before `scored_at` existed, is
- * absent, which evaluate() reads as stale.
+ * When each batch last ran: the time it recorded in the state's `batch_runs`
+ * (scripts/run-all.js), or the newest `scored_at` among its rows, whichever is
+ * later. Rows alone cannot answer it: a batch that ran an hour ago can have
+ * lost every row to the 1,000 cap. A batch with neither is absent, which
+ * evaluate() reads as undated.
  */
-export function lastMeasuredByBatch(rows) {
+export function lastMeasuredByBatch(rows, batchRuns = {}) {
   const lastPublished = {};
+  for (const [batch, run] of Object.entries(batchRuns || {})) {
+    const index = Number(batch);
+    const when = Date.parse(run?.at);
+    if (Number.isInteger(index) && Number.isFinite(when)) {
+      lastPublished[index] = new Date(when).toISOString();
+    }
+  }
   for (const row of rows || []) {
     const batch = row?.batch_index;
     const when = Date.parse(row?.scored_at);
@@ -395,7 +434,7 @@ export async function collectState({
     const latest = await loadState();
     if (!latest) throw new Error(`no state saved on release ${STATE_TAG}`);
     return {
-      lastPublished: lastMeasuredByBatch(latest.payload.leaderboard),
+      lastPublished: lastMeasuredByBatch(latest.payload.leaderboard, latest.payload.batch_runs),
       asset: { name: latest.asset?.name, createdAt: latest.asset?.created_at }
     };
   });
@@ -503,13 +542,18 @@ async function findOpenIssue(api) {
   );
 }
 
-/** Opens, updates or closes the single watchdog issue. Returns what it did. */
+/**
+ * Opens, updates or closes the single watchdog issue. Returns what it did, and
+ * whether the alarms include new trouble (isNewTrouble), which alone comments
+ * on the issue and fails the run.
+ */
 export async function reconcileIssue({ api, alarms, owner, runUrl, checkedAt, dryRun }) {
   const open = await findOpenIssue(api);
+  const result = (outcome, newTrouble = false) => ({ outcome, newTrouble });
 
   if (alarms.length === 0) {
-    if (!open) return 'no issue open, nothing to do';
-    if (dryRun) return `would close #${open.number}`;
+    if (!open) return result('no issue open, nothing to do');
+    if (dryRun) return result(`would close #${open.number}`);
     await api.request('POST', `/issues/${open.number}/comments`, {
       body: `All checks passing again at ${checkedAt}${runUrl ? ` (${runUrl})` : ''}. Closing.`
     });
@@ -517,28 +561,33 @@ export async function reconcileIssue({ api, alarms, owner, runUrl, checkedAt, dr
       state: 'closed',
       state_reason: 'completed'
     });
-    return `closed #${open.number}`;
+    return result(`closed #${open.number}`);
   }
 
   const body = renderIssueBody(alarms, { owner, runUrl, checkedAt });
   if (!open) {
-    if (dryRun) return 'would open a new issue';
+    if (dryRun) return result('would open a new issue', true);
     const created = await api.request('POST', '/issues', {
       title: 'Pipeline watchdog: the leaderboard pipeline needs attention',
       body
     });
-    return `opened #${created.number}`;
+    return result(`opened #${created.number}`, true);
   }
 
-  if (readSignature(open.body) === signatureOf(alarms)) {
-    return `#${open.number} already describes these alarms`;
+  const previous = readSignature(open.body);
+  if (previous === signatureOf(alarms)) {
+    return result(`#${open.number} already describes these alarms`);
   }
-  if (dryRun) return `would update #${open.number}`;
+  const newTrouble = isNewTrouble(previous, alarms);
+  if (dryRun) return result(`would update #${open.number}`, newTrouble);
   await api.request('PATCH', `/issues/${open.number}`, { body });
+  if (!newTrouble) {
+    return result(`updated #${open.number} quietly: nothing new, only fewer or the same problems`);
+  }
   await api.request('POST', `/issues/${open.number}/comments`, {
-    body: `The problems changed at ${checkedAt}:\n\n${alarmTable(alarms)}`
+    body: `New problems at ${checkedAt}:\n\n${alarmTable(alarms)}`
   });
-  return `updated #${open.number}`;
+  return result(`updated #${open.number} with new problems`, true);
 }
 
 async function runCli() {
@@ -569,9 +618,10 @@ async function runCli() {
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
   }
 
-  let issueOutcome;
+  // An issue that cannot be updated cannot carry the alarm, so the run must.
+  let issue = { outcome: '', newTrouble: alarms.length > 0 };
   try {
-    issueOutcome = await reconcileIssue({
+    issue = await reconcileIssue({
       api,
       alarms,
       owner: process.env.WATCHDOG_OWNER,
@@ -580,13 +630,15 @@ async function runCli() {
       dryRun
     });
   } catch (error) {
-    issueOutcome = `issue update failed: ${error.message}`;
+    issue.outcome = `issue update failed: ${error.message}`;
     process.exitCode = 1;
   }
-  console.log(`\nIssue: ${issueOutcome}`);
+  console.log(`\nIssue: ${issue.outcome}`);
 
-  for (const alarm of alarms) console.log(`::error title=${alarm.code}::${alarm.message}`);
-  if (alarms.length > 0) process.exitCode = 1;
+  // Every finding is annotated on the run; only new trouble fails it.
+  const level = issue.newTrouble ? 'error' : 'warning';
+  for (const alarm of alarms) console.log(`::${level} title=${alarm.code}::${alarm.message}`);
+  if (issue.newTrouble) process.exitCode = 1;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

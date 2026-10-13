@@ -14,8 +14,8 @@ name: Update Leaderboard
 on:
   # Primary trigger: the Cloudflare Worker's cron dispatches at the top of every
   # hour (cloudflare/scheduled.js). External dispatches are immune to GitHub's
-  # 60-day auto-disable of scheduled workflows, and GitHub's scheduler has not
-  # fired in this repository since 2026-04-03.
+  # 60-day auto-disable of scheduled workflows, and GitHub's scheduler fired
+  # nothing in this repository from 2026-04-03 to 2026-10-13.
   workflow_dispatch:
     inputs:
       batch:

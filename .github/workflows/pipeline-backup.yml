@@ -15,8 +15,8 @@ name: Pipeline Backup Trigger
 # off this backup - never the pipeline, which has no schedule and stays
 # dispatchable from outside. The watchdog alarms if this file is disabled.
 #
-# GitHub's scheduler has not fired a `schedule` trigger in this repository
-# since 2026-04-03, this one included, so the Cloudflare Worker's cron
+# GitHub's scheduler fired no `schedule` trigger in this repository from
+# 2026-04-03 to 2026-10-13, this one included, so the Cloudflare Worker's cron
 # (cloudflare/scheduled.js) also dispatches this workflow at :35. Either path
 # is safe: the concurrency group keeps one run, and should-run.js decides.
 

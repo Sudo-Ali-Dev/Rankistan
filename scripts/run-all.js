@@ -504,6 +504,16 @@ export async function runBatch({
     allowShrink,
     log
   });
+  // When each batch last ran, carried from run to run. The watchdog dates a batch by this rather
+  // than by its rows, which a batch can lose to the 1,000 cap however recently it ran.
+  merged.board.batch_runs = {
+    ...(loaded.payload.batch_runs || {}),
+    [batchIndex]: {
+      at: new Date(at).toISOString(),
+      measured: newEntries.length,
+      complete: discoveryComplete !== false
+    }
+  };
   const removed = [...optOut.removed, ...merged.removed];
   const guard = guardBoard({
     previous,

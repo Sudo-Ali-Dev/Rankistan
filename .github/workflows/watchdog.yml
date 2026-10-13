@@ -8,10 +8,10 @@ name: Pipeline Watchdog
 # 2026 was a run stuck at the github-pages environment gate, and a watchdog
 # that waited at the same gate would have stalled with it.
 #
-# Its schedule is not what runs it today: GitHub's scheduler has not fired a
-# `schedule` trigger in this repository since 2026-04-03. The Cloudflare
-# Worker's cron (cloudflare/scheduled.js) dispatches it hourly at :35, and the
-# pipeline dispatches it after every run.
+# Its schedule is not what it relies on: GitHub's scheduler fired no `schedule`
+# trigger in this repository from 2026-04-03 until this one ran 35 minutes late
+# on 2026-10-13. The Cloudflare Worker's cron (cloudflare/scheduled.js)
+# dispatches it hourly at :35, and the pipeline dispatches it after every run.
 
 on:
   schedule:
