@@ -34,7 +34,7 @@ const ACTIVITY_FILTERS = [
 ];
 
 const PIPELINE_STEPS = [
-  { step: '01', title: 'DISCOVER', icon: 'search', desc: 'Search GitHub for Pakistani developers via location:pakistan, split into 24 date-range batches to bypass the 1,000-result API cap.' },
+  { step: '01', title: 'DISCOVER', icon: 'search', desc: 'Search GitHub for Pakistani developers via location:pakistan in 24 batches by account creation date. Each batch is cut into slices small enough to list whole, so the 1,000-result search cap never truncates one.' },
   { step: '02', title: 'FETCH', icon: 'download', desc: 'For each developer, fetch profile, up to 200 recent events (2 pages), and all public repositories.' },
   { step: '03', title: 'FILTER', icon: 'filter_alt', desc: 'Apply activity thresholds — contributions, inactivity gaps, account age. Only genuinely active developers pass.' },
   { step: '04', title: 'SCORE', icon: 'calculate', desc: 'Calculate a weighted score from stars, recent activity, followers, and repo count. Apply new-account penalties.' },
@@ -359,9 +359,9 @@ export default function About({ onChangeTab }) {
           </div>
           <div className="p-4 sm:p-6 border border-outline-variant bg-surface-container-lowest">
             <span className="material-symbols-outlined text-secondary mb-4">dns</span>
-            <div className="text-2xl sm:text-3xl font-headline font-bold text-secondary mb-1">~800</div>
-            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Devs / Batch</h4>
-            <p className="font-body text-xs text-outline leading-relaxed">Each batch targets 800–950 developers, staying under GitHub's 1,000-result search API cap. Results merge incrementally.</p>
+            <div className="text-2xl sm:text-3xl font-headline font-bold text-secondary mb-1">≤100</div>
+            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Devs / Request</h4>
+            <p className="font-body text-xs text-outline leading-relaxed">Each batch's date range is cut into slices that fit one 100-result request, so none comes near GitHub's 1,000-result search cap. A slice counts only if it lists completely.</p>
           </div>
         </div>
 

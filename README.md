@@ -70,17 +70,21 @@ Not everyone with a GitHub account qualifies. Developers must pass these thresho
 
 ### Search Strategy
 
-To maximize coverage within GitHub's API limits, the discovery phase splits searches into 24 flexible date-range batches based on account creation date:
+Discovery searches GitHub for `location:pakistan type:user repos:>3 followers:>1`, split into 24 batches by account creation date:
 
 ```
 PK 2000-Jun2014 → PK Jul2014-Jan2016 → ... → PK Aug2024-Dec2024 → PK 2025+
 ```
 
-Each batch targets ~800-950 developers (under the 1,000-result API cap). One batch runs per hour (triggered by [cron-job.org](https://cron-job.org) via `workflow_dispatch`), completing a full cycle every 24 hours. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are removed and replaced with fresh data.
+One batch runs per hour (triggered by [cron-job.org](https://cron-job.org) via `workflow_dispatch`), completing a full cycle every 24 hours. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are replaced with fresh data.
 
-#### PK 2025+ (`batch-23`): multiple GitHub searches in one hourly run
+GitHub returns at most 1,000 results for any one search, and several batches match more than that (`PK Aug2024-Dec2024` matched 1,354 on 2026-10-13). So a batch's range is never listed as a single query. [`scripts/discovery/`](scripts/discovery/) bisects it by creation date — whole days, then seconds — until every slice holds fewer than 30 developers, packs neighbouring slices back together up to 95, and lists each resulting leaf in one GraphQL request. A single request has no page boundary for a follower tie to straddle and no cursor for a rate-limit wait to invalidate.
 
-The limit above is **per search request**, not per batch. The PK 2025+ window can grow past 1,000 matching accounts, which would truncate results if discovered with a single query. For **`batch_index` 23** only, `scripts/fetch-devs.js` runs **several** GitHub user searches in succession during that same workflow (narrower `created:` ranges, defined as a `queries` list on that entry in `SEARCH_BATCHES`), concatenates the usernames, then continues with the normal fetch-and-score steps. The cron schedule is still **one run per hour**; there are still **24** batch indices (`0`–`23`); leaderboard rows from this cohort still carry **`batch_index` 23**.
+A leaf counts only when its listing is provably complete: an error-free response holding as many distinct accounts as GitHub says match. The leaves are also checked to add up to the batch's own count, and a mismatch is reported. A leaf that fails is named in a workflow warning and contributes nobody that run, so the merge carries its developers' existing rows forward rather than reading their absence as a departure. Measured on 2026-10-13, discovery costs 20–25 GraphQL points per batch and none of the REST search budget.
+
+#### PK 2025+ (`batch-23`)
+
+`batch_index` 23 covers three `created:` ranges, defined as a `queries` list on that entry in `SEARCH_BATCHES`. They are partitioned together in the same hourly run, and every row from this cohort still carries **`batch_index` 23**.
 
 ### Incremental Per-Batch Updates
 
