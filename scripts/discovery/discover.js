@@ -330,6 +330,18 @@ export function describeDiscovery(report) {
     );
   }
 
+  // When the counts do not add up, say where. A shortfall seen only as a total cannot be traced
+  // to the leaves that lost people; one line per leaf can.
+  if (!report.sum.valid) {
+    for (const range of report.ranges) info.push(`  range ${range.query}: counted ${range.count}`);
+    for (const leaf of leaves) {
+      info.push(
+        `  leaf ${leafName(base, leaf.query)}: counted ${leaf.count}, listed ` +
+          `${leaf.listedIds ? leaf.listedIds.length : '?'}${leaf.complete ? '' : ` (incomplete: ${leaf.reason})`}`
+      );
+    }
+  }
+
   const warnings = [];
   for (const leaf of leaves) {
     if (leaf.complete) continue;
