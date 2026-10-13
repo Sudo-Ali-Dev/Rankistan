@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SCORE_CONFIG } from '../src/model/config.js';
 import { scoreModel, publishedScoreFields } from '../src/model/score.js';
+import { compareRows } from '../src/model/order.js';
 
 /**
  * Score and rank one batch of developers.
@@ -28,13 +29,7 @@ export function scoreDevelopers(rawDevelopers, { now = Date.now() } = {}) {
     };
   });
 
-  scored.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
-    }
-
-    return String(a.username || '').localeCompare(String(b.username || ''));
-  });
+  scored.sort(compareRows);
 
   return scored.map((dev, index) => ({
     ...dev,
