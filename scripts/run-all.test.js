@@ -8,6 +8,7 @@ import {
   guardBoard,
   runBatch,
   replayBatch,
+  evaluatedLogins,
   createFileStore,
   dispatchWorkflows,
   MIN_REPLACEMENT_RATIO,
@@ -605,6 +606,35 @@ describe('runBatch', () => {
     });
     // Measured 30 days before NOW, judged one day after that: still on.
     expect(names(store.saved.board)).toEqual(['old']);
+  });
+});
+
+describe('evaluatedLogins', () => {
+  const fetched = {
+    developers: [{ username: 'Active' }],
+    screenedOut: ['quiet'],
+    locationRejected: [{ username: 'abroad', location: 'Hyderabad, India', reason: 'india' }]
+  };
+
+  it('counts the fetched, the screened out and the location-rejected as looked at', () => {
+    expect(evaluatedLogins(fetched)).toEqual(['Active', 'quiet', 'abroad']);
+    expect(evaluatedLogins({ developers: [] })).toEqual([]);
+  });
+
+  it('so a developer found by city name and ruled out on location leaves as ineligible', () => {
+    const { board, removed } = merge(
+      [row('Active', 0, 500), row('abroad', 0, 400), row('unseen', 0, 300)],
+      {
+        newEntries: [row('Active', 0, 510, { discovery_source: 'city' })],
+        evaluated: evaluatedLogins(fetched),
+        // One of the batch's two searches was short: the unseen are carried, not counted.
+        discoveryComplete: false
+      }
+    );
+    expect(removed).toEqual([{ username: 'abroad', batch_index: 0, reason: 'ineligible' }]);
+    expect(names(board).sort()).toEqual(['Active', 'unseen']);
+    expect(board.leaderboard.find((d) => d.username === 'unseen').missed_runs).toBeUndefined();
+    expect(board.leaderboard.find((d) => d.username === 'Active').discovery_source).toBe('city');
   });
 });
 

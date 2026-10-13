@@ -14,7 +14,7 @@ import {
 } from './fetch-devs.js';
 import { createSearchClient } from './discovery/graphql.js';
 import { parseShardQuery } from './discovery/partition.js';
-import { fakeGraphql, makePopulation, matcher } from './discovery/fake-search.js';
+import { fakeGraphql, makePopulation, matcher, respond } from './discovery/fake-search.js';
 
 describe('rateLimitWaitMs', () => {
   const headers = (map = {}) => ({ get: (k) => map[k.toLowerCase()] ?? null });
@@ -97,7 +97,7 @@ describe('fetchDeveloperActivity', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   // A fake GitHub that records every request path.
-  function stubGitHub({ pages }) {
+  function stubGitHub({ pages, location = '' }) {
     const seen = [];
     vi.stubGlobal('fetch', async (url) => {
       const path = String(url).replace('https://api.github.com', '');
@@ -114,7 +114,8 @@ describe('fetchDeveloperActivity', () => {
           created_at: '2020-01-01T00:00:00Z',
           public_repos: 10,
           followers: 5,
-          following: 1
+          following: 1,
+          location
         };
       } else status = 404;
       return {
@@ -158,6 +159,39 @@ describe('fetchDeveloperActivity', () => {
     const seen = stubGitHub({ pages: [full, quietFeed()] });
     await fetchDeveloperActivity('dev', 'token');
     expect(seen.some((p) => p.includes('page=2'))).toBe(true);
+  });
+
+  it('does not count a city-sourced developer whose location names a place abroad', async () => {
+    const seen = stubGitHub({ pages: [activeFeed()], location: 'Hyderabad, India' });
+    const result = await fetchDeveloperActivity('dev', 'token', { source: 'city' });
+    expect(result).toEqual({
+      locationRejected: true,
+      username: 'dev',
+      location: 'Hyderabad, India',
+      reason: 'found by a Pakistani city name, but the location also names "india"'
+    });
+    // Settled by the profile, before repos and social accounts are fetched.
+    expect(seen.some((p) => p.includes('/repos?') || p.includes('/social_accounts'))).toBe(false);
+  });
+
+  it('keeps a city-sourced developer in Pakistan and records how they were found', async () => {
+    stubGitHub({ pages: [activeFeed()], location: 'Lahore' });
+    const result = await fetchDeveloperActivity('dev', 'token', { source: 'city' });
+    expect(result.location).toBe('Lahore');
+    expect(result.discovery_source).toBe('city');
+  });
+
+  it('never re-checks a developer location:pakistan found', async () => {
+    stubGitHub({ pages: [activeFeed()], location: 'Pakistan · ex-India' });
+    const result = await fetchDeveloperActivity('dev', 'token', { source: 'pakistan' });
+    expect(result.discovery_source).toBe('pakistan');
+    expect(result.locationRejected).toBeUndefined();
+  });
+
+  it('records no source when it was not told one', async () => {
+    stubGitHub({ pages: [activeFeed()], location: 'Lahore' });
+    const result = await fetchDeveloperActivity('dev', 'token');
+    expect(Object.hasOwn(result, 'discovery_source')).toBe(false);
   });
 
   it('reports an unknown login as not found rather than ineligible', async () => {
@@ -236,6 +270,7 @@ describe('fetchPakistaniDevelopers discovery', () => {
     expect(fetched.filter((login) => unlisted.has(login))).toEqual([]);
     expect(fetched.length + unlisted.size).toBe(people.length);
     expect(result.screenedOut).toHaveLength(fetched.length);
+    expect(result.discoveryComplete).toBe(false);
   });
 
   it('fails the run when nobody in a batch lists completely', async () => {
@@ -267,5 +302,192 @@ describe('fetchPakistaniDevelopers discovery', () => {
         searchClient
       })
     ).rejects.toThrow(/listed none of its 10 developers completely/);
+  });
+});
+
+describe('fetchPakistaniDevelopers with the city twin', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const batchIndex = 16;
+  const { root } = parseShardQuery(SEARCH_BATCHES[batchIndex].q);
+  const isTwin = (q) => q.includes('-location:pakistan');
+
+  function searchFor(people, hooks) {
+    const fake = fakeGraphql(people, hooks);
+    return createSearchClient({
+      token: 't',
+      fetchImpl: fake.fetchImpl,
+      sleep: async () => {},
+      minIntervalMs: 0,
+      log: { warn() {} }
+    });
+  }
+
+  // A REST GitHub over the same people: every feed passes the screen, and the profile reports
+  // the person's location as it is at fetch time.
+  function stubRest(people) {
+    const byLogin = new Map(people.map((u) => [u.login.toLowerCase(), u]));
+    const requested = [];
+    vi.stubGlobal('fetch', async (url) => {
+      const [, login, rest = ''] = /^\/users\/([^/?]+)(.*)$/.exec(
+        String(url).replace('https://api.github.com', '')
+      );
+      const person = byLogin.get(login.toLowerCase());
+      let body = [];
+      if (rest.startsWith('/events')) {
+        requested.push(login);
+        body = activeFeed();
+      } else if (rest === '') {
+        body = {
+          login: person.login,
+          location: person.location,
+          created_at: '2020-01-01T00:00:00Z',
+          public_repos: 10,
+          followers: 5,
+          following: 1
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => body,
+        text: async () => JSON.stringify(body)
+      };
+    });
+    return requested;
+  }
+
+  function quietConsole() {
+    const warnings = [];
+    const logs = [];
+    vi.spyOn(console, 'warn').mockImplementation((line) => warnings.push(String(line)));
+    vi.spyOn(console, 'log').mockImplementation((line) => logs.push(String(line)));
+    return { warnings, logs };
+  }
+
+  const run = (searchClient) =>
+    fetchPakistaniDevelopers({
+      token: 't',
+      repoRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-discovery-')),
+      batchIndex,
+      rawOnly: true,
+      withScreening: true,
+      searchClient
+    });
+
+  const where = ['Pakistan', 'Lahore', 'Karachi, Sindh', 'Lahore, India', 'Berlin'];
+  const people = () =>
+    makePopulation({
+      n: 10,
+      from: root.from,
+      to: root.to,
+      seed: 21,
+      location: (_, i) => where[i % where.length]
+    });
+  const source = (result) =>
+    Object.fromEntries(result.developers.map((d) => [d.username, d.discovery_source]));
+
+  it('unites both searches by databaseId and records which one found each developer', async () => {
+    const population = people();
+    // This developer drops "Pakistan" from their location between the two searches, so both
+    // list them: they count once, as the main query found them.
+    const moved = population[0];
+    const fake = {
+      onCount: ({ queries }) => {
+        if (queries.some(isTwin)) moved.location = 'Lahore';
+        return null;
+      }
+    };
+    const requested = stubRest(population);
+    const { logs } = quietConsole();
+
+    const result = await run(searchFor(population, fake));
+
+    expect(result.discoveryComplete).toBe(true);
+    expect(requested).toHaveLength(new Set(requested).size);
+    const expected = {};
+    population.forEach((u, i) => {
+      const at = where[i % where.length];
+      if (at === 'Pakistan') expected[u.login] = 'pakistan';
+      if (at === 'Lahore' || at === 'Karachi, Sindh') expected[u.login] = 'city';
+    });
+    expect(source(result)).toEqual(expected);
+    expect(logs.some((line) => /1 city candidate\(s\) were also listed/.test(line))).toBe(true);
+
+    // Found by "Lahore", then ruled out on the location the profile gives.
+    const abroad = population.filter((u) => u.location === 'Lahore, India');
+    expect(result.locationRejected.map((r) => r.username).sort()).toEqual(
+      abroad.map((u) => u.login.toLowerCase()).sort()
+    );
+    expect(result.locationRejected[0].reason).toMatch(/also names "india"/);
+    expect(logs.some((line) => /^Not counting .*also names "india"/.test(line))).toBe(true);
+    // Berlin matches neither search and is never fetched.
+    const berlin = new Set(population.filter((u) => u.location === 'Berlin').map((u) => u.login));
+    expect(requested.some((login) => berlin.has(login))).toBe(false);
+  });
+
+  it('reports discovery incomplete when only the city twin is', async () => {
+    const population = people();
+    const hidden = population.find((u) => u.location === 'Lahore').id;
+    const fake = {
+      onList: ({ q, body }) => {
+        if (!isTwin(q)) return null;
+        body.data.search.nodes = body.data.search.nodes.map((n) =>
+          n?.databaseId === hidden ? null : n
+        );
+        return null;
+      }
+    };
+    stubRest(population);
+    const { warnings } = quietConsole();
+
+    const result = await run(searchFor(population, fake));
+
+    expect(result.discoveryComplete).toBe(false);
+    expect(
+      warnings.some((line) => /PK Dec2022-Feb2023 cities: leaf .* is incomplete/.test(line))
+    ).toBe(true);
+    // The main query's developers are all measured all the same.
+    const main = population.filter((u) => u.location === 'Pakistan').map((u) => u.login);
+    expect(result.developers.map((d) => d.username)).toEqual(expect.arrayContaining(main));
+  });
+
+  it('publishes the batch from the main query when the twin cannot be counted at all', async () => {
+    const population = people();
+    const fake = {
+      onCount: ({ queries }) =>
+        queries.some(isTwin) ? respond(502, '<html>Bad gateway</html>') : null
+    };
+    stubRest(population);
+    const { warnings } = quietConsole();
+
+    const result = await run(searchFor(population, fake));
+
+    expect(result.discoveryComplete).toBe(false);
+    expect(
+      warnings.some((line) =>
+        /^::warning title=Discovery::PK Dec2022-Feb2023 cities: could not be measured/.test(line)
+      )
+    ).toBe(true);
+    expect(Object.values(source(result))).toEqual(
+      population.filter((u) => u.location === 'Pakistan').map(() => 'pakistan')
+    );
+  });
+
+  it('still fails the run when the main query cannot be counted', async () => {
+    const population = people();
+    const fake = {
+      onCount: ({ queries }) =>
+        queries.some(isTwin) ? null : respond(502, '<html>Bad gateway</html>')
+    };
+    stubRest(population);
+    quietConsole();
+    await expect(run(searchFor(population, fake))).rejects.toThrow(
+      /Discovery failed for batch "PK Dec2022-Feb2023"/
+    );
   });
 });

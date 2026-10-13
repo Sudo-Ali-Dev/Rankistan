@@ -4,9 +4,12 @@
  * It answers the two documents graphql.js sends - aliased `userCount` counts and one-page
  * listings - from a fixed population, and it reproduces the qualifier semantics measured against
  * the live API: `created:` ranges are inclusive, two `created:` qualifiers drop the filter and
- * match everyone, and repeated `followers:` qualifiers OR together. Faults are injected per call
- * through `onCount` and `onList`, which may return a replacement response.
+ * match everyone, repeated `followers:` qualifiers OR together, `location:` matches a whole token
+ * of the location, repeated `location:` qualifiers OR together and `-location:` negations AND.
+ * Faults are injected per call through `onCount` and `onList`, which may return a replacement
+ * response.
  */
+import { locationTokens } from './locations.js';
 import { isoSecond, parseCreated, parseFollowers } from './partition.js';
 
 /** Deterministic PRNG, so a failing case reproduces. */
@@ -18,13 +21,23 @@ export function rng(seed) {
   };
 }
 
-export function makePopulation({ n, from, to, seed = 1, followers = () => 2, idBase = 0 }) {
+/** Everyone is in Pakistan unless `location` says otherwise: a function of (rand, i), or text. */
+export function makePopulation({
+  n,
+  from,
+  to,
+  seed = 1,
+  followers = () => 2,
+  location = 'Pakistan',
+  idBase = 0
+}) {
   const rand = rng(seed);
   return Array.from({ length: n }, (_, i) => ({
     id: idBase + seed * 100000 + i,
     login: `User${seed}x${i}`,
     created: from + Math.floor(rand() * (to - from + 1)),
-    followers: followers(rand, i)
+    followers: followers(rand, i),
+    location: typeof location === 'function' ? location(rand, i) : location
   }));
 }
 
@@ -32,15 +45,23 @@ export function matcher(query) {
   const tokens = query.split(/\s+/);
   const created = tokens.filter((t) => t.startsWith('created:'));
   const followers = tokens.filter((t) => t.startsWith('followers:'));
+  const places = tokens.filter((t) => t.startsWith('location:')).map((t) => t.slice(9));
+  const excluded = tokens.filter((t) => t.startsWith('-location:')).map((t) => t.slice(10));
   const range =
     created.length === 1
       ? parseCreated(created[0].slice('created:'.length))
       : { from: -Infinity, to: Infinity };
   const ranges = followers.map((t) => parseFollowers(t.slice('followers:'.length)));
-  return (u) =>
-    u.created >= range.from &&
-    u.created <= range.to &&
-    (ranges.length === 0 || ranges.some(([lo, hi]) => u.followers >= lo && u.followers <= hi));
+  return (u) => {
+    const where = new Set(locationTokens(u.location));
+    return (
+      u.created >= range.from &&
+      u.created <= range.to &&
+      (ranges.length === 0 || ranges.some(([lo, hi]) => u.followers >= lo && u.followers <= hi)) &&
+      (places.length === 0 || places.some((place) => where.has(place))) &&
+      !excluded.some((place) => where.has(place))
+    );
+  };
 }
 
 export function respond(status, body, headers = {}) {

@@ -9,6 +9,7 @@ import {
 import { MAX_DISCARD_RETRIES, createSearchClient } from './graphql.js';
 import { PACK_TO, parseShardQuery } from './partition.js';
 import { RATE_LIMIT, fakeGraphql, makePopulation, matcher, respond } from './fake-search.js';
+import { cityTwinQuery } from './locations.js';
 import { SEARCH_BATCHES } from '../fetch-devs.js';
 
 const BASE_QUERY =
@@ -86,6 +87,31 @@ describe('discoverBatch', () => {
     expect(report.rootCount).toBe(1200);
     expect(report.candidates).toHaveLength(1200);
     expect(report.sum.valid).toBe(true);
+  });
+
+  it('discovers a multi-range city twin as its own batch, disjoint from the main query', async () => {
+    const ranges = SEARCH_BATCHES[23].queries.map((q) => parseShardQuery(q).root);
+    const where = ['Pakistan', 'Lahore', 'Karachi, Pakistan', 'Islamabad', 'Dubai'];
+    const people = ranges.flatMap((r, i) =>
+      makePopulation({
+        n: 250,
+        from: r.from,
+        to: r.from + 90 * 86400,
+        seed: 60 + i,
+        location: (_, k) => where[k % where.length]
+      })
+    );
+    const twins = SEARCH_BATCHES[23].queries.map(cityTwinQuery);
+    const main = (await run(people, { queries: SEARCH_BATCHES[23].queries })).report;
+    const { report: twin } = await run(people, { queries: twins });
+
+    expect(twin.sum.valid).toBe(true);
+    expect(twin.leaves.every((l) => l.complete)).toBe(true);
+    expect(twin.leaves.every((l) => l.query.startsWith(`${twin.base} `))).toBe(true);
+    const cityOnly = people.filter((u) => u.location === 'Lahore' || u.location === 'Islamabad');
+    expect(ids(twin)).toEqual(new Set(cityOnly.map((u) => u.id)));
+    expect([...ids(twin)].some((id) => ids(main).has(id))).toBe(false);
+    expect(ids(main).size + ids(twin).size).toBe(people.length - people.length / where.length);
   });
 
   // Defect 4: there was no record of whether a leaf was listed completely.
