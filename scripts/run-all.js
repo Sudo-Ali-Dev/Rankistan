@@ -74,6 +74,13 @@ export const MIN_REPLACEMENT_RATIO = 0.5;
 // unchanged and counted, and removed only on the second consecutive miss -
 // one day later, since each batch runs once a day.
 export const MAX_MISSED_RUNS = 2;
+
+// The two-miss rule assumes a batch runs once a day. It does not always: a manual re-run, or the
+// backup trigger, can run the same batch again within the hour, and two misses fifteen minutes
+// apart are one observation, not two. On 2026-10-13 a developer was removed that way, fifteen
+// minutes after his first miss. So a removal also needs the misses to span this long. The first
+// miss records `missed_since`; a measurement clears it.
+export const MIN_MISS_SPAN_HOURS = 20;
 export const MIN_COHORT_FOR_RATIO_CHECK = 20;
 
 export function assertReplacementIsSafe({
@@ -168,7 +175,7 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
     return;
   }
 
-  const { developers: rawDevs, screenedOut } = await fetchPakistaniDevelopers({
+  const { developers: rawDevs, screenedOut, discoveryComplete } = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
     rawOnly: true,
@@ -209,8 +216,8 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
   // failed the gate. Only a developer this run never looked at is carried.
   const evaluated = [...rawDevs.map((d) => d.username), ...screenedOut];
 
-  saveBatchEntries(batchIndex, newEntries, evaluated);
-  mergeBatchIntoLeaderboard({ batchIndex, newEntries, evaluated, targetPath });
+  saveBatchEntries(batchIndex, newEntries, evaluated, discoveryComplete);
+  mergeBatchIntoLeaderboard({ batchIndex, newEntries, evaluated, discoveryComplete, targetPath });
 }
 
 /**
@@ -226,9 +233,9 @@ export function batchEntriesPath(batchIndex) {
   return path.join(dir, `rankistan-batch-${batchIndex}.json`);
 }
 
-function saveBatchEntries(batchIndex, entries, evaluated) {
+function saveBatchEntries(batchIndex, entries, evaluated, discoveryComplete = true) {
   const target = batchEntriesPath(batchIndex);
-  atomicWriteJsonSync(target, { batch_index: batchIndex, entries, evaluated });
+  atomicWriteJsonSync(target, { batch_index: batchIndex, entries, evaluated, discoveryComplete });
   console.log(`Batch ${batchIndex} rows saved for re-merge: ${target}`);
 }
 
@@ -250,6 +257,8 @@ export function mergeBatchIntoLeaderboard({
   batchIndex,
   newEntries,
   evaluated = null,
+  discoveryComplete = true,
+  now = Date.now(),
   targetPath = DATA_JSON
 }) {
   const existing = loadExistingLeaderboard(targetPath);
@@ -265,18 +274,38 @@ export function mergeBatchIntoLeaderboard({
   const carried = [];
   const ineligible = [];
   const missedTwice = [];
+  // A search known to be incomplete cannot show that anyone left: carry everyone it did not see
+  // unchanged, without advancing their miss count.
+  const freezeMisses = discoveryComplete === false;
   for (const row of own) {
     if (fresh.has(key(row))) continue;
     if (judged?.has(key(row))) {
       ineligible.push(row.username);
       continue;
     }
+    if (freezeMisses) {
+      carried.push({ ...row });
+      continue;
+    }
     const missed = (Number(row.missed_runs) || 0) + 1;
-    if (missed >= MAX_MISSED_RUNS) {
+    const since = Date.parse(row.missed_since);
+    const spanned = Number.isFinite(since) && now - since >= MIN_MISS_SPAN_HOURS * 3_600_000;
+    if (missed >= MAX_MISSED_RUNS && spanned) {
       missedTwice.push(row.username);
       continue;
     }
-    carried.push({ ...row, missed_runs: missed });
+    // A row from before `missed_since` existed starts its clock at this miss.
+    carried.push({
+      ...row,
+      missed_runs: missed,
+      missed_since: Number.isFinite(since) ? row.missed_since : new Date(now).toISOString()
+    });
+  }
+  if (freezeMisses && own.length > 0) {
+    console.warn(
+      `::warning title=Discovery incomplete::Batch ${batchIndex}: miss counters frozen this run, ` +
+        'since a search known to be incomplete cannot show that anyone left.'
+    );
   }
 
   assertReplacementIsSafe({
@@ -374,7 +403,13 @@ export function remergeBatch(batchIndex, { targetPath = DATA_JSON } = {}) {
   const evaluated = Array.isArray(saved?.evaluated) ? saved.evaluated : null;
 
   console.log(`\nRe-merging batch ${batchIndex} (${entries.length} rows) onto the current file.`);
-  return mergeBatchIntoLeaderboard({ batchIndex, newEntries: entries, evaluated, targetPath });
+  return mergeBatchIntoLeaderboard({
+    batchIndex,
+    newEntries: entries,
+    evaluated,
+    discoveryComplete: saved?.discoveryComplete !== false,
+    targetPath
+  });
 }
 
 // Only run the CLI when this file is the process entry point. Previously the

@@ -418,3 +418,48 @@ describe('describeDiscovery', () => {
     ]);
   });
 });
+
+describe('describeDiscovery diagnostics', () => {
+  const base = 'location:pakistan type:user repos:>3 followers:>1';
+  const leaf = (q, count, listed) => ({
+    query: `${base} created:${q[0]}..${q[1]}`,
+    count,
+    complete: true,
+    listedIds: Array.from({ length: listed }, (_, i) => i)
+  });
+  const report = (valid) => ({
+    label: 'b19',
+    base,
+    rootCount: 1026,
+    ranges: [{ query: `${base} created:2023-10-01..2023-12-31`, count: 1026 }],
+    leaves: [
+      leaf(['2023-10-01', '2023-11-15'], 500, 500),
+      leaf(['2023-11-16', '2023-12-31'], 445, 445)
+    ],
+    candidates: [],
+    sum: { root: 1026, leaves: 945, listed: 945, notFound: 0, valid },
+    problems: valid ? [] : ['its leaves sum to 945 but the range counts 1026'],
+    stats: {
+      fineLeaves: 2,
+      slicesCounted: 3,
+      levels: 1,
+      resplits: [],
+      requests: 2,
+      points: 2,
+      remaining: 4000
+    }
+  });
+
+  it('lists every range and leaf count when the leaves do not add up', () => {
+    // 2026-10-13, batch 19 in production: 945 of 1,026, reported only as a total.
+    const { info } = describeDiscovery(report(false));
+    expect(info.some((line) => line.includes('range') && line.includes('counted 1026'))).toBe(true);
+    expect(info.filter((line) => line.includes('counted 500, listed 500')).length).toBe(1);
+    expect(info.filter((line) => line.includes('counted 445, listed 445')).length).toBe(1);
+  });
+
+  it('keeps the log short when everything adds up', () => {
+    const { info } = describeDiscovery(report(true));
+    expect(info.some((line) => line.includes('counted 500'))).toBe(false);
+  });
+});

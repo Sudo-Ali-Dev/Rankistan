@@ -9,7 +9,8 @@ import {
   batchEntriesPath,
   MIN_REPLACEMENT_RATIO,
   MIN_COHORT_FOR_RATIO_CHECK,
-  MAX_MISSED_RUNS
+  MAX_MISSED_RUNS,
+  MIN_MISS_SPAN_HOURS
 } from './run-all.js';
 
 const call = (over = {}) =>
@@ -182,8 +183,9 @@ describe('mergeBatchIntoLeaderboard', () => {
       expect(missed.missed_runs).toBe(1);
     });
 
-    it('removes a developer on the second consecutive miss', () => {
-      write(tmp, [row('seen', 0, 500), { ...row('missed', 0, 400), missed_runs: 1 }]);
+    it('removes a developer on the second consecutive miss, a day apart', () => {
+      const dayAgo = new Date(Date.now() - 25 * 3_600_000).toISOString();
+      write(tmp, [row('seen', 0, 500), { ...row('missed', 0, 400), missed_runs: 1, missed_since: dayAgo }]);
       mergeBatchIntoLeaderboard({
         batchIndex: 0,
         newEntries: [row('seen', 0, 600)],
@@ -192,6 +194,54 @@ describe('mergeBatchIntoLeaderboard', () => {
       });
       expect(MAX_MISSED_RUNS).toBe(2);
       expect(read(tmp).map((d) => d.username)).toEqual(['seen']);
+    });
+
+    it('does not remove on two misses minutes apart - a re-run is one observation', () => {
+      // 2026-10-13: a batch run twice in fifteen minutes removed a developer
+      // after his "second" miss.
+      const minutesAgo = new Date(Date.now() - 15 * 60_000).toISOString();
+      write(tmp, [row('seen', 0, 500), { ...row('missed', 0, 400), missed_runs: 1, missed_since: minutesAgo }]);
+      mergeBatchIntoLeaderboard({ batchIndex: 0, newEntries: [row('seen', 0, 600)], evaluated: ['seen'], targetPath: tmp });
+      const kept = read(tmp).find((d) => d.username === 'missed');
+      expect(kept).toBeDefined();
+      expect(kept.missed_since).toBe(minutesAgo);
+      expect(MIN_MISS_SPAN_HOURS).toBeGreaterThanOrEqual(20);
+    });
+
+    it('starts the clock for a row missed before missed_since existed', () => {
+      write(tmp, [row('seen', 0, 500), { ...row('legacy', 0, 400), missed_runs: 1 }]);
+      mergeBatchIntoLeaderboard({ batchIndex: 0, newEntries: [row('seen', 0, 600)], evaluated: ['seen'], targetPath: tmp });
+      const kept = read(tmp).find((d) => d.username === 'legacy');
+      expect(kept).toBeDefined();
+      expect(Number.isFinite(Date.parse(kept.missed_since))).toBe(true);
+    });
+
+    it('freezes miss counters when discovery was incomplete', () => {
+      // A search known to be short cannot show that anyone left.
+      const dayAgo = new Date(Date.now() - 25 * 3_600_000).toISOString();
+      write(tmp, [row('seen', 0, 500), { ...row('missed', 0, 400), missed_runs: 1, missed_since: dayAgo }, row('first', 0, 300)]);
+      mergeBatchIntoLeaderboard({
+        batchIndex: 0,
+        newEntries: [row('seen', 0, 600)],
+        evaluated: ['seen'],
+        discoveryComplete: false,
+        targetPath: tmp
+      });
+      const out = read(tmp);
+      expect(out.find((d) => d.username === 'missed')?.missed_runs).toBe(1);
+      expect(out.find((d) => d.username === 'first')?.missed_runs).toBeUndefined();
+    });
+
+    it('still removes the evaluated-and-ineligible when discovery was incomplete', () => {
+      write(tmp, [row('quiet', 0, 400), row('active', 0, 500)]);
+      mergeBatchIntoLeaderboard({
+        batchIndex: 0,
+        newEntries: [row('active', 0, 510)],
+        evaluated: ['quiet', 'active'],
+        discoveryComplete: false,
+        targetPath: tmp
+      });
+      expect(read(tmp).find((d) => d.username === 'quiet')).toBeUndefined();
     });
 
     it('clears the miss count once the developer is measured again', () => {
@@ -253,7 +303,9 @@ describe('mergeBatchIntoLeaderboard', () => {
     it('still fails loudly when a second bad run would empty the batch', () => {
       // Two degraded runs in a row turn carried rows into removals. That is a
       // real collapse of what this batch can see, and it must stop the publish.
-      write(tmp, Array.from({ length: 30 }, (_, i) => ({ ...row(`u${i}`, 0, 100 - i), missed_runs: 1 })));
+      // First misses a day back, so this run's misses really are the second.
+      const dayAgo = new Date(Date.now() - 25 * 3_600_000).toISOString();
+      write(tmp, Array.from({ length: 30 }, (_, i) => ({ ...row(`u${i}`, 0, 100 - i), missed_runs: 1, missed_since: dayAgo })));
       expect(() =>
         mergeBatchIntoLeaderboard({
           batchIndex: 0,

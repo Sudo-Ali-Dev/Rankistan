@@ -343,6 +343,9 @@ function searchQueriesForBatch(batch) {
 async function discoverUsers(token, batches, { searchClient } = {}) {
   const client = searchClient || createSearchClient({ token });
   const discovered = [];
+  // False when any batch's leaves did not add up to its range, or any leaf failed to list. The
+  // merge then freezes miss counters: absence from a search known to be incomplete is not a miss.
+  let complete = true;
 
   for (let index = 0; index < batches.length; index += 1) {
     const batch = batches[index];
@@ -383,10 +386,11 @@ async function discoverUsers(token, batches, { searchClient } = {}) {
       );
     }
 
+    if (!report.sum.valid || report.leaves.some((leaf) => !leaf.complete)) complete = false;
     discovered.push(...report.candidates.map((candidate) => candidate.login));
   }
 
-  return discovered;
+  return { logins: discovered, complete };
 }
 
 function isLikelyFakeFromProfile(profile) {
@@ -723,7 +727,7 @@ async function fetchPakistaniDevelopers(options = {}) {
       : `Running all ${batches.length} search batches`
   );
 
-  const discoveredUsers = await discoverUsers(token, batches, {
+  const { logins: discoveredUsers, complete: discoveryComplete } = await discoverUsers(token, batches, {
     searchClient: options.searchClient
   });
   const registeredUsers = batchIndex === 0 || batchIndex == null
@@ -780,7 +784,7 @@ async function fetchPakistaniDevelopers(options = {}) {
   // Screened-out developers were observed and failed the gate, so a caller that
   // asks for them can count them as evaluated - unlike a fetch that errored.
   const withScreening = (developers) =>
-    options.withScreening ? { developers, screenedOut } : developers;
+    options.withScreening ? { developers, screenedOut, discoveryComplete } : developers;
 
   if (rawOnly) {
     console.log(`Raw mode: returning ${fetchedDevelopers.length} unfiltered developers.`);
