@@ -22,7 +22,10 @@ concurrency:
   # means no run can hold this group for long: the October 2026 outage was a
   # run held at the github-pages environment gate for eight days, in a group
   # that cancelled nothing.
-  group: pages-deploy
+  # Not `pages-deploy`: that group held a run stuck at the environment gate
+  # for eight days from 2026-10-05, displacing 190 runs. A fresh name owes
+  # nothing to whatever GitHub may still associate with the old one.
+  group: pages-publish
   cancel-in-progress: true
 
 jobs:
