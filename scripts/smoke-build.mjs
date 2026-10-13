@@ -54,18 +54,19 @@ if (!reactV || !reactDomV) {
 void pkg;
 
 // 2b. The split data files the browser reads, and data.json byte-for-byte as
-//     committed: the Worker and outside readers fetch it from the site root.
+//     public/data.json holds it: the Worker and outside readers fetch it from
+//     the site root.
 for (const file of ['board.json', 'digest.json']) {
   if (!fs.existsSync(path.join(DIST, file))) fail(`dist/${file} missing - did build-split-data run?`);
 }
 const devDir = path.join(DIST, 'dev');
 const devFiles = fs.existsSync(devDir) ? fs.readdirSync(devDir).length : 0;
 if (devFiles === 0) fail('dist/dev/ has no developer files');
-const committed = path.join(process.cwd(), 'public', 'data.json');
+const source = path.join(process.cwd(), 'public', 'data.json');
 const published = path.join(DIST, 'data.json');
 if (!fs.existsSync(published)) {
   fail('dist/data.json missing - the Worker reads it from the site root');
-} else if (fs.existsSync(committed) && !fs.readFileSync(committed).equals(fs.readFileSync(published))) {
+} else if (fs.existsSync(source) && !fs.readFileSync(source).equals(fs.readFileSync(published))) {
   fail('dist/data.json differs from public/data.json');
 } else {
   note(`board.json, digest.json and ${devFiles} developer files present; data.json unchanged`);

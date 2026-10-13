@@ -1,5 +1,16 @@
 name: Update Leaderboard
 
+# One batch of the leaderboard: load the board from the `pipeline-state`
+# release, measure this batch, merge it in, check the result, save it as the
+# new newest state, and dispatch deploy.yml to publish it. See
+# scripts/run-all.js for the flow and scripts/state-store.js for the store.
+#
+# This job neither commits to main nor deploys Pages. It used to do both: a
+# data commit every hour (98.4% of the repository's packed size), a
+# five-attempt push retry with a replay of the batch onto whatever main had
+# become, and a Pages deployment of its own that raced deploy.yml's. With one
+# serialized writer and a single deployer, none of that is needed.
+
 on:
   # Primary trigger: cron-job.org dispatches at the top of every hour. External
   # dispatches are immune to GitHub's 60-day auto-disable of scheduled
@@ -15,10 +26,15 @@ on:
   # be dispatched. The backup trigger lives in pipeline-backup.yml instead,
   # which dispatches this one when cron-job.org has not.
 
+# The repository default is read-only; this is everything the job does.
 permissions:
+  # The release that holds the state: create it, upload a state asset, prune
+  # old ones. Releases have no narrower scope than contents.
   contents: write
-  pages: write
-  id-token: write
+  # workflow_dispatch of deploy.yml and watchdog.yml after the save, the one
+  # event GITHUB_TOKEN may start a workflow with, and the read of their state
+  # beforehand: a disabled one fails this run.
+  actions: write
 
 concurrency:
   # Renamed from `pages-deploy` on 2026-10-13. Run 37313510144, dispatched at
@@ -29,15 +45,10 @@ concurrency:
   # displaced by the one after. Eight days of stale data, and nothing failed,
   # because a displaced run concludes `cancelled`.
   #
-  # The holder was easy to miss. The API listed it as `queued`, and it was
-  # older than the newest 100 runs, so a check that read only the latest page
-  # found nothing in progress and concluded the lock was empty. A new group
-  # name sidestepped it; it has since been cancelled. watchdog.yml now alarms
-  # on any run held for more than 90 minutes, by status filter over all
-  # history rather than the newest page.
-  #
-  # Still deliberately not shared with deploy.yml (`pages-deploy-push`); see
-  # the comment there.
+  # The job no longer deploys and has no `environment:`, so it cannot be held
+  # at that gate again. This group is now also what makes the job the single
+  # writer of the state: runs are serialized, never cancelled, so no two load
+  # and save the board at once.
   group: leaderboard-pipeline
   cancel-in-progress: false
 
@@ -45,18 +56,12 @@ jobs:
   update-leaderboard:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    # deploy.yml declares this; this job deploys Pages too but did not,
-    # which is a likely contributor to the deploy flakiness the retry
-    # steps below work around.
-    environment:
-      name: github-pages
     env:
       TZ: Asia/Karachi
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
           # The tip, not `github.sha`. A dispatched run pins to the SHA the
           # branch had when it was queued, and this job routinely waits ~20
           # minutes behind the previous batch before it starts - so it began on
@@ -87,113 +92,14 @@ jobs:
           fi
           echo "Batch index: $(grep index "$GITHUB_OUTPUT" | tail -1)"
 
-      - name: Run incremental pipeline
+      # Refuses to save, and so to deploy, a board that fails verify:published
+      # or that loses more than 5% of its developers with no recorded reason.
+      # During a scoring-model migration, set the repository variable
+      # ALLOW_MIXED_MODELS=1 until all 24 batches have run under the new model,
+      # and remove it after.
+      - name: Run the batch and save the state
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BATCH_INDEX: ${{ steps.batch.outputs.index }}
-          # Outside the working tree: the retry below resets hard onto
-          # origin/main between attempts, which would delete these rows exactly
-          # when the re-merge needs them.
-          BATCH_OUTPUT_DIR: ${{ runner.temp }}
-        run: |
-          BATCH="$BATCH_INDEX"
-          echo "Running incremental batch: $BATCH"
-          node scripts/run-all.js --incremental "$BATCH"
-
-      - name: Commit and push updates
-        id: publish
-        env:
-          BATCH_INDEX: ${{ steps.batch.outputs.index }}
-          BATCH_OUTPUT_DIR: ${{ runner.temp }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet -- public/data.json; then
-            echo "No leaderboard changes to commit."
-            exit 0
-          fi
-
-          # Losing the push race is normal: a batch takes up to an hour and the
-          # next one is dispatched every hour, so main is expected to move
-          # underneath a slow batch.
-          #
-          # What this must not do is ask git to reconcile the result. data.json
-          # is generated, 1.6MB, and rewritten whole on every run, so a textual
-          # three-way merge of two rewrites conflicts every time - which is why
-          # `git pull --rebase` (186ad85, May) failed on batch 0 on 22 of the
-          # last 26 pipeline failures and has never once succeeded.
-          #
-          # The merge is by row owner instead. Every row carries the
-          # `batch_index` that produced it, batches own disjoint rows, and the
-          # pipeline already folds one batch into the other 23. So on rejection:
-          # take main as it now stands and replay this batch's saved rows onto
-          # it. No network, no conflict possible, and the integrity checks run
-          # again on every attempt.
-          for attempt in 1 2 3 4 5; do
-            git add public/data.json
-            git commit -q -m "chore: update leaderboard (batch $BATCH_INDEX)"
-
-            if git push origin HEAD:main; then
-              echo "Pushed batch $BATCH_INDEX on attempt $attempt."
-              exit 0
-            fi
-
-            echo "Push rejected on attempt $attempt; main moved. Replaying batch $BATCH_INDEX onto the new tip."
-            git fetch origin main
-            git reset --hard origin/main
-            node scripts/run-all.js --remerge "$BATCH_INDEX"
-
-            if git diff --quiet -- public/data.json; then
-              echo "Re-merge produced no change against the new tip; nothing left to publish."
-              exit 0
-            fi
-          done
-
-          echo "::error::Could not publish batch $BATCH_INDEX after 5 attempts."
-          exit 1
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build site
-        env:
-          VITE_SUMMARY_API_URL: ${{ vars.VITE_SUMMARY_API_URL || 'https://rankistan-summary-api.academics-ali.workers.dev' }}
-        run: npm run build
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: dist
-
-      - name: Deploy to GitHub Pages
-        id: deploy_attempt_1
-        continue-on-error: true
-        uses: actions/deploy-pages@v5
-
-      - name: Wait before retry
-        if: steps.deploy_attempt_1.outcome == 'failure'
-        run: sleep 30
-
-      - name: Deploy to GitHub Pages (retry)
-        if: steps.deploy_attempt_1.outcome == 'failure'
-        uses: actions/deploy-pages@v5
-
-      # Dual write, step 4a of moving pipeline state off main. The board this
-      # run left on main is also saved, byte for byte, as an asset on the
-      # `pipeline-state` release (scripts/state-store.js), and read back to
-      # prove it loads. Nothing reads the release yet: this runs the store in
-      # production before anything depends on it.
-      #
-      # Last, so a store failure can never hold up the commit or the deploy,
-      # and gated on the commit step alone, so a failed deploy still records
-      # the state main holds. A failure here fails the run where it is seen.
-      - name: Save state to the pipeline-state release
-        if: ${{ !cancelled() && steps.publish.outcome == 'success' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BATCH_INDEX: ${{ steps.batch.outputs.index }}
-        run: node scripts/state-store.js save public/data.json --label "batch $BATCH_INDEX"
+          ALLOW_MIXED_MODELS: ${{ vars.ALLOW_MIXED_MODELS }}
+        run: node scripts/run-all.js --incremental "$BATCH_INDEX" --state release

@@ -1,5 +1,13 @@
 name: Deploy to GitHub Pages
 
+# The only workflow that deploys Pages. It runs on every push to main, and is
+# dispatched by update-digest.yml each time a batch saves the board. Either
+# way it builds the latest code with the latest state from the
+# `pipeline-state` release, so a code push ships the newest data and a data
+# update ships the newest code.
+#
+# There used to be two deployers, this and the pipeline, and they raced: a
+# merge minutes before a pipeline publish could redeploy older data.
 on:
   push:
     branches: [main]
@@ -7,26 +15,22 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  # Deliberately NOT shared with update-digest.yml. Sharing one group stopped
-  # concurrent Pages deploys, but it also let the next hourly pipeline dispatch
-  # cancel a merge's queued deploy, so code changes waited for a later pipeline
-  # run to ship them. The in-flight-deployment error is handled by the retry
-  # below instead, matching what update-digest.yml does.
-  group: pages-deploy-push
-  cancel-in-progress: false
+  # Every run deploys the newest code and the newest state, so a newer run
+  # supersedes an older one outright and the older one is cancelled. That also
+  # means no run can hold this group for long: the October 2026 outage was a
+  # run held at the github-pages environment gate for eight days, in a group
+  # that cancelled nothing.
+  group: pages-deploy
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      # Falls back to the retry step, since the first deploy is now
-      # allowed to fail when the pipeline holds a deployment.
-      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -40,25 +44,47 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # public/data.json is not in git. Fails the build rather than deploying
+      # a site with no board when there is no readable state.
+      - name: Download the latest board
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/state-store.js pull public/data.json
+
       - name: Build
         env:
           VITE_SUMMARY_API_URL: ${{ vars.VITE_SUMMARY_API_URL || 'https://rankistan-summary-api.academics-ali.workers.dev' }}
         run: npm run build
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
+  # The only job with the environment and the Pages permissions, and short:
+  # it waits on nothing but the deployment itself.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      # Falls back to the retry step's URL when the first attempt failed.
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
       - name: Deploy to GitHub Pages
         id: deployment
         continue-on-error: true
         uses: actions/deploy-pages@v5
 
-      # deploy-pages fails if the pipeline's own Pages deployment is mid-flight.
+      # A cancelled run's deployment can still be finishing when the run that
+      # superseded it deploys, which deploy-pages refuses.
       - name: Wait before retry
         if: steps.deployment.outcome == 'failure'
         run: sleep 30

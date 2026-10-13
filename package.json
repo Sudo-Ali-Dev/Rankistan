@@ -4,6 +4,7 @@
   "version": "2.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/state-store.js pull --if-missing",
     "dev": "vite",
     "build": "vite build && node scripts/build-split-data.js",
     "smoke": "node scripts/smoke-build.mjs",

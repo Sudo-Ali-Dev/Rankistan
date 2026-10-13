@@ -1,5 +1,33 @@
+// One batch of the leaderboard pipeline, start to finish:
+//
+//   load      the whole board: the newest state on the `pipeline-state`
+//             release (scripts/state-store.js), or a local file
+//   measure   this batch's developers on GitHub
+//   merge     them into the board by row owner (mergeBatch)
+//   guard     verify the result, and refuse an unexplained loss (guardBoard)
+//   save      the board as the new newest state
+//   dispatch  deploy.yml, which builds the site from that state, and
+//             watchdog.yml, which checks it
+//
+// Nothing here commits to git. The board used to be public/data.json on main,
+// rewritten by a commit every hour: 98.4% of the repository's packed size, and
+// a push race that needed a five-attempt retry and a replay of the batch onto
+// whatever main had become. With one serialized writer (the pipeline's
+// concurrency group) and the board loaded and saved whole, neither exists.
+//
+//   node scripts/run-all.js --incremental <batch> [--state release|<path>] [--dry-run]
+//
+// --state release   load from and save to the release, then dispatch. What
+//                   update-digest.yml runs; needs GITHUB_TOKEN with
+//                   contents: write and actions: write.
+// --state <path>    load from and save to a local file. The default, at
+//                   public/data.json, so a local run never touches the
+//                   published state.
+// --dry-run         no GitHub at all: replay the batch's own rows from the
+//                   file through the real merge and guards, and write
+//                   public/data.dry-run.json.
+
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compareRows } from '../src/model/order.js';
@@ -13,17 +41,21 @@ import {
 import { fetchPronouns, attachPronouns } from './fetch-pronouns.js';
 import { scoreDevelopers } from './score.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
+import { verifyPublished } from './verify-published.js';
+import { makeGitHubClient, createStateStore, stateAssetName } from './state-store.js';
 
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
 const DATA_JSON = path.join(PUBLIC_DIR, 'data.json');
 const DRY_RUN_DATA_JSON = path.join(PUBLIC_DIR, 'data.dry-run.json');
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-function loadExistingLeaderboard(targetPath = DATA_JSON) {
+/**
+ * A board read from a file, or `null` if there is no file. Anything else that
+ * goes wrong aborts.
+ */
+export function readBoardFile(targetPath) {
   if (!fs.existsSync(targetPath)) {
-    // First run, or a checkout without published data. Empty is the correct
-    // starting point, and there is nothing to purge.
-    console.warn(`No existing leaderboard at ${targetPath}; starting from empty.`);
-    return [];
+    return null;
   }
 
   // Any other failure must abort. The previous `catch { return [] }` turned an
@@ -41,8 +73,23 @@ function loadExistingLeaderboard(targetPath = DATA_JSON) {
     );
   }
 
-  return data.leaderboard;
+  return data;
 }
+
+/** A state store over a local file, with the same `load`/`save` as the release. */
+export function createFileStore({ readPath, writePath = readPath }) {
+  return {
+    async load() {
+      const payload = readBoardFile(readPath);
+      return payload ? { payload, source: readPath } : null;
+    },
+    async save(board) {
+      atomicWriteJsonSync(writePath, board);
+      return { path: writePath };
+    }
+  };
+}
+
 // A batch replaces its own cohort wholesale, so the write is only safe if the
 // incoming set is a plausible replacement for what it displaces.
 //
@@ -118,63 +165,375 @@ export function assertReplacementIsSafe({
   }
 }
 
-function buildDryRunOutput(batchIndex, maxDevelopers) {
-  // Dry-run mode avoids GitHub entirely. It reuses the current local leaderboard
-  // as test data so we can verify JSON generation and atomic writes safely.
-  const existing = loadExistingLeaderboard(DATA_JSON);
+// A row whose last measurement is older than this is off the board.
+//
+// A batch that cannot run - a crash, a rate-limit storm every hour of a day, a
+// range that outgrew its timeout - leaves its rows untouched, and they used to
+// stay on the board indefinitely at whatever they last scored: batch 0's rows
+// went unrefreshed for 23 days from 2026-08-30. A row carried because search
+// missed it is removed on its batch's next miss, a day later, so this only
+// binds when a batch has not run at all. Seven days is a week of daily turns;
+// rows with no `scored_at` predate it and are kept until their batch re-runs.
+export const UNMEASURED_AFTER_DAYS = 7;
 
-  let leaderboard =
-    existing.length > 0
-      ? existing.map((d, i) => ({
-          ...d,
-          batch_index: typeof d.batch_index === 'number' ? d.batch_index : batchIndex,
-          rank: i + 1,
-        }))
-      : [
-          {
-            username: 'dry-run-user',
-            score: 0,
-            batch_index: batchIndex,
-            rank: 1,
-          },
-        ];
+/**
+ * Fold one batch's rows into the board. Pure: takes the board, returns the
+ * next one and why every row that left it went.
+ *
+ * This is a merge *by row owner*: every row carries the `batch_index` that
+ * produced it, this batch replaces only its own, and the other 23 batches are
+ * carried across untouched.
+ *
+ * `removed` lists each developer who is not on the returned board, with the
+ * reason: `ineligible` (fetched this run and failed the gate), `missed`
+ * (absent from MAX_MISSED_RUNS consecutive runs of their batch, the first at
+ * least MIN_MISS_SPAN_HOURS ago), `unmeasured`
+ * (not measured for UNMEASURED_AFTER_DAYS) or `displaced` (below the
+ * MAX_DEVELOPERS cap). guardBoard holds the merge to that account.
+ *
+ * `discoveryComplete: false` means this run's search is known to be short, so
+ * absence from it proves nothing: unseen rows are carried with their miss
+ * counters frozen, while the developers it did evaluate are judged as usual.
+ */
+export function mergeBatch({
+  existing,
+  batchIndex,
+  newEntries,
+  evaluated = null,
+  discoveryComplete = true,
+  now = Date.now(),
+  allowShrink = false,
+  log = console
+}) {
+  const kept = existing.filter((d) => d.batch_index !== batchIndex);
+  const own = existing.filter((d) => d.batch_index === batchIndex);
 
-  leaderboard = leaderboard.slice(0, maxDevelopers);
-  leaderboard.forEach((d, i) => {
-    d.rank = i + 1;
+  const key = (d) => String(d?.username || d || '').toLowerCase();
+  const fresh = new Set(newEntries.map(key));
+  // `null` means nobody can be shown to have been evaluated, so nobody is
+  // removed as ineligible.
+  const judged = Array.isArray(evaluated) ? new Set(evaluated.map(key)) : null;
+
+  const carried = [];
+  const removed = [];
+  const reason = (row, why) =>
+    removed.push({ username: row.username, batch_index: row.batch_index, reason: why });
+  // A search known to be incomplete cannot show that anyone left: carry everyone it did not see
+  // unchanged, without advancing their miss count.
+  const freezeMisses = discoveryComplete === false;
+  for (const row of own) {
+    if (fresh.has(key(row))) continue;
+    if (judged?.has(key(row))) {
+      reason(row, 'ineligible');
+      continue;
+    }
+    if (freezeMisses) {
+      carried.push({ ...row });
+      continue;
+    }
+    const missed = (Number(row.missed_runs) || 0) + 1;
+    const since = Date.parse(row.missed_since);
+    const spanned = Number.isFinite(since) && now - since >= MIN_MISS_SPAN_HOURS * 3_600_000;
+    if (missed >= MAX_MISSED_RUNS && spanned) {
+      reason(row, 'missed');
+      continue;
+    }
+    // A row from before `missed_since` existed starts its clock at this miss.
+    carried.push({
+      ...row,
+      missed_runs: missed,
+      missed_since: Number.isFinite(since) ? row.missed_since : new Date(now).toISOString()
+    });
+  }
+  if (freezeMisses && own.length > 0) {
+    log.warn(
+      `::warning title=Discovery incomplete::Batch ${batchIndex}: miss counters frozen this run, ` +
+        'since a search known to be incomplete cannot show that anyone left.'
+    );
+  }
+
+  assertReplacementIsSafe({
+    batchIndex,
+    batchLabel: SEARCH_BATCHES[batchIndex].label,
+    removedCount: own.length,
+    replacementCount: newEntries.length + carried.length,
+    allowShrink
   });
 
-  return {
-    last_updated: new Date().toISOString(),
+  // Carried rows go in first so that nothing outranks a real measurement: a
+  // developer another batch has just measured keeps that batch's row, and this
+  // batch's fresh rows override everything.
+  const map = new Map(carried.map((d) => [key(d), d]));
+  for (const dev of kept) {
+    map.set(key(dev), dev);
+  }
+  for (const dev of newEntries) {
+    map.set(key(dev), dev);
+  }
+
+  const cutoff = now - UNMEASURED_AFTER_DAYS * DAY_MS;
+  for (const [k, row] of map) {
+    const scoredAt = Date.parse(row.scored_at);
+    if (Number.isFinite(scoredAt) && scoredAt < cutoff) {
+      map.delete(k);
+      reason(row, 'unmeasured');
+    }
+  }
+
+  // The whole board is re-sorted on every merge, carried rows included, so it
+  // is always in one order: see src/model/order.js.
+  const sorted = [...map.values()].sort(compareRows);
+  for (const row of sorted.slice(MAX_DEVELOPERS)) {
+    reason(row, 'displaced');
+  }
+  const leaderboard = sorted.slice(0, MAX_DEVELOPERS).map((d, i) => ({ ...d, rank: i + 1 }));
+
+  const board = {
+    last_updated: new Date(now).toISOString(),
     total_devs: leaderboard.length,
     leaderboard,
   };
-}
 
-async function runIncremental(batchIndex, { dryRun = false } = {}) {
-  if (batchIndex < 0 || batchIndex >= SEARCH_BATCHES.length) {
-    console.error(
-      `Invalid batch index: ${batchIndex}. Must be 0-${SEARCH_BATCHES.length - 1}.`,
+  const named = (why) => removed.filter((r) => r.reason === why);
+  log.log(
+    `Existing leaderboard: ${existing.length} total, ${kept.length} from other batches, ` +
+      `${own.length} from batch ${batchIndex}.`,
+  );
+  log.log(
+    `Batch ${batchIndex}: ${newEntries.length} measured, ${carried.length} carried forward ` +
+      `(not seen this run), ${named('ineligible').length} removed as ineligible, ` +
+      `${named('missed').length} removed after ${MAX_MISSED_RUNS} consecutive misses.`,
+  );
+  // Named, so a disappearance can be traced to a reason rather than inferred
+  // from a diff of two states.
+  const lines = [
+    ['carried', carried],
+    ['removed as ineligible', named('ineligible')],
+    ['removed after consecutive misses', named('missed')],
+    [`removed as unmeasured for ${UNMEASURED_AFTER_DAYS} days`, named('unmeasured')],
+    [`displaced below the ${MAX_DEVELOPERS} cap`, named('displaced')]
+  ];
+  for (const [what, rows] of lines) {
+    if (rows.length === 0) continue;
+    const list = rows.map((d) =>
+      d.batch_index === batchIndex ? d.username : `${d.username} (batch ${d.batch_index})`
     );
-    process.exit(1);
+    log.log(`  ${what}: ${list.join(', ')}`);
   }
-
-  const targetPath = dryRun ? DRY_RUN_DATA_JSON : DATA_JSON;
-
-  console.log(
-    `\n=== Incremental batch ${batchIndex}: ${SEARCH_BATCHES[batchIndex].label} ===\n`,
+  log.log(
+    `Leaderboard: ${leaderboard.length} developers (capped at ${MAX_DEVELOPERS}): ` +
+      `${newEntries.length} from batch ${batchIndex}, ${carried.length} carried, ` +
+      `${kept.length} kept from other batches.`,
   );
 
-  if (dryRun) {
-    console.log(`DRY RUN: skipping GitHub fetch and writing to ${targetPath}`);
-    const output = buildDryRunOutput(batchIndex, MAX_DEVELOPERS);
-    atomicWriteJsonSync(targetPath, output);
-    console.log(
-      `\nDry-run output written: ${output.total_devs} developers (capped at ${MAX_DEVELOPERS}).`,
+  return { board, removed, carried: carried.length };
+}
+
+// More than this share of the board leaving in one run with no recorded
+// reason is refused. Every way mergeBatch removes a row records one, so an
+// unexplained loss is a bug; this is the bound past which it must not ship.
+export const MAX_UNEXPLAINED_LOSS = 0.05;
+
+/**
+ * The checks a board must pass before it is saved. Throws to refuse.
+ *
+ * 1. verify:published on the result: every versioned score recomputes, one
+ *    model version (unless migrating), compareRows order, ranks 1..n, no
+ *    developer twice.
+ * 2. Of the developers on `previous` and not on `board`, those with no
+ *    recorded reason in `removed` must be at most MAX_UNEXPLAINED_LOSS of
+ *    `previous`. Any at all is reported by name.
+ */
+export function guardBoard({
+  previous,
+  board,
+  removed,
+  allowMixedVersions = false,
+  log = console
+}) {
+  const report = verifyPublished(board, { allowMixedVersions });
+  if (report.errors.length > 0) {
+    const shown = report.errors.slice(0, 10).join('; ');
+    const more = report.errors.length > 10 ? ` ... and ${report.errors.length - 10} more` : '';
+    throw new Error(
+      `Refusing to save: the board fails verification with ${report.errors.length} ` +
+        `problem(s): ${shown}${more}`
     );
-    return;
   }
 
+  const key = (d) => String(d?.username || '').toLowerCase();
+  const after = new Set(board.leaderboard.map(key));
+  const explained = new Set(removed.map(key));
+  const lost = previous.filter((row) => !after.has(key(row)));
+  const unexplained = lost.filter((row) => !explained.has(key(row))).map((row) => row.username);
+
+  if (unexplained.length > previous.length * MAX_UNEXPLAINED_LOSS) {
+    throw new Error(
+      `Refusing to save: ${unexplained.length} of ${previous.length} developers would leave ` +
+        `the board with no recorded reason, more than ${MAX_UNEXPLAINED_LOSS * 100}% in one run: ` +
+        `${unexplained.slice(0, 20).join(', ')}${unexplained.length > 20 ? ', ...' : ''}`
+    );
+  }
+  if (unexplained.length > 0) {
+    log.warn(
+      `${unexplained.length} developer(s) left the board with no recorded reason, which is a ` +
+        `bug in the merge: ${unexplained.join(', ')}`
+    );
+  }
+  return { report, lost: lost.length, unexplained };
+}
+
+/**
+ * Load, measure, merge, guard, save, dispatch. Every piece of I/O is passed
+ * in, so the whole flow runs in a test.
+ *
+ * - `store` is where the board lives: `load()` returns `{ payload }` or null
+ *   when nothing was ever saved, `save(board, { name, label })` writes it.
+ * - `fallback` seeds a store that has never been saved to - the very first
+ *   run against the release, from public/data.json. A store whose saves exist
+ *   but cannot be read throws instead, and is never seeded over.
+ * - With neither, the run refuses unless `allowEmpty`: an empty board plus one
+ *   batch would publish a 40-row leaderboard.
+ * - `now` may be a function of the loaded payload (the dry run pins it to the
+ *   file's own `last_updated`).
+ */
+export async function runBatch({
+  batchIndex,
+  measure,
+  store,
+  fallback = null,
+  allowEmpty = false,
+  dispatch = null,
+  now = () => Date.now(),
+  name = null,
+  allowShrink = false,
+  allowMixedVersions = false,
+  log = console
+}) {
+  let loaded = await store.load();
+  if (!loaded && fallback) {
+    loaded = await fallback.load();
+    if (loaded) {
+      log.warn(`No saved state; seeding it from ${loaded.source}. This should happen once.`);
+    }
+  }
+  if (!loaded) {
+    if (!allowEmpty) {
+      throw new Error(
+        'No saved state and nothing to seed it from. Restore one with ' +
+          '`node scripts/state-store.js save <board.json>`, or set ALLOW_EMPTY_STATE=1 to ' +
+          'start a new board from this batch alone.'
+      );
+    }
+    log.warn('No saved state; starting from an empty board.');
+    loaded = { payload: { leaderboard: [] }, source: 'an empty board' };
+  }
+
+  const previous = loaded.payload.leaderboard;
+  const source = loaded.asset
+    ? `${loaded.asset.name} (saved ${loaded.asset.created_at})`
+    : loaded.source;
+  log.log(`Loaded ${previous.length} developers from ${source}.`);
+  for (const skip of loaded.skipped || []) {
+    log.warn(`Skipped unreadable state ${skip.name}: ${skip.error}`);
+  }
+
+  const { newEntries, evaluated, discoveryComplete } = await measure({
+    batchIndex,
+    existing: previous
+  });
+  // Read after measuring, which takes up to an hour: the board is stamped, and
+  // the unmeasured cutoff taken, at merge time.
+  const at = typeof now === 'function' ? now(loaded.payload) : now;
+  const merged = mergeBatch({
+    existing: previous,
+    batchIndex,
+    newEntries,
+    evaluated,
+    discoveryComplete,
+    now: at,
+    allowShrink,
+    log
+  });
+  const guard = guardBoard({
+    previous,
+    board: merged.board,
+    removed: merged.removed,
+    allowMixedVersions,
+    log
+  });
+
+  const saved = await store.save(merged.board, {
+    name,
+    label: `batch ${batchIndex}, ${merged.board.total_devs} developers`
+  });
+  if (saved?.asset) {
+    log.log(
+      `Saved state ${saved.asset.name}: ${saved.bytes} bytes gzipped, read back byte for byte.`
+    );
+    if (saved.pruned?.length) log.log(`Pruned ${saved.pruned.length} older state asset(s).`);
+    if (saved.pruneError) log.log(`::warning title=STATE_PRUNE_FAILED::${saved.pruneError}`);
+  } else if (saved?.path) {
+    log.log(`Wrote ${merged.board.total_devs} developers to ${saved.path}.`);
+  }
+
+  const dispatched = dispatch ? await dispatch() : [];
+  return { ...merged, guard, saved, dispatched, source };
+}
+
+// What a saved state sets running: the site is built from it, and checked.
+export const DISPATCHED_WORKFLOWS = ['deploy.yml', 'watchdog.yml'];
+
+/**
+ * Dispatches each workflow on `ref`, and fails if any could not be: the run
+ * then ends red, which is how the owner hears of it.
+ *
+ * GITHUB_TOKEN may trigger workflow_dispatch, the one kind of event it is
+ * allowed to start, given `actions: write`. Each workflow's state is read
+ * first, because one that is not `active` will not run whatever the dispatch
+ * answers. That matters most for the watchdog: it carries a schedule, GitHub
+ * disables a scheduled workflow after 60 days without repository activity,
+ * and once this pipeline stops committing to main nothing else keeps the
+ * repository active - and a disabled watchdog cannot report itself. Every
+ * workflow is tried before failing, so a disabled watchdog does not also cost
+ * the deploy.
+ */
+export async function dispatchWorkflows({
+  client,
+  workflows = DISPATCHED_WORKFLOWS,
+  ref = 'main',
+  log = console
+}) {
+  const failures = [];
+  for (const workflow of workflows) {
+    try {
+      const info = await client.json('GET', `/actions/workflows/${workflow}`);
+      if (info?.state !== 'active') {
+        throw new Error(`it is \`${info?.state}\`; re-enable it in the Actions tab`);
+      }
+      await client.json('POST', `/actions/workflows/${workflow}/dispatches`, {
+        body: { ref },
+        // A repeated dispatch is harmless: both workflows cancel in progress.
+        retry: true
+      });
+      log.log(`Dispatched ${workflow} on ${ref}.`);
+    } catch (error) {
+      failures.push(`${workflow} (${error.message})`);
+    }
+  }
+  if (failures.length > 0) {
+    const message =
+      `The state is saved, but could not dispatch ${failures.join(', ')}. Until that is ` +
+      'fixed the site keeps the previous board until the next deploy, and nothing ' +
+      'checks the pipeline from outside.';
+    log.log(`::error title=DISPATCH_FAILED::${message}`);
+    throw new Error(message);
+  }
+  return workflows;
+}
+
+/** Measures one batch on GitHub: discovery, fetch, activity gate, scoring. */
+export async function measureBatch({ batchIndex }) {
   const { developers: rawDevs, screenedOut, discoveryComplete } = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
@@ -216,199 +575,101 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
   // failed the gate. Only a developer this run never looked at is carried.
   const evaluated = [...rawDevs.map((d) => d.username), ...screenedOut];
 
-  saveBatchEntries(batchIndex, newEntries, evaluated, discoveryComplete);
-  mergeBatchIntoLeaderboard({ batchIndex, newEntries, evaluated, discoveryComplete, targetPath });
+  // False when this batch's search is known to be short; the merge then
+  // freezes miss counters rather than count absence from it.
+  return { newEntries, evaluated, discoveryComplete };
 }
 
 /**
- * Where this batch's own rows are parked so the merge can be replayed without
- * going back to GitHub.
- *
- * Deliberately outside the working tree: the retry in the workflow resets hard
- * onto origin/main between attempts, and anything kept in the repo would be
- * thrown away exactly when it is needed.
+ * The dry run's measurement: the batch's own rows, replayed as though just
+ * measured. It drives the real merge, guards and save without GitHub.
  */
-export function batchEntriesPath(batchIndex) {
-  const dir = process.env.BATCH_OUTPUT_DIR || os.tmpdir();
-  return path.join(dir, `rankistan-batch-${batchIndex}.json`);
-}
-
-function saveBatchEntries(batchIndex, entries, evaluated, discoveryComplete = true) {
-  const target = batchEntriesPath(batchIndex);
-  atomicWriteJsonSync(target, { batch_index: batchIndex, entries, evaluated, discoveryComplete });
-  console.log(`Batch ${batchIndex} rows saved for re-merge: ${target}`);
-}
-
-/**
- * Fold one batch's rows into whatever the leaderboard currently holds.
- *
- * This is the whole of the merge, and it is a merge *by row owner*: every row
- * carries the `batch_index` that produced it, this batch replaces only its own,
- * and the other 23 batches are carried across untouched. Two batches finishing
- * at once are therefore not in conflict - they own disjoint rows.
- *
- * That is why the retry path re-runs this against the newest file rather than
- * asking git to reconcile two versions of it. `public/data.json` is generated,
- * 1.6MB, and rewritten whole on every run; a textual three-way merge of it
- * conflicts every single time, which is what `ci: retry leaderboard push after
- * rebasing onto main` (186ad85) has been doing daily since May.
- */
-export function mergeBatchIntoLeaderboard({
-  batchIndex,
-  newEntries,
-  evaluated = null,
-  discoveryComplete = true,
-  now = Date.now(),
-  targetPath = DATA_JSON
-}) {
-  const existing = loadExistingLeaderboard(targetPath);
-  const kept = existing.filter((d) => d.batch_index !== batchIndex);
-  const own = existing.filter((d) => d.batch_index === batchIndex);
-
-  const key = (d) => String(d?.username || d || '').toLowerCase();
-  const fresh = new Set(newEntries.map(key));
-  // `null` means the replay file predates this field: nobody can be shown to
-  // have been evaluated, so nobody is removed as ineligible.
-  const judged = Array.isArray(evaluated) ? new Set(evaluated.map(key)) : null;
-
-  const carried = [];
-  const ineligible = [];
-  const missedTwice = [];
-  // A search known to be incomplete cannot show that anyone left: carry everyone it did not see
-  // unchanged, without advancing their miss count.
-  const freezeMisses = discoveryComplete === false;
-  for (const row of own) {
-    if (fresh.has(key(row))) continue;
-    if (judged?.has(key(row))) {
-      ineligible.push(row.username);
-      continue;
-    }
-    if (freezeMisses) {
-      carried.push({ ...row });
-      continue;
-    }
-    const missed = (Number(row.missed_runs) || 0) + 1;
-    const since = Date.parse(row.missed_since);
-    const spanned = Number.isFinite(since) && now - since >= MIN_MISS_SPAN_HOURS * 3_600_000;
-    if (missed >= MAX_MISSED_RUNS && spanned) {
-      missedTwice.push(row.username);
-      continue;
-    }
-    // A row from before `missed_since` existed starts its clock at this miss.
-    carried.push({
-      ...row,
-      missed_runs: missed,
-      missed_since: Number.isFinite(since) ? row.missed_since : new Date(now).toISOString()
+export function replayBatch({ batchIndex, existing }) {
+  const newEntries = existing
+    .filter((d) => d.batch_index === batchIndex)
+    .map((d) => {
+      const row = { ...d };
+      delete row.missed_runs;
+      return row;
     });
-  }
-  if (freezeMisses && own.length > 0) {
-    console.warn(
-      `::warning title=Discovery incomplete::Batch ${batchIndex}: miss counters frozen this run, ` +
-        'since a search known to be incomplete cannot show that anyone left.'
+  return { newEntries, evaluated: newEntries.map((d) => d.username) };
+}
+
+function optionValue(args, name) {
+  const i = args.indexOf(name);
+  return i === -1 ? null : args[i + 1];
+}
+
+async function runCli(args, env = process.env) {
+  const usage =
+    'Usage: node scripts/run-all.js --incremental <batch-index> [--state release|<path>] [--dry-run]';
+  if (args[0] !== '--incremental') throw new Error(usage);
+
+  const batchIndex = parseInt(args[1], 10);
+  if (!Number.isInteger(batchIndex) || batchIndex < 0 || batchIndex >= SEARCH_BATCHES.length) {
+    throw new Error(
+      `Invalid batch index: ${args[1]}. Must be 0-${SEARCH_BATCHES.length - 1}.\n${usage}`
     );
   }
 
-  assertReplacementIsSafe({
+  const dryRun = args.includes('--dry-run') || env.SKIP_GITHUB === 'true';
+  const state = optionValue(args, '--state') || DATA_JSON;
+  const shared = {
     batchIndex,
-    batchLabel: SEARCH_BATCHES[batchIndex].label,
-    removedCount: own.length,
-    replacementCount: newEntries.length + carried.length,
-    allowShrink: process.env.ALLOW_LEADERBOARD_SHRINK === '1'
-  });
-
-  console.log(
-    `Existing leaderboard: ${existing.length} total, ${kept.length} from other batches, ` +
-      `${own.length} from batch ${batchIndex}.`,
-  );
-  console.log(
-    `Batch ${batchIndex}: ${newEntries.length} measured, ${carried.length} carried forward ` +
-      `(not seen this run), ${ineligible.length} removed as ineligible, ` +
-      `${missedTwice.length} removed after ${MAX_MISSED_RUNS} consecutive misses.`,
-  );
-  // Named, so a disappearance can be traced to a reason rather than inferred
-  // from a diff of the published file.
-  if (carried.length > 0) {
-    console.log(`  carried: ${carried.map((d) => d.username).join(', ')}`);
-  }
-  if (missedTwice.length > 0) {
-    console.log(`  removed after consecutive misses: ${missedTwice.join(', ')}`);
-  }
-
-  // Carried rows go in first so that nothing outranks a real measurement: a
-  // developer another batch has just measured keeps that batch's row, and this
-  // batch's fresh rows override everything.
-  const map = new Map(carried.map((d) => [key(d), d]));
-  for (const dev of kept) {
-    map.set(key(dev), dev);
-  }
-  for (const dev of newEntries) {
-    map.set(key(dev), dev);
-  }
-
-  // The whole board is re-sorted on every merge, carried rows included, so it
-  // is always in one order: see src/model/order.js.
-  let leaderboard = [...map.values()];
-  leaderboard.sort(compareRows);
-  leaderboard = leaderboard.slice(0, MAX_DEVELOPERS);
-  leaderboard.forEach((d, i) => {
-    d.rank = i + 1;
-  });
-
-  const output = {
-    last_updated: new Date().toISOString(),
-    total_devs: leaderboard.length,
-    leaderboard,
+    allowShrink: env.ALLOW_LEADERBOARD_SHRINK === '1',
+    allowMixedVersions: env.ALLOW_MIXED_MODELS === '1'
   };
 
-  atomicWriteJsonSync(targetPath, output);
-
   console.log(
-    `\nLeaderboard updated: ${leaderboard.length} developers (capped at ${MAX_DEVELOPERS}).`,
+    `\n=== Incremental batch ${batchIndex}: ${SEARCH_BATCHES[batchIndex].label} ===\n`,
   );
-  console.log(
-    `Added ${newEntries.length} from batch ${batchIndex}, carried ${carried.length}, ` +
-      `kept ${kept.length} from other batches.`,
-  );
-  return output;
-}
 
-/**
- * Replay a finished batch onto the leaderboard as it stands right now.
- *
- * Used when a push loses the race: rather than reconciling two rewrites of a
- * generated file, take the newest file and fold this batch's saved rows back
- * into it. The integrity checks run again on the way through, so a replay
- * cannot smuggle in a shrunken or mixed-model board.
- */
-export function remergeBatch(batchIndex, { targetPath = DATA_JSON } = {}) {
-  const source = batchEntriesPath(batchIndex);
-  if (!fs.existsSync(source)) {
+  if (dryRun) {
+    if (state === 'release') throw new Error('--dry-run makes no GitHub calls; give it a file.');
+    console.log(
+      `DRY RUN: no GitHub calls; replaying batch ${batchIndex} from ${state} ` +
+        `into ${DRY_RUN_DATA_JSON}`
+    );
+    await runBatch({
+      ...shared,
+      measure: replayBatch,
+      store: createFileStore({ readPath: path.resolve(state), writePath: DRY_RUN_DATA_JSON }),
+      allowEmpty: true,
+      // The file's own clock, so the unmeasured cutoff does not depend on the
+      // day CI happens to run.
+      now: (payload) => Date.parse(payload?.last_updated) || Date.now()
+    });
+    return;
+  }
+
+  if (state !== 'release') {
+    await runBatch({
+      ...shared,
+      measure: measureBatch,
+      store: createFileStore({ readPath: path.resolve(state) }),
+      // A local file that does not exist yet is a first run.
+      allowEmpty: true
+    });
+    return;
+  }
+
+  if (!env.GITHUB_TOKEN || !env.GITHUB_REPOSITORY) {
     throw new Error(
-      `No saved rows for batch ${batchIndex} at ${source}. ` +
-      `A re-merge can only replay a batch this run already computed.`
+      '--state release needs GITHUB_TOKEN and GITHUB_REPOSITORY, as GitHub Actions sets them.'
     );
   }
-
-  const saved = JSON.parse(fs.readFileSync(source, 'utf8'));
-  const entries = Array.isArray(saved?.entries) ? saved.entries : [];
-  if (saved?.batch_index !== batchIndex) {
-    throw new Error(
-      `Saved rows at ${source} are for batch ${saved?.batch_index}, not ${batchIndex}.`
-    );
-  }
-  if (entries.length === 0) {
-    throw new Error(`Saved rows for batch ${batchIndex} are empty; refusing to re-merge.`);
-  }
-
-  const evaluated = Array.isArray(saved?.evaluated) ? saved.evaluated : null;
-
-  console.log(`\nRe-merging batch ${batchIndex} (${entries.length} rows) onto the current file.`);
-  return mergeBatchIntoLeaderboard({
-    batchIndex,
-    newEntries: entries,
-    evaluated,
-    discoveryComplete: saved?.discoveryComplete !== false,
-    targetPath
+  const client = makeGitHubClient({ token: env.GITHUB_TOKEN, repo: env.GITHUB_REPOSITORY });
+  await runBatch({
+    ...shared,
+    measure: measureBatch,
+    store: createStateStore({ client }),
+    fallback: createFileStore({ readPath: DATA_JSON }),
+    allowEmpty: env.ALLOW_EMPTY_STATE === '1',
+    name: stateAssetName({
+      runId: env.GITHUB_RUN_ID || `local${Date.now()}`,
+      runAttempt: env.GITHUB_RUN_ATTEMPT || 1
+    }),
+    dispatch: () => dispatchWorkflows({ client })
   });
 }
 
@@ -416,36 +677,7 @@ export function remergeBatch(batchIndex, { targetPath = DATA_JSON } = {}) {
 // block below executed on *import*, so the module could not be imported by a
 // test without process.exit(1) tearing the runner down.
 function main() {
-  const args = process.argv.slice(2);
-  const mode = args[0];
-  const dryRun = args.includes('--dry-run') || process.env.SKIP_GITHUB === 'true';
-  const usage =
-    'Usage: node scripts/run-all.js --incremental <batch-index> [--dry-run]\n' +
-    '       node scripts/run-all.js --remerge <batch-index>';
-
-  if (mode !== '--incremental' && mode !== '--remerge') {
-    console.error(usage);
-    process.exit(1);
-  }
-
-  const idx = parseInt(args[1], 10);
-  if (Number.isNaN(idx)) {
-    console.error(usage);
-    process.exit(1);
-  }
-
-  // `--remerge` touches no network: it replays rows this run already fetched.
-  if (mode === '--remerge') {
-    try {
-      remergeBatch(idx);
-    } catch (e) {
-      console.error(e.message);
-      process.exit(1);
-    }
-    return;
-  }
-
-  runIncremental(idx, { dryRun }).catch((e) => {
+  runCli(process.argv.slice(2)).catch((e) => {
     console.error(e.message);
     process.exit(1);
   });

@@ -15,21 +15,41 @@
  * code, so its order is reported (how many rows the new order would move) but
  * not asserted. Once any batch has merged under the new code, the whole board
  * has been re-sorted by compareRows, and from then on the order is asserted.
+ *
+ * The pipeline runs this on every board before saving it (run-all.js). During
+ * a model migration the board is mixed by construction - one batch re-scored,
+ * 23 still on the old version - and stays mixed until every batch has run, so
+ * `allowMixedVersions` (ALLOW_MIXED_MODELS=1 in the pipeline) accepts several
+ * versions and skips recomputing rows from another major version, which by
+ * definition this code cannot reproduce. Rows on this major version are still
+ * recomputed, and order, ranks and duplicates are still checked.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SCORE_CONFIG } from '../src/model/config.js';
+import { SCORE_CONFIG, majorVersion } from '../src/model/config.js';
 import { recomputePublished } from '../src/model/score.js';
 import { compareRows } from '../src/model/order.js';
 
 const MAX_LISTED = 20;
 
+// A malformed version is not "another major": recomputation reports it.
+function fromOtherMajor(row, config) {
+  try {
+    return majorVersion(row.model_version) !== majorVersion(config.MODEL_VERSION);
+  } catch {
+    return false;
+  }
+}
+
 function label(row, index) {
   return `#${index + 1} ${JSON.stringify(row?.username)}`;
 }
 
-export function verifyPublished(payload, { config = SCORE_CONFIG } = {}) {
+export function verifyPublished(
+  payload,
+  { config = SCORE_CONFIG, allowMixedVersions = false } = {}
+) {
   const errors = [];
   const rows = payload?.leaderboard;
 
@@ -40,6 +60,7 @@ export function verifyPublished(payload, { config = SCORE_CONFIG } = {}) {
       legacy: 0,
       versions: [],
       recomputed: 0,
+      foreign: 0,
       orderAsserted: false,
       wouldMove: null,
       errors: ['payload has no "leaderboard" array']
@@ -56,7 +77,7 @@ export function verifyPublished(payload, { config = SCORE_CONFIG } = {}) {
   // One ranking, one model. A board that mixes them orders scores computed
   // by different formulas against each other, and no single row looks wrong.
   const versions = [...new Set(stampedIdx.map((i) => rows[i].model_version))].sort();
-  if (versions.length > 1) {
+  if (versions.length > 1 && !allowMixedVersions) {
     errors.push(
       `stamped rows carry ${versions.length} model versions (${versions.join(', ')}); ` +
         'a ranking may not mix scoring models'
@@ -64,8 +85,13 @@ export function verifyPublished(payload, { config = SCORE_CONFIG } = {}) {
   }
 
   let recomputed = 0;
+  let foreign = 0;
   for (const i of stampedIdx) {
     const row = rows[i];
+    if (allowMixedVersions && fromOtherMajor(row, config)) {
+      foreign += 1;
+      continue;
+    }
     try {
       const { score, score_exact } = recomputePublished(row, { config });
       if (score !== row.score) {
@@ -119,6 +145,7 @@ export function verifyPublished(payload, { config = SCORE_CONFIG } = {}) {
     legacy,
     versions,
     recomputed,
+    foreign,
     orderAsserted,
     wouldMove,
     errors

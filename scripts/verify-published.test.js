@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { verifyPublished } from './verify-published.js';
 import { scoreModel, publishedScoreFields } from '../src/model/score.js';
@@ -96,5 +97,57 @@ describe('verifyPublished', () => {
 
   it('fails a file with no leaderboard', () => {
     expect(verifyPublished({}).errors).toEqual(['payload has no "leaderboard" array']);
+  });
+
+  describe('during a model migration (allowMixedVersions)', () => {
+    // One batch re-scored under the new major, 23 still on the old one: mixed
+    // by construction until every batch has run. Refusing that would refuse
+    // every run of the migration, and the board would never converge.
+    function migrating() {
+      const data = board([stamped('new', 300, 12), stamped('old', 20, 3)]);
+      const old = data.leaderboard.find((r) => r.username === 'old');
+      old.model_version = '1.4.0';
+      old.score += 7; // scored by a formula this code does not have
+      return data;
+    }
+
+    it('is refused without the option', () => {
+      const errors = verifyPublished(migrating()).errors.join('\n');
+      expect(errors).toMatch(/2 model versions/);
+      expect(errors).toMatch(/"old"/);
+    });
+
+    it('accepts both versions and skips recomputing the other major', () => {
+      const report = verifyPublished(migrating(), { allowMixedVersions: true });
+      expect(report.errors).toEqual([]);
+      expect(report.foreign).toBe(1);
+      expect(report.recomputed).toBe(1);
+    });
+
+    it('still recomputes rows on this major, and still checks the order', () => {
+      const data = migrating();
+      data.leaderboard.find((r) => r.username === 'new').score += 1;
+      data.leaderboard.reverse();
+      const errors = verifyPublished(data, { allowMixedVersions: true }).errors.join('\n');
+      expect(errors).toMatch(/"new": published score/);
+      expect(errors).toMatch(/not in compareRows order/);
+    });
+  });
+});
+
+describe('the committed sample board', () => {
+  // CI builds, smoke-tests and dry-runs against this file instead of live data.
+  it('is a board the pipeline would publish', () => {
+    const sample = JSON.parse(
+      fs.readFileSync(new URL('../fixtures/data.sample.json', import.meta.url), 'utf8')
+    );
+    const report = verifyPublished(sample);
+    expect(report.errors).toEqual([]);
+    expect(report.total).toBe(50);
+    // Some rows must be versioned, or CI recomputes nothing and checks no order.
+    expect(report.recomputed).toBeGreaterThan(0);
+    expect(report.orderAsserted).toBe(true);
+    expect(sample.total_devs).toBe(50);
+    expect(sample.leaderboard.some((row) => row.batch_index === 0)).toBe(true);
   });
 });
