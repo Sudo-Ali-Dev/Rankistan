@@ -55,6 +55,24 @@ function loadExistingLeaderboard(targetPath = DATA_JSON) {
 // natural variance is large: batch sizes currently range from about 12 to 217,
 // and a 12-developer cohort losing half its members is ordinary noise.
 export const MIN_REPLACEMENT_RATIO = 0.5;
+
+// Absence from search is not evidence that a developer left.
+//
+// A batch used to drop every row it owned and re-add only what its search
+// returned this run, so anyone the search missed was deleted. Search misses
+// people for reasons that say nothing about them: a secondary rate limit
+// mid-pagination resumes offset paging over a shifted result set, follower
+// ties straddle page boundaries, a short page is taken as the end. Across
+// 3,928 versions of data.json, 914 removals came back within two runs of the
+// same batch - 11 of them from the top 10, one from rank 1 - and the rate
+// jumped from 5 to 37 a day after 2026-09-22, when runs stopped failing on a
+// rate limit and started publishing whatever pagination they had.
+//
+// So a row is removed only when this run fetched that developer and they
+// failed the gate. A developer the run never looked at is carried forward
+// unchanged and counted, and removed only on the second consecutive miss -
+// one day later, since each batch runs once a day.
+export const MAX_MISSED_RUNS = 2;
 export const MIN_COHORT_FOR_RATIO_CHECK = 20;
 
 export function assertReplacementIsSafe({
@@ -182,8 +200,13 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
     batch_index: batchIndex,
   }));
 
-  saveBatchEntries(batchIndex, newEntries);
-  mergeBatchIntoLeaderboard({ batchIndex, newEntries, targetPath });
+  // Everyone this run actually fetched, whether or not they passed. Only these
+  // developers can be judged ineligible; anyone search did not return, or whose
+  // fetch errored, was never looked at and is carried forward instead.
+  const evaluated = rawDevs.map((d) => d.username);
+
+  saveBatchEntries(batchIndex, newEntries, evaluated);
+  mergeBatchIntoLeaderboard({ batchIndex, newEntries, evaluated, targetPath });
 }
 
 /**
@@ -199,9 +222,9 @@ export function batchEntriesPath(batchIndex) {
   return path.join(dir, `rankistan-batch-${batchIndex}.json`);
 }
 
-function saveBatchEntries(batchIndex, entries) {
+function saveBatchEntries(batchIndex, entries, evaluated) {
   const target = batchEntriesPath(batchIndex);
-  atomicWriteJsonSync(target, { batch_index: batchIndex, entries });
+  atomicWriteJsonSync(target, { batch_index: batchIndex, entries, evaluated });
   console.log(`Batch ${batchIndex} rows saved for re-merge: ${target}`);
 }
 
@@ -219,29 +242,74 @@ function saveBatchEntries(batchIndex, entries) {
  * conflicts every single time, which is what `ci: retry leaderboard push after
  * rebasing onto main` (186ad85) has been doing daily since May.
  */
-export function mergeBatchIntoLeaderboard({ batchIndex, newEntries, targetPath = DATA_JSON }) {
+export function mergeBatchIntoLeaderboard({
+  batchIndex,
+  newEntries,
+  evaluated = null,
+  targetPath = DATA_JSON
+}) {
   const existing = loadExistingLeaderboard(targetPath);
   const kept = existing.filter((d) => d.batch_index !== batchIndex);
+  const own = existing.filter((d) => d.batch_index === batchIndex);
 
-  const removedCount = existing.length - kept.length;
+  const key = (d) => String(d?.username || d || '').toLowerCase();
+  const fresh = new Set(newEntries.map(key));
+  // `null` means the replay file predates this field: nobody can be shown to
+  // have been evaluated, so nobody is removed as ineligible.
+  const judged = Array.isArray(evaluated) ? new Set(evaluated.map(key)) : null;
+
+  const carried = [];
+  const ineligible = [];
+  const missedTwice = [];
+  for (const row of own) {
+    if (fresh.has(key(row))) continue;
+    if (judged?.has(key(row))) {
+      ineligible.push(row.username);
+      continue;
+    }
+    const missed = (Number(row.missed_runs) || 0) + 1;
+    if (missed >= MAX_MISSED_RUNS) {
+      missedTwice.push(row.username);
+      continue;
+    }
+    carried.push({ ...row, missed_runs: missed });
+  }
+
   assertReplacementIsSafe({
     batchIndex,
     batchLabel: SEARCH_BATCHES[batchIndex].label,
-    removedCount,
-    replacementCount: newEntries.length,
+    removedCount: own.length,
+    replacementCount: newEntries.length + carried.length,
     allowShrink: process.env.ALLOW_LEADERBOARD_SHRINK === '1'
   });
 
   console.log(
-    `Existing leaderboard: ${existing.length} total, ${kept.length} kept ` +
-      `(removed ${removedCount} from batch ${batchIndex}).`,
+    `Existing leaderboard: ${existing.length} total, ${kept.length} from other batches, ` +
+      `${own.length} from batch ${batchIndex}.`,
   );
+  console.log(
+    `Batch ${batchIndex}: ${newEntries.length} measured, ${carried.length} carried forward ` +
+      `(not seen this run), ${ineligible.length} removed as ineligible, ` +
+      `${missedTwice.length} removed after ${MAX_MISSED_RUNS} consecutive misses.`,
+  );
+  // Named, so a disappearance can be traced to a reason rather than inferred
+  // from a diff of the published file.
+  if (carried.length > 0) {
+    console.log(`  carried: ${carried.map((d) => d.username).join(', ')}`);
+  }
+  if (missedTwice.length > 0) {
+    console.log(`  removed after consecutive misses: ${missedTwice.join(', ')}`);
+  }
 
-  const map = new Map(
-    kept.map((d) => [String(d.username || '').toLowerCase(), d]),
-  );
+  // Carried rows go in first so that nothing outranks a real measurement: a
+  // developer another batch has just measured keeps that batch's row, and this
+  // batch's fresh rows override everything.
+  const map = new Map(carried.map((d) => [key(d), d]));
+  for (const dev of kept) {
+    map.set(key(dev), dev);
+  }
   for (const dev of newEntries) {
-    map.set(String(dev.username || '').toLowerCase(), dev);
+    map.set(key(dev), dev);
   }
 
   let leaderboard = [...map.values()];
@@ -268,7 +336,8 @@ export function mergeBatchIntoLeaderboard({ batchIndex, newEntries, targetPath =
     `\nLeaderboard updated: ${leaderboard.length} developers (capped at ${MAX_DEVELOPERS}).`,
   );
   console.log(
-    `Added ${newEntries.length} from batch ${batchIndex}, kept ${kept.length} from other batches.`,
+    `Added ${newEntries.length} from batch ${batchIndex}, carried ${carried.length}, ` +
+      `kept ${kept.length} from other batches.`,
   );
   return output;
 }
@@ -301,8 +370,10 @@ export function remergeBatch(batchIndex, { targetPath = DATA_JSON } = {}) {
     throw new Error(`Saved rows for batch ${batchIndex} are empty; refusing to re-merge.`);
   }
 
+  const evaluated = Array.isArray(saved?.evaluated) ? saved.evaluated : null;
+
   console.log(`\nRe-merging batch ${batchIndex} (${entries.length} rows) onto the current file.`);
-  return mergeBatchIntoLeaderboard({ batchIndex, newEntries: entries, targetPath });
+  return mergeBatchIntoLeaderboard({ batchIndex, newEntries: entries, evaluated, targetPath });
 }
 
 // Only run the CLI when this file is the process entry point. Previously the
