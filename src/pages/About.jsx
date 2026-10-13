@@ -49,14 +49,14 @@ const PIPELINE_STEPS = [
 
 const SCANNER_METRICS = [
   {
-    value: '40,000+',
-    label: 'Profiles Scanned',
-    desc: 'Full daily sweep from account-year 2000 to the present, split across 24 hourly batches.'
+    value: '34,838',
+    label: 'Profiles Searched',
+    desc: `Every account from 2000 to the present whose location says Pakistan or names one of ${CITY_TERMS.length} Pakistani cities, counted on 13 October 2026, split across 24 hourly batches.`
   },
   {
-    value: '20,000+',
-    label: 'Candidates Re-Evaluated',
-    desc: 'Profiles with potential score movement are rescored from fresh events, stars, followers, and repos.'
+    value: 'Daily',
+    label: 'Every Profile Screened',
+    desc: 'Each is checked on its first page of public events. Only those that page does not settle are fetched in full and rescored.'
   },
   {
     value: 'Strict',
@@ -104,7 +104,7 @@ const FAQ = [
   { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
   { q: 'Why is my score lower than expected?', a: `Stars are capped at ${MAX_STARS_FOR_SCORING} and followers are capped at ${MAX_FOLLOWERS_FOR_SCORING} for scoring purposes. Recent activity uses diminishing returns (base / log2(n+1) per event per UTC day) with daily caps per type — spamming pushes in one day earns far less than steady work spread across the month.${PUSH_RULE.maxCountedPerDay === null ? '' : ` Only the first ${PUSH_RULE.maxCountedPerDay} pushes per day count.`} Accounts younger than ${SIX_MONTHS_DAYS} days receive a ${AGE_PENALTY_MULTIPLIER}× penalty on their entire score.` },
   { q: 'What is the "new account penalty"?', a: `If your GitHub account is less than ${SIX_MONTHS_DAYS} days old, your final score is multiplied by ${AGE_PENALTY_MULTIPLIER}. This prevents newly created accounts from dominating the board.` },
-  { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026), re-evaluates 20,000+ candidates for score changes, then applies strict activity gates before ranking.' },
+  { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026), screens every one on its first page of public events, fetches in full only those that page does not settle, then applies strict activity gates before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
   { q: 'Can I register manually?', a: 'Yes — use the Register tab to enter a GitHub username. It validates the profile against all pipeline criteria and shows you exactly which thresholds you pass or fail.' },
@@ -143,7 +143,7 @@ export default function About({ onChangeTab }) {
           <p className="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed max-w-3xl">
             Rankistan is an automated leaderboard that discovers, tracks, and ranks active Pakistani developers on GitHub.
             The pipeline runs every hour as a rolling daily scanner across historical and modern GitHub accounts.
-            It inspects 40,000+ profiles, rechecks 20,000+ for score movement, and publishes only developers that pass strict ranking gates.
+            It searches about 34,800 profiles a day, screens every one, and publishes only developers that pass strict ranking gates.
             No manual submissions. No vanity metrics. Just code.
           </p>
         </div>

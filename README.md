@@ -40,7 +40,7 @@ The pipeline discovers developers from GitHub's location search (profiles that s
 Rankistan operates as a rolling daily scanner rather than a one-shot leaderboard rebuild.
 
 1. Search 34,838 GitHub accounts spanning account creation years from 2000 to present: 26,002 whose location says Pakistan and 8,836 that name only a Pakistani city (counted on 13 October 2026).
-2. Re-evaluate 20,000+ candidates that show potential score movement from fresh profile/activity/repo signals.
+2. Screen every one on its first page of public events, and fetch in full only those that page does not settle.
 3. Apply strict ranking criteria and publish only developers who pass all gates.
 
 The scanner is distributed across 24 hourly batches, so the full ecosystem is refreshed continuously while keeping API usage within platform limits.
