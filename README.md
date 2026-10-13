@@ -14,7 +14,7 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 - [Scheduling](#scheduling)
 - [Project Structure](#project-structure)
 - [Cloudflare Worker API](#cloudflare-worker-api)
-- [Groq Key Security](#groq-key-security)
+- [Monitoring](#monitoring)
 - [Contributing](#contributing)
 - [TODO](#todo)
 
@@ -22,7 +22,7 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 
 | Tab | Description |
 |---|---|
-| **Leaderboard** | Ranked list from `public/data.json` with search, filters, sort, CSV export, and pagination |
+| **Leaderboard** | Ranked list from `board.json` (built at deploy from the pipeline's state) with search, filters, sort, CSV export, and pagination |
 | **Map** | Pakistan outline with per-place counts; place breakdown; hover a node to sync-highlight and auto-scroll that place in the list; click a place to list developers for that bucket |
 | **Badge** | Generate a dynamic Shields.io rank badge for your GitHub README (Markdown, HTML, or reST snippets) |
 | **Register** | Validate a GitHub profile against pipeline criteria; shows an estimated score breakdown (stars, activity by type, followers, repos) before batch sync; links to the Register and Remove me issue forms |
@@ -33,13 +33,15 @@ The map assigns each developer to a canonical place key using a deterministic no
 
 ## How It Works
 
-The pipeline discovers developers from GitHub's location search (profiles that say Pakistan, or name one of 15 Pakistani cities without it), fetches their recent activity, and ranks them by a weighted score. Only genuinely active developers make the cut. The leaderboard is updated incrementally — each batch refreshes its slice of the leaderboard every day.
+The pipeline discovers developers from GitHub's location search (profiles that say Pakistan, or name one of 15 Pakistani cities without it) and from registrations, screens their recent activity, and ranks those who pass by a weighted score. Only genuinely active developers make the cut. The leaderboard is updated incrementally: each hourly batch refreshes its slice of the board, and the whole board is redeployed after every batch.
+
+The design behind it, what it replaced and why, is recorded in [`docs/data-infrastructure-redesign.md`](docs/data-infrastructure-redesign.md).
 
 ### Daily Scanner Layer
 
 Rankistan operates as a rolling daily scanner rather than a one-shot leaderboard rebuild.
 
-1. Search 34,838 GitHub accounts spanning account creation years from 2000 to present: 26,002 whose location says Pakistan and 8,836 that name only a Pakistani city (counted on 13 October 2026).
+1. Search about 34,850 GitHub accounts spanning account creation years from 2000 to present: about 26,000 whose location says Pakistan and 8,840 that name only a Pakistani city (34,854 in all on 13 October 2026), plus anyone registered by GitHub issue.
 2. Screen every one on its first page of public events, and fetch in full only those that page does not settle.
 3. Apply strict ranking criteria and publish only developers who pass all gates.
 
@@ -50,11 +52,14 @@ The scanner is distributed across 24 hourly batches, so the full ecosystem is re
 | Stage | Script | Output |
 |---|---|---|
 | **Discover** | `scripts/fetch-devs.js`, [`scripts/discovery/`](scripts/discovery/), [`scripts/registry.js`](scripts/registry.js) | Searches GitHub for developers whose location says Pakistan or names one of 15 Pakistani cities, by account-creation date, each range cut into slices that list whole in one request; adds developers registered by GitHub issue and drops those who opted out |
-| **Fetch** | `scripts/fetch-devs.js` | Fetches profile, events (up to 2 pages / 200 events, last 60 days), repos, and linked social accounts (for LinkedIn) for each developer |
+| **Screen** | `scripts/fetch-devs.js` | Reads each candidate's first page of public events; a feed under 100 events settles the activity gate exactly, so most candidates stop here |
+| **Fetch** | `scripts/fetch-devs.js` | For those who pass: profile, events (up to 2 pages / 200 events, last 60 days), repos, and linked social accounts (for LinkedIn) |
 | **Score** | [`score-config.json`](score-config.json), [`src/model/`](src/model/), [`scripts/score.js`](scripts/score.js) | Weighted score from stars, 30-day activity (diminishing returns per UTC day), followers, and public repo count; Register runs the same code |
-| **Leaderboard** | `scripts/write-leaderboard.js` | Writes the final ranked `data.json` with public-safe fields |
+| **Shadow** | [`scripts/measure/contributions.js`](scripts/measure/contributions.js) | Records the next scoring model's inputs on each published row, scored by nothing ([below](#shadow-measurement-not-scored)) |
+| **Merge and save** | [`scripts/run-all.js`](scripts/run-all.js), [`scripts/state-store.js`](scripts/state-store.js) | Merges the batch into the whole board by row owner, refuses an unexplained loss, and saves the board to the `pipeline-state` release |
+| **Publish** | [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), [`scripts/build-split-data.js`](scripts/build-split-data.js) | Builds the site with `board.json`, `dev/<login>.json`, `digest.json` and the public `data.json` from the newest state, and deploys Pages |
 
-During **Fetch**, each developer is assigned category tags (AI/ML, Web, DevOps, etc.) by matching bio, repos, and languages against [`src/utils/tag-keywords.json`](src/utils/tag-keywords.json) via [`src/utils/tag-matcher.js`](src/utils/tag-matcher.js). Tags flow through scoring into `public/data.json`. The leaderboard UI uses those tags when present and only recomputes them for older rows missing tags. Re-run the pipeline to refresh tags after keyword changes.
+During **Fetch**, each developer is assigned category tags (AI/ML, Web, DevOps, etc.) by matching bio, repos, and languages against [`src/utils/tag-keywords.json`](src/utils/tag-keywords.json) via [`src/utils/tag-matcher.js`](src/utils/tag-matcher.js). Tags flow through scoring onto the board. The leaderboard UI uses those tags when present and only recomputes them for older rows missing tags. Re-run the pipeline to refresh tags after keyword changes.
 
 ### Activity Filter
 
@@ -78,7 +83,7 @@ PK 2000-Dec2014 → PK Jan2015-Aug2016 → ... → PK Jun2025-Nov2025 → PK Dec
 
 The ranges are cut by measured size, not by hand, so each batch screens about the same number of candidates: 1,240 to 1,640 on 13 October 2026, with the newest batch held to 915 so it can absorb the accounts that join each month ([`scripts/discovery/batches.js`](scripts/discovery/batches.js)). Until that day they were tuned to stay under GitHub's 1,000-result search cap, and once discovery lifted the cap the 2025-onward batch grew to 3,724 candidates, an hourly run that took most of its hour. A row belongs to the batch whose range holds its `created_at`, re-derived on every run, so [`scripts/discovery/rebalance.js`](scripts/discovery/rebalance.js) can recut the table whenever the counts drift, without stranding anyone.
 
-One batch runs per hour, dispatched at :00 by the Cloudflare Worker's cron via `workflow_dispatch`, completing a full cycle every 24 hours. At :35 the same cron dispatches a backup trigger, which starts the pipeline only when no run covered that hour (`scripts/should-run.js`), and the watchdog, so a missed dispatch costs at most half an hour. Each batch immediately merges its results into the live leaderboard using per-batch replacement — only that batch's old entries are replaced with fresh data.
+One batch runs per hour, dispatched at :00 by the Cloudflare Worker's cron via `workflow_dispatch`, completing a full cycle every 24 hours. At :35 the same cron dispatches a backup trigger, which starts the pipeline only when no run covered that hour (`scripts/should-run.js`), and the watchdog, so a missed dispatch costs at most half an hour. Each batch merges its results into the whole board and the board is redeployed at once; see [Incremental Per-Batch Updates](#incremental-per-batch-updates) for what a batch may and may not remove.
 
 GitHub returns at most 1,000 results for any one search, and most batches match more than that (`PK Dec2019-May2020` matched 1,233 on 2026-10-13). So a batch's range is never listed as a single query. [`scripts/discovery/`](scripts/discovery/) bisects it by creation date — whole days, then seconds — until every slice holds fewer than 30 developers, packs neighbouring slices back together up to 95, and lists each resulting leaf in one GraphQL request. A single request has no page boundary for a follower tie to straddle and no cursor for a rate-limit wait to invalidate.
 
@@ -112,20 +117,20 @@ Search finds developers whose GitHub location says Pakistan or names one of the 
 
 ### Incremental Per-Batch Updates
 
-Every developer entry in `data.json` is tagged with a `batch_index`. When batch N runs:
+Every row on the board carries a `batch_index`: the batch whose `created:` range holds the developer's account, re-derived from `created_at` every time the board is loaded. When batch N runs, it replaces only the rows it owns, and it may remove one of them only for a recorded reason:
 
-1. Fetch and score developers for batch N
-2. Remove only entries where `batch_index === N` from the existing leaderboard
-3. Insert freshly scored batch N developers (tagged with `batch_index: N`)
-4. Deduplicate by username (latest batch wins), re-sort, re-rank, and cap
+1. **Measured fresh:** a developer this run fetched and who passed replaces their row.
+2. **Ineligible:** a developer this run fetched (or screened, on a complete first events page) and who failed the gate is removed.
+3. **Missed:** a developer this run's search did not return is *kept*, with `missed_runs` counted. Absence from search is not evidence: they are removed only on a second miss at least 20 hours after the first. If this run's search is known to be incomplete, the counters freeze and nobody is removed.
+4. **Unmeasured** for 7 days, **displaced** below the 1,000 cap, or **opted out** by issue (any batch, any run).
 
-This means developers from batch 23 stay on the leaderboard all day until batch 23 re-runs and refreshes them. No downtime, no daily wipe.
+Rows owned by the other 23 batches are carried across untouched, the whole board is re-sorted and re-ranked, and each run records when its batch ran (`batch_runs`). No downtime, no daily wipe, and nobody leaves the board without a reason in the run's log.
 
 ### Where the Board Lives
 
 The board is pipeline state, not a file in git. Each run of `update-digest.yml` loads the newest state from the [`pipeline-state`](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/pipeline-state) release, merges its batch in, and saves the whole board back as a new asset, `state-<run_id>-<run_attempt>.json.gz` (the shape of `data.json`, gzipped). The newest 72 are kept. See [`scripts/state-store.js`](scripts/state-store.js).
 
-Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, displaced below the 1,000 cap, or opted out. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. A code push and a data update therefore both deploy the latest of each.
+Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, displaced below the 1,000 cap, or opted out. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. The site's own `data.json` is that state without its pipeline-only fields (the shadow measurement below), so the Worker and outside readers download what they did before those fields existed. A code push and a data update therefore both deploy the latest of each.
 
 `public/data.json` used to be committed every hour, and was 98.4% of the repository's packed size.
 
@@ -138,8 +143,8 @@ Before saving, the run refuses a board that fails `verify:published`, or that lo
 AI summaries are generated only when a user expands a developer card.
 
 1. Card expansion triggers summary generation if the username is not already cached in memory.
-2. Frontend sends sanitized developer metadata to the Cloudflare Worker endpoint (`/api/dev-summary`) with timeout and retry controls.
-3. Worker enforces CORS and per-IP rate limits, sanitizes input again, and calls Groq using server-side secrets.
+2. Frontend sends the developer's username to the Cloudflare Worker endpoint (`/api/dev-summary`) with timeout and retry controls.
+3. Worker enforces CORS and per-IP rate limits, looks the developer up on the published leaderboard, builds the prompt from that published row (never from the request body), and calls Groq using server-side secrets.
 4. Returned summary text is validated (minimum length and refusal checks), trimmed to display limits, and returned to the UI.
 5. Frontend caches the final summary by username so repeated expansions are instant.
 
@@ -149,7 +154,7 @@ This design keeps summaries accurate and interactive while avoiding expensive bu
 
 Ranked developers can embed a live badge in their GitHub README via the **Badge** tab.
 
-1. Enter a GitHub username — the UI looks up rank from `public/data.json`.
+1. Enter a GitHub username — the UI looks up rank on the published board (`board.json`).
 2. Pick a Shields.io style (Flat, For The Badge, Flat Square, or Plastic).
 3. Copy the generated snippet (Markdown, HTML, or reST).
 
@@ -161,7 +166,7 @@ Example badge URL (used inside copied snippets):
 https://img.shields.io/endpoint?url=https%3A%2F%2Frankistan-summary-api.academics-ali.workers.dev%2Fapi%2Fbadge%2F{username}&style=flat
 ```
 
-The badge API runs on the same Worker as dev summaries — not on `rankistan.dev`, which is static GitHub Pages and cannot serve API routes. Deploy Worker changes with:
+The badge API runs on the same Worker as dev summaries — not on `rankistan.dev`, which is static GitHub Pages and cannot serve API routes. Deploy Worker changes from a checkout of `main` with:
 
 ```bash
 npm run cf:deploy
@@ -193,7 +198,7 @@ final_score = round(base_score × (account_age < 6 months ? 0.5 : 1.0))
 > **Note on caps**
 > - Stars are capped at **250** (max **500** star points).
 > - Followers are capped at **500** (max **500** follower points).
-- Public repos are capped at **200** (max **100** repo points).
+> - Public repos are capped at **200** (max **100** repo points).
 > - Accounts younger than **6 months** receive a **0.5×** multiplier on the full base score.
 
 **What counts (open source only)**
@@ -220,7 +225,7 @@ Recent meaningful events use diminishing returns **per UTC calendar day**, per t
 | Pull Request | 4.0 | 25 pts | — |
 | Release | 5.0 | 20 pts | — |
 
-During scoring, the pipeline prefers `raw_events_60d` from fetch (then filters to 30 days). If only per-type totals exist, it uses `event_counts_30d` with a synthetic single-day curve. If only flat `events_30d` exists, it falls back to **3.125** points per event.
+Scoring reads `raw_events_60d` from the fetch and filters it to the last 30 days. A row without it is refused rather than scored another way: the old fallbacks (a synthetic single-day curve from per-type totals, or a flat 3.125 points per event) scored the same developer differently depending on what the row happened to carry, and were removed with [`src/model/`](src/model/).
 
 `events_30d` on the leaderboard is a **raw** event count and can be higher than the capped activity points used in score.
 
@@ -264,13 +269,16 @@ node scripts/run-all.js --incremental 0 --dry-run
 npm run lint          # ESLint across src/, scripts/ and cloudflare/
 npm test              # Vitest
 npm run build         # production build, plus the split data files the browser reads
+npm run smoke         # the built bundle mounts, and the split files match public/data.json
 npm run verify:activity   # activity-scoring invariants (log2 curve + daily caps)
+npm run verify:published  # every published score recomputes from its own row
 
 # Formatting - see CONTRIBUTING.md before running repo-wide
 npm run format:check
 npm run format
 
-# Deploy the Cloudflare Worker (badge + summary APIs) - not done by merging
+# Deploy the Cloudflare Worker (badge, summary, health APIs and the pipeline's clock)
+# from a checkout of main - not done by merging
 npm run cf:deploy
 ```
 
@@ -285,7 +293,7 @@ Dry-run replays the batch's own rows from `public/data.json` as though they had 
 
 ## Scheduling
 
-The pipeline runs **every hour, 24 batches per day**, dispatched through the GitHub Actions API by the Cloudflare Worker's cron triggers (`cloudflare/scheduled.js`). GitHub's own scheduler is not used for this: no `schedule` trigger has fired in this repository since 2026-04-03.
+The pipeline runs **every hour, 24 batches per day**, dispatched through the GitHub Actions API by the Cloudflare Worker's cron triggers (`cloudflare/scheduled.js`), with a fine-grained token held as the Worker secret `GITHUB_DISPATCH_TOKEN` (this repository only, Actions read and write). GitHub's own scheduler is not relied on: no `schedule` trigger fired in this repository from 2026-04-03 until 19:52 UTC on 2026-10-13, when the watchdog's `:17` slot ran 35 minutes late.
 
 Nothing that runs the pipeline can report its own failure, so an outside monitor watches the result. [cron-job.org](https://cron-job.org) requests the Worker's `/api/health` every hour, holding no token, and emails the owner when it answers 503: the live board's `last_updated` is more than 4 hours old, or unreadable.
 
@@ -328,15 +336,27 @@ Candidate counts were measured on 13 October 2026 (34,854 in all), and the range
 
 ### Manual Trigger
 
-You can trigger any batch manually via **Actions → "Update Leaderboard" → Run workflow** with a specific batch index, or leave it empty to auto-detect from the current hour.
+You can trigger any batch manually via **Actions → "Update Leaderboard" → Run workflow** with a specific batch index, or leave it empty to auto-detect from the current hour (`gh workflow run update-digest.yml --ref main`). A run that starts while another is in progress waits for it; the two never overlap.
 
 ## Project Structure
 
 ```
 score-config.json       # Weights, caps, ACTIVITY_SCORING (single source of truth)
+docs/
+  data-infrastructure-redesign.md  # The October 2026 redesign: what broke, what was built, why
 scripts/
-  fetch-devs.js         # Developer discovery + activity fetching
+  fetch-devs.js         # Discovery, the events screen, and full fetches
+  discovery/
+    batches.js          # The 24 batch ranges, cut from measured counts
+    rebalance.js        # Recomputes batches.js from live counts
+    partition.js        # Splits a range into leaves that list in one request
+    discover.js         # Lists every leaf and checks the listing is complete
+    graphql.js          # GraphQL search client: points, retries, error classes
+    locations.js        # The 15 cities, the excluded names, the foreign-place reject list
   registry.js           # Registration and opt-out issues, keyed on the account id
+  state-store.js        # The board's state on the pipeline-state release (save, pull, restore)
+  should-run.js         # The backup trigger's guard: does a run already cover this hour?
+  watchdog.js           # Hourly checks; keeps one self-closing issue
   score.js              # Batch scoring (a thin wrapper over src/model/)
   verify-activity-score.js  # Sanity checks for activity curve
   verify-published.js   # Recomputes every versioned score on the published board
@@ -347,10 +367,15 @@ scripts/
     contributions.js    # Shadow measurement of the next model's inputs (scored by nothing)
   shadow-report.js      # Coverage and distributions of the shadow measurement, as markdown
 cloudflare/
-  worker.js             # Cloudflare Worker (dev summaries + badge JSON API)
-  wrangler.toml         # Worker deployment config
+  worker.js             # Cloudflare Worker (summaries, badges, heatmaps, /api/health)
+  scheduled.js          # The cron triggers: the pipeline at :00, backup + watchdog at :35
+  health.js             # /api/health: 503 once the live board is over 4 hours old
+  rate-limiter.js       # Per-IP rate limit, a Durable Object
+  wrangler.toml         # Worker deployment config, including the crons
+fixtures/
+  data.sample.json      # 50-row board CI tests and dry-runs against
 public/
-  data.json             # Final leaderboard (published unchanged at the site root; the Worker reads it)
+  data.json             # Local copy of the board (gitignored; `npm run state:pull`)
   data.dry-run.json     # Local dry-run output only (gitignored)
 src/
   App.jsx               # Main app shell (Leaderboard / Map / Badge / Register / About / Evolution)
@@ -369,6 +394,9 @@ src/
   components/
     ScoreBreakdownPanel.jsx  # Register score bifurcation UI
   utils/
+    leaderboard-data.js   # The one place pages load the board and detail files from
+    split-data.js         # board.json / dev / digest shapes, shared by the build and the browser
+    freshness.js          # The status line, derived from last_updated
     score-breakdown.js    # src/model/ results shaped for the Register UI
     groq.js               # Worker API URL helpers (summary + badge endpoints)
 ```
@@ -382,10 +410,13 @@ The Worker (`cloudflare/worker.js`) backs three public endpoints:
 | `/api/dev-summary` | POST | On-demand AI developer summaries (Groq) |
 | `/api/badge/{username}` | GET | Shields.io JSON for dynamic README badges |
 | `/api/heatmap/{username}` | GET | Contribution-graph SVG, proxied and cached |
+| `/api/health` | GET | 200 while the live board is at most 4 hours old, 503 otherwise; polled by an outside monitor |
+
+It also runs the pipeline's clock: cron triggers at `:00` (dispatch the pipeline) and `:35` (the backup trigger and the watchdog), in [`cloudflare/scheduled.js`](cloudflare/scheduled.js).
 
 Summary generation runs behind the Worker so the Groq key is not exposed in the frontend bundle.
 
-Worker changes only take effect after `npm run cf:deploy` — merging a PR does not update the Worker.
+Worker changes only take effect after `npm run cf:deploy` from a checkout of `main` — merging a PR does not update the Worker. New cron triggers can take up to 15 minutes to start firing.
 
 ### Security Model
 
@@ -395,10 +426,13 @@ Worker changes only take effect after `npm run cf:deploy` — merging a PR does 
 - `/api/dev-summary` requires the username to be a valid GitHub handle **and** to
   already exist on the leaderboard. That is what bounds the cost of abuse: the
   endpoint spends Groq credits per call and is otherwise unauthenticated.
-- Rate limiting uses Cloudflare's Rate Limiting binding (`SUMMARY_RATE_LIMITER`
-  in `cloudflare/wrangler.toml`), which is authoritative **per Cloudflare
-  location** rather than strictly globally. A module-level counter was used
-  before, which only ever limited per Worker isolate ([#65](https://github.com/Sudo-Ali-Dev/Rankistan/issues/65)).
+- Rate limiting uses a Durable Object (`RATE_LIMITER`, [`cloudflare/rate-limiter.js`](cloudflare/rate-limiter.js)),
+  one instance per client IP, so each IP has one authoritative counter. A
+  module-level counter was used first, which only ever limited per Worker
+  isolate ([#65](https://github.com/Sudo-Ali-Dev/Rankistan/issues/65)), and
+  Cloudflare's Rate Limiting binding was measured as ineffective here.
+- `GITHUB_DISPATCH_TOKEN`, the only token outside GitHub, is a Worker secret
+  limited to dispatching this repository's workflows.
 - CORS reflects only origins listed in `SUMMARY_ALLOWED_ORIGIN`, and every
   response sets `Vary: Origin` so cached responses cannot leak one origin's
   `Access-Control-Allow-Origin` to another.
@@ -419,6 +453,16 @@ Configuration model:
 - `SUMMARY_ALLOWED_ORIGIN`: allowed frontend origin for Worker CORS.
 - `scripts/generate-digest.js` uses the first available slot from `GROQ_API_KEY_1` … `GROQ_API_KEY_8`. Note it is **not currently wired into CI**: no workflow or npm script invokes it, and `public/digest.json` is not generated. The Repository Digest page reads a `digest.json` that `npm run build` derives from `public/data.json`, and the build refuses to run if a `public/digest.json` exists rather than overwrite it.
 
+## Monitoring
+
+Three independent things watch the pipeline, so no single failure goes unnoticed:
+
+| Watcher | Runs | Reports |
+|---|---|---|
+| [`scripts/watchdog.js`](scripts/watchdog.js) | Hourly from the Worker's `:35` cron, and after every pipeline run | The live board older than 4 hours; a batch not run in 49 hours; a run stuck queued or waiting for 90 minutes; two cancelled runs in a row; the pipeline or backup workflow disabled. It keeps one issue open while anything is wrong and closes it when all is well. Only new trouble comments on the issue or fails the run, so a long recovery is one thread, not an hourly email |
+| `/api/health` + [cron-job.org](https://cron-job.org) | Hourly | Emails the owner when the board is more than 4 hours old. It holds no credentials, and catches what the watchdog cannot: the clock itself, its token, or GitHub stopping |
+| The pipeline's own log | Every run | Every removal by name with its reason; discovery completeness; the shadow measurement's aggregate line |
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the checks CI runs on every PR,
@@ -434,6 +478,7 @@ formatting rules, and PR scope guidance. Security reports go through
 - [x] About — On-site documentation for scoring, filters, and scheduling
 - [x] Evolution — Scoring formula history and plain-language rationale
 - [x] Register score breakdown — Live estimate with per-component points before batch sync
+- [ ] Contributions-based activity — score on `contributionsCollection` with per-repository and per-day limits, from the shadow measurement
 - [ ] Weekly Digest — AI-powered weekly summary of ecosystem trends
 - [ ] Archives — Browse previous weekly digest reports
 - [ ] Report Detail — Detailed view of an archived weekly report
