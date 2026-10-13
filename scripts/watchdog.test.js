@@ -313,6 +313,39 @@ describe('batch freshness, read from the pipeline state', () => {
     expect(alarms[0].message).toMatch(/Nothing measured in 49 h for batch 9/);
   });
 
+  it('says a batch with no dated rows is unknown, not that it measured nobody', async () => {
+    // 2026-10-13: batches 16-18 ran at 11:07, 12:00 and 13:00 UTC, before rows carried
+    // `scored_at`, and the first state-based run reported "Nothing measured in 49 h" for them.
+    const rows = [];
+    for (let b = 0; b < THRESHOLDS.BATCH_COUNT; b += 1) {
+      if (b === 16 || b === 17) rows.push({ username: `legacy-${b}`, batch_index: b, score: 5 });
+      else rows.push(...rowsFor(b, b === 9 ? 50 : 20));
+    }
+    const state = await collectState({
+      api: quietApi,
+      siteUrl: 'https://example.test/data.json',
+      now: NOW,
+      fetchImpl: site,
+      loadState: stateWith(rows)
+    });
+    const alarms = evaluate(state, NOW);
+    expect(codes(alarms)).toEqual(['BATCH_STALE']);
+    expect(alarms[0].key).toBe('9,16,17');
+    expect(alarms[0].message).toMatch(/Nothing measured in 49 h for batch 9\./);
+    expect(alarms[0].message).toMatch(/No measurement date on record for batches 16, 17:/);
+    expect(alarms[0].message).not.toMatch(/Nothing measured in 49 h for batch(es)? [^.]*16/);
+  });
+
+  it('reports one undated batch in the singular', () => {
+    const lastPublished = allBatchesAt(hoursAgo(20));
+    delete lastPublished[3];
+    const [alarm] = evaluate(healthy({ batches: { lastPublished } }), NOW);
+    expect(alarm.message).toBe(
+      'No measurement date on record for batch 3: every row it owns predates `scored_at`, ' +
+        'so when it last ran is unknown. This clears the next time it runs.'
+    );
+  });
+
   it('treats a missing or unreadable state as a failed check, not a pass', async () => {
     for (const loadState of [
       async () => null,
