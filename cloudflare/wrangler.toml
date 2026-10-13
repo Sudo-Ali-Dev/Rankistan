@@ -5,13 +5,13 @@ compatibility_date = "2026-04-03"
 [vars]
 SUMMARY_ALLOWED_ORIGIN = "https://rankistan.dev,https://www.rankistan.dev,https://sudo-ali-dev.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 
-# An hourly clock that does not depend on GitHub's scheduler, which has not fired a `schedule`
-# trigger in this repository since 2026-04-03. At :35 it dispatches pipeline-backup.yml (which
-# starts the pipeline only if no run covered the hour) and watchdog.yml. Needs the secret
-# GITHUB_DISPATCH_TOKEN: a fine-grained token for this repository only, Actions read and write.
-# See scheduled.js.
+# The pipeline's clock, which does not depend on GitHub's scheduler: no `schedule` trigger has
+# fired in this repository since 2026-04-03. At :00 it dispatches the pipeline; at :35 the backup
+# trigger (which starts the pipeline only if no run covered the hour) and the watchdog. Needs the
+# secret GITHUB_DISPATCH_TOKEN: a fine-grained token for this repository only, Actions read and
+# write. See scheduled.js; /api/health (health.js) is what an outside monitor polls.
 [triggers]
-crons = ["35 * * * *"]
+crons = ["0 * * * *", "35 * * * *"]
 
 # Rate limiting for /api/dev-summary.
 #

@@ -228,7 +228,7 @@ export function evaluate(state, now = Date.now()) {
       key: String(state.backupWorkflow.state),
       message:
         `${BACKUP_WORKFLOW} is \`${state.backupWorkflow.state}\`: the hourly backup trigger will not run, ` +
-        'and cron-job.org is now the only thing dispatching the pipeline. Re-enable it in the Actions tab.'
+        "and the Worker's :00 dispatch is now the only thing starting the pipeline. Re-enable it in the Actions tab."
     });
   }
 

@@ -3,9 +3,10 @@
 // Why this exists: the pipeline was dispatched only by an external scheduler
 // (cron-job.org), using a personal token. On 2026-10-13 that token was revoked
 // and the 14:00 UTC run simply never happened - nothing failed, so nothing
-// said so. The workflow now also has its own hourly schedule as a backup.
+// said so. Since then the Cloudflare Worker's cron dispatches the pipeline at
+// :00 and this backup (pipeline-backup.yml) at :35.
 //
-// The backup (pipeline-backup.yml) firing in an hour cron-job.org already
+// The backup firing in an hour the :00 dispatch already
 // covered would run the same batch twice: no
 // harm to the board, but about 1,300 wasted API calls. So a scheduled run
 // stands down when a dispatched run already covers the hour - one that is

@@ -99,7 +99,7 @@ const AI_SUMMARY_STEPS = [
 ];
 
 const FAQ = [
-  { q: 'How often is the leaderboard updated?', a: 'Every hour. An external cron service triggers the GitHub Actions workflow 24 times per day — one batch per hour. A full cycle through all developers completes in 24 hours.' },
+  { q: 'How often is the leaderboard updated?', a: 'Every hour. A Cloudflare Worker\'s cron triggers the GitHub Actions workflow at the top of each hour, 24 times a day — one batch per hour — with a backup at half past that runs only if the hour was missed. A full cycle through all developers completes in 24 hours.' },
   { q: 'Why am I not on the leaderboard?', a: `You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. The pipeline also has to find you: your GitHub location must say "Pakistan" or name one of ${CITY_TERMS.length} Pakistani cities (${CITY_NAMES}), or you register by GitHub issue from the Register tab. Some city names are not searched because they mostly mean somewhere else ("Hyderabad" alone is usually Hyderabad, India), so if yours is one of them, add "Pakistan" or register.` },
   { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
   { q: 'Why is my score lower than expected?', a: `Stars are capped at ${MAX_STARS_FOR_SCORING} and followers are capped at ${MAX_FOLLOWERS_FOR_SCORING} for scoring purposes. Recent activity uses diminishing returns (base / log2(n+1) per event per UTC day) with daily caps per type — spamming pushes in one day earns far less than steady work spread across the month.${PUSH_RULE.maxCountedPerDay === null ? '' : ` Only the first ${PUSH_RULE.maxCountedPerDay} pushes per day count.`} Accounts younger than ${SIX_MONTHS_DAYS} days receive a ${AGE_PENALTY_MULTIPLIER}× penalty on their entire score.` },
@@ -361,7 +361,7 @@ export default function About({ onChangeTab }) {
             <span className="material-symbols-outlined text-tertiary mb-4">update</span>
             <div className="text-2xl sm:text-3xl font-headline font-bold text-tertiary mb-1">1hr</div>
             <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Update Interval</h4>
-            <p className="font-body text-xs text-outline leading-relaxed">An external cron service (cron-job.org) triggers the pipeline via GitHub's workflow_dispatch API every hour, reliably.</p>
+            <p className="font-body text-xs text-outline leading-relaxed">A Cloudflare Worker's cron triggers the pipeline via GitHub's workflow_dispatch API every hour, with a backup at half past.</p>
           </div>
           <div className="p-4 sm:p-6 border border-outline-variant bg-surface-container-lowest">
             <span className="material-symbols-outlined text-secondary mb-4">dns</span>

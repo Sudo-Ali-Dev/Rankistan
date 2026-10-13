@@ -105,7 +105,8 @@ Explain **why** in the body when it isn't obvious from the diff.
   `src/pages/Evolution.jsx`.
 - **Worker changes need a deploy.** `npm run cf:deploy` is a separate step from
   merging; a merged PR does not update the Worker.
-- **`update-digest.yml` is dispatched by an external cron job** by filename. Do
+- **`update-digest.yml` is dispatched by the Cloudflare Worker's cron** by filename
+  (`cloudflare/scheduled.js`). Do
   not rename that workflow, and do not give it a `schedule`: GitHub disables a
   scheduled workflow after 60 days without repository activity, and a disabled
   workflow cannot be dispatched. The backup, `pipeline-backup.yml`, dispatches
