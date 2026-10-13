@@ -188,6 +188,19 @@ describe('rate limits', () => {
     expect(waits).toEqual([18000]);
   });
 
+  it('waits a secondary limit out until x-ratelimit-reset when nothing remains', async () => {
+    const now = Date.parse('2026-10-13T13:00:00Z');
+    const limited = respond(403, '{"message":"You have exceeded a secondary rate limit."}', {
+      'x-ratelimit-remaining': '0',
+      'x-ratelimit-reset': String(now / 1000 + 90)
+    });
+    const { fetchImpl, bodies } = scripted([limited], ok);
+    const { search, waits } = client(fetchImpl, { now: () => now });
+    await search.count(['type:user', 'type:user created:2021-01-01']);
+    expect(waits).toEqual([91000]);
+    expect(bodies.map(aliasCount)).toEqual([2, 2]);
+  });
+
   it('gives up with a RateLimitError once the retries are spent', async () => {
     const limited = () => respond(403, '{"message":"secondary rate limit"}');
     const { fetchImpl } = scripted([], limited);

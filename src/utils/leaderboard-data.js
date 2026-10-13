@@ -4,7 +4,8 @@ import {
   developerFilePath,
   isBoardPayload,
   isDeveloperFileFor,
-  isDigestPayload
+  isDigestPayload,
+  toDeveloperRow
 } from './split-data';
 
 // Every page reads the leaderboard through this module, and each page asks for
@@ -211,7 +212,7 @@ function loadDetail(login) {
     const rows = Array.isArray(payload?.leaderboard) ? payload.leaderboard : [];
     const developer = rows.find((row) => String(row?.username || '').toLowerCase() === wanted);
     if (!developer) throw new Error(`${login} is not on the leaderboard.`);
-    return { developer, fromCache };
+    return { developer: toDeveloperRow(developer), fromCache };
   };
 }
 

@@ -83,13 +83,25 @@ export function classifyResponse(status, headers, text) {
   if (status === 403 || status === 429) {
     const retryAfter = parseInt(header(headers, 'retry-after'), 10);
     const retryAfterMs = retryAfter > 0 ? retryAfter * 1000 : null;
+    // GitHub's order for a secondary limit: retry-after; else, with nothing remaining, the reset;
+    // else at least a minute.
+    const reset = parseInt(header(headers, 'x-ratelimit-reset'), 10);
+    const resetAtMs =
+      header(headers, 'x-ratelimit-remaining') === '0' && reset > 0 ? reset * 1000 : null;
     if (/secondary rate limit/i.test(text) || retryAfterMs != null) {
-      return { kind: 'secondary', reason: `HTTP ${status} secondary rate limit`, retryAfterMs };
+      return {
+        kind: 'secondary',
+        reason: `HTTP ${status} secondary rate limit`,
+        retryAfterMs,
+        resetAtMs
+      };
     }
     if (header(headers, 'x-ratelimit-remaining') === '0' || /rate limit/i.test(text)) {
       return { kind: 'primary', reason: `HTTP ${status} rate limit exceeded` };
     }
-    if (status === 429) return { kind: 'secondary', reason: 'HTTP 429', retryAfterMs: null };
+    if (status === 429) {
+      return { kind: 'secondary', reason: 'HTTP 429', retryAfterMs: null, resetAtMs };
+    }
     return { kind: 'fatal', reason: `HTTP 403: ${text.slice(0, 200)}` };
   }
 
@@ -235,9 +247,14 @@ export function createSearchClient({
         if (attempt >= MAX_RATE_LIMIT_RETRIES) {
           throw new RateLimitError(`${outcome.reason}, still limited after ${attempt + 1} tries`);
         }
+        const secondaryMs =
+          outcome.retryAfterMs ??
+          (outcome.resetAtMs != null
+            ? Math.max(0, outcome.resetAtMs - now())
+            : SECONDARY_MIN_WAIT_MS * (attempt + 1));
         const waitMs =
           outcome.kind === 'secondary'
-            ? (outcome.retryAfterMs ?? SECONDARY_MIN_WAIT_MS * (attempt + 1)) + 1000
+            ? secondaryMs + 1000
             : Math.max(untilResetMs(), SECONDARY_MIN_WAIT_MS) + 5000;
         log.warn(
           `GraphQL ${outcome.reason}; waiting ${Math.ceil(waitMs / 1000)}s ` +

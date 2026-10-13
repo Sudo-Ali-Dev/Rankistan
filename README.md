@@ -226,6 +226,15 @@ During scoring, the pipeline prefers `raw_events_60d` from fetch (then filters t
 
 For a plain-language history of how the formula changed (and why), open the **Evolution** tab in the app or read [`src/pages/Evolution.jsx`](src/pages/Evolution.jsx).
 
+### Shadow Measurement (not scored)
+
+The activity term above reads the public events feed, which GitHub caps at 300 events, and the pipeline reads 200: the busier a developer, the fewer days that covers. The next model will read `contributionsCollection`, which is keyed on a date range instead, and will need limits per repository and per day so that it cannot be farmed. Those limits have to be chosen from the real distributions, so every row the pipeline measures now also carries them, scored by nothing:
+
+- `shadow_contributions` ([`scripts/measure/contributions.js`](scripts/measure/contributions.js)): a dated block holding the 60-day contribution calendar, the 30-day totals (private `restricted` counts as context only), commits per repository per day with each repository's owner, fork flag and stars, pull requests per repository and how many someone else merged, and the median gap between pull request creations (an automation signal, published as context, never scored). One GraphQL request per 15 developers; a developer it cannot measure keeps their previous block.
+- `events_window` ([`scripts/fetch-devs.js`](scripts/fetch-devs.js)): how many events the read behind `activity_score` held, whether it stopped at its page ceiling, and how many days back it reached.
+
+Neither field affects a score: the block is attached after scoring, the model reads only its own inputs, and `npm run verify:published` recomputes every score without them. Both stay in `data.json`, which is the pipeline's state, and out of `board.json`, `dev/<login>.json` and `digest.json`, so the site downloads what it did before. `node scripts/shadow-report.js [board.json]` reports their coverage, distributions, and how candidate measures compare with today's `activity_score`.
+
 ## Running Locally
 
 ```bash
@@ -334,6 +343,9 @@ scripts/
   write-leaderboard.js  # Final leaderboard output (strips internal fields)
   run-all.js            # Pipeline orchestrator (--incremental N [--dry-run])
   build-split-data.js   # After vite build: splits data.json into dist/board.json, digest.json, dev/<login>.json
+  measure/
+    contributions.js    # Shadow measurement of the next model's inputs (scored by nothing)
+  shadow-report.js      # Coverage and distributions of the shadow measurement, as markdown
 cloudflare/
   worker.js             # Cloudflare Worker (dev summaries + badge JSON API)
   wrangler.toml         # Worker deployment config

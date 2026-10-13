@@ -39,8 +39,9 @@ export const SPLIT_SCHEMA = 1;
 //   tags           DevCard row, the tag filter, Compare
 //
 // Detail only: bio, top_repos, digest_repos, linkedin_url, and anything the
-// pipeline adds later. Register's ten bios come from the detail files: bios
-// are 87 KB of high-entropy text and would nearly double the board gzipped.
+// pipeline adds later, except PIPELINE_ONLY_FIELDS. Register's ten bios come
+// from the detail files: bios are 87 KB of high-entropy text and would nearly
+// double the board gzipped.
 export const BOARD_FIELDS = Object.freeze([
   'rank',
   'username',
@@ -55,6 +56,21 @@ export const BOARD_FIELDS = Object.freeze([
   'top_languages',
   'tags'
 ]);
+
+// Fields the pipeline keeps on a row for its own use and no page reads: the
+// shadow measurement of the next activity model's inputs, and how far back
+// the events read behind today's reached (scripts/measure/contributions.js).
+// They stay in data.json, which is the pipeline's state, and out of every
+// file derived for the browser, which therefore downloads what it did before
+// they existed. They would roughly double a detail file.
+export const PIPELINE_ONLY_FIELDS = Object.freeze(['shadow_contributions', 'events_window']);
+
+/** A row as the browser is given it: everything but PIPELINE_ONLY_FIELDS. */
+export function toDeveloperRow(row) {
+  const out = { ...row };
+  for (const field of PIPELINE_ONLY_FIELDS) delete out[field];
+  return out;
+}
 
 /** The Digest's tables, as many rows as the page renders. */
 export const DIGEST_TOP_REPOS = 100;
@@ -139,7 +155,7 @@ export function buildDeveloperFile(payload, row) {
   return {
     schema: SPLIT_SCHEMA,
     last_updated: payload?.last_updated ?? '',
-    developer: row
+    developer: toDeveloperRow(row)
   };
 }
 
