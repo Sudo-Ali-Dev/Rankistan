@@ -1,6 +1,8 @@
 // The Durable Object class must be exported from the Worker entrypoint for
 // wrangler to bind it.
 export { RateLimiter } from './rate-limiter.js';
+import { dispatchScheduledWorkflows } from './scheduled.js';
+import { RATE_LIMIT_MAX_REQUESTS, GITHUB_USERNAME_RE } from './limits.js';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'openai/gpt-oss-120b';
@@ -12,7 +14,6 @@ const GROQ_TIMEOUT_MS = 25000;
 const MIN_SUMMARY_LENGTH = 30;
 const MAX_SUMMARY_LENGTH = 400;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 20;
 const RATE_LIMIT_MAX_TRACKED_IPS = 10000;
 
 const REFUSAL_PREFIXES = ["i'm sorry", 'i cannot', 'as an ai'];
@@ -475,7 +476,6 @@ async function callGroqWithKeyFallback(dev, apiKeys) {
 const HEATMAP_UPSTREAM = 'https://ghchart.rshah.org';
 const HEATMAP_COLOR = '50b85e';
 const HEATMAP_CACHE_SECONDS = 3600;
-const GITHUB_USERNAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i;
 
 // ghchart's ramp runs the wrong way for a dark page: an empty day is `#EEEEEE`,
 // the brightest thing in the panel, and activity gets *darker* as it rises
@@ -687,6 +687,12 @@ async function handleBadgeRequest(request, env) {
 }
 
 export default {
+  // The hourly cron in wrangler.toml: dispatches the backup trigger and the watchdog, since
+  // GitHub's own scheduler has not fired in this repository since April (see scheduled.js).
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(dispatchScheduledWorkflows(env));
+  },
+
   async fetch(request, env) {
     const corsOrigin = resolveCorsOrigin(request, env);
     const url = new URL(request.url);
@@ -768,9 +774,9 @@ export default {
   }
 };
 
-// Exported for unit tests only. The Workers runtime uses the default export as
-// its entrypoint and ignores additional named exports, so this has no runtime
-// effect on the deployed Worker.
+// Exported for unit tests only. Local workerd reads every named export of this
+// module as a possible entrypoint and refuses a non-function, so only functions
+// are exported here: shared values live in limits.js.
 export {
   normalizeText,
   normalizeLanguages,
@@ -786,7 +792,5 @@ export {
   isHeatmapSvg,
   themeHeatmap,
   parseHeatmapDays,
-  buildHeatmapUpstreamUrl,
-  GITHUB_USERNAME_RE,
-  RATE_LIMIT_MAX_REQUESTS
+  buildHeatmapUpstreamUrl
 };

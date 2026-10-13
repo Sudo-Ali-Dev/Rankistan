@@ -7,3 +7,4 @@ GROQ_API_KEY_6=gsk_your_key_6
 GROQ_API_KEY_7=gsk_your_key_7
 GROQ_API_KEY_8=gsk_your_key_8
 SUMMARY_ALLOWED_ORIGIN=http://localhost:5173
+GITHUB_DISPATCH_TOKEN=github_pat_fine_grained_actions_read_write_this_repo_only
