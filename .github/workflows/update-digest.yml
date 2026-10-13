@@ -130,6 +130,7 @@ jobs:
           node scripts/run-all.js --incremental "$BATCH"
 
       - name: Commit and push updates
+        id: publish
         env:
           BATCH_INDEX: ${{ steps.batch.outputs.index }}
           BATCH_OUTPUT_DIR: ${{ runner.temp }}
@@ -209,3 +210,19 @@ jobs:
       - name: Deploy to GitHub Pages (retry)
         if: steps.deploy_attempt_1.outcome == 'failure'
         uses: actions/deploy-pages@v5
+
+      # Dual write, step 4a of moving pipeline state off main. The board this
+      # run left on main is also saved, byte for byte, as an asset on the
+      # `pipeline-state` release (scripts/state-store.js), and read back to
+      # prove it loads. Nothing reads the release yet: this runs the store in
+      # production before anything depends on it.
+      #
+      # Last, so a store failure can never hold up the commit or the deploy,
+      # and gated on the commit step alone, so a failed deploy still records
+      # the state main holds. A failure here fails the run where it is seen.
+      - name: Save state to the pipeline-state release
+        if: ${{ !cancelled() && steps.publish.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BATCH_INDEX: ${{ steps.batch.outputs.index }}
+        run: node scripts/state-store.js save public/data.json --label "batch $BATCH_INDEX"
