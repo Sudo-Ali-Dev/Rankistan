@@ -24,6 +24,8 @@ import {
 } from './registry.js';
 import { SEARCH_BATCHES } from './fetch-devs.js';
 import { parseShardQuery } from './discovery/partition.js';
+import { BATCH_RANGES } from './discovery/batches.js';
+import { MULTI_RANGE_QUERIES } from './discovery/fake-search.js';
 
 const quiet = { log: () => {}, warn: () => {} };
 const capture = () => {
@@ -281,8 +283,11 @@ describe('batchForCreatedAt', () => {
     }
   });
 
-  it('sends all three of batch 23 ranges to batch 23', () => {
-    expect(SEARCH_BATCHES[23].queries).toHaveLength(3);
+  it('sends every range of a multi-range batch to that batch, and says which range', () => {
+    const batches = [
+      { label: 'old', q: SEARCH_BATCHES[0].q },
+      { label: 'multi', queries: MULTI_RANGE_QUERIES }
+    ];
     for (const at of [
       '2025-01-01T00:00:00Z',
       '2025-06-30T23:59:59Z',
@@ -291,19 +296,17 @@ describe('batchForCreatedAt', () => {
       '2026-01-01T00:00:00Z',
       '2026-10-13T12:00:00Z'
     ]) {
-      expect(batchForCreatedAt(at, SEARCH_BATCHES)).toBe(23);
+      expect(batchForCreatedAt(at, batches)).toBe(1);
     }
-    expect(rangeForCreatedAt('2025-07-01T00:00:00Z', SEARCH_BATCHES).query).toBe(
-      SEARCH_BATCHES[23].queries[1]
-    );
+    expect(rangeForCreatedAt('2025-07-01T00:00:00Z', batches).query).toBe(MULTI_RANGE_QUERIES[1]);
   });
 
   it('reads the dates as UTC days, as search does', () => {
-    expect(batchForCreatedAt('2014-06-30T23:59:59Z', SEARCH_BATCHES)).toBe(0);
-    expect(batchForCreatedAt('2014-07-01T00:00:00Z', SEARCH_BATCHES)).toBe(1);
-    // 04:59 in Karachi on 1 July is still 30 June in UTC.
-    expect(batchForCreatedAt('2014-07-01T04:59:59+05:00', SEARCH_BATCHES)).toBe(0);
-    expect(batchForCreatedAt('2024-12-31T23:59:59Z', SEARCH_BATCHES)).toBe(22);
+    expect(batchForCreatedAt('2014-12-31T23:59:59Z', SEARCH_BATCHES)).toBe(0);
+    expect(batchForCreatedAt('2015-01-01T00:00:00Z', SEARCH_BATCHES)).toBe(1);
+    // 04:59 in Karachi on 1 January is still 31 December in UTC.
+    expect(batchForCreatedAt('2015-01-01T04:59:59+05:00', SEARCH_BATCHES)).toBe(0);
+    expect(batchForCreatedAt('2024-12-31T23:59:59Z', SEARCH_BATCHES)).toBe(20);
   });
 
   it('returns null outside every range, or for a date it cannot read', () => {
@@ -445,8 +448,9 @@ describe('resolveRegistered', () => {
 });
 
 describe('joinRegistry', () => {
-  const inBatch5 = '2019-01-15T00:00:00Z';
-  const inBatch9 = '2020-08-01T00:00:00Z';
+  // Noon on the first day of each batch's range, read from the current table.
+  const inBatch5 = `${BATCH_RANGES[5].from}T12:00:00Z`;
+  const inBatch9 = `${BATCH_RANGES[9].from}T12:00:00Z`;
   const registry = (registered, optedOut = []) => ({
     ...emptyRegistry(),
     registered,

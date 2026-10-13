@@ -13,6 +13,15 @@ import { locationTokens } from './locations.js';
 import { isoSecond, parseCreated, parseFollowers } from './partition.js';
 
 /** Deterministic PRNG, so a failing case reproduces. */
+// One batch searched as several `created:` ranges, the shape the 2025+ batch had until the table
+// was rebalanced on 2026-10-13. Kept as a fixture so the multi-range path stays tested even while no
+// live batch uses it.
+export const MULTI_RANGE_QUERIES = Object.freeze([
+  'location:pakistan type:user repos:>3 followers:>1 created:2025-01-01..2025-06-30',
+  'location:pakistan type:user repos:>3 followers:>1 created:2025-07-01..2025-12-31',
+  'location:pakistan type:user repos:>3 followers:>1 created:2026-01-01..2099-12-31'
+]);
+
 export function rng(seed) {
   let s = seed >>> 0;
   return () => {

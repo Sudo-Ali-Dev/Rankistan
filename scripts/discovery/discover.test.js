@@ -8,7 +8,14 @@ import {
 } from './discover.js';
 import { MAX_DISCARD_RETRIES, createSearchClient } from './graphql.js';
 import { PACK_TO, parseShardQuery } from './partition.js';
-import { RATE_LIMIT, fakeGraphql, makePopulation, matcher, respond } from './fake-search.js';
+import {
+  RATE_LIMIT,
+  fakeGraphql,
+  makePopulation,
+  matcher,
+  respond,
+  MULTI_RANGE_QUERIES
+} from './fake-search.js';
 import { cityTwinQuery } from './locations.js';
 import { SEARCH_BATCHES } from '../fetch-devs.js';
 
@@ -78,11 +85,11 @@ describe('discoverBatch', () => {
   });
 
   it('partitions a multi-range batch together and sums its ranges', async () => {
-    const ranges = SEARCH_BATCHES[23].queries.map((q) => parseShardQuery(q).root);
+    const ranges = MULTI_RANGE_QUERIES.map((q) => parseShardQuery(q).root);
     const people = ranges.flatMap((r, i) =>
       makePopulation({ n: 300 + i * 100, from: r.from, to: r.from + 150 * 86400, seed: 40 + i })
     );
-    const { report } = await run(people, { queries: SEARCH_BATCHES[23].queries });
+    const { report } = await run(people, { queries: MULTI_RANGE_QUERIES });
     expect(report.ranges.map((r) => r.count)).toEqual([300, 400, 500]);
     expect(report.rootCount).toBe(1200);
     expect(report.candidates).toHaveLength(1200);
@@ -90,7 +97,7 @@ describe('discoverBatch', () => {
   });
 
   it('discovers a multi-range city twin as its own batch, disjoint from the main query', async () => {
-    const ranges = SEARCH_BATCHES[23].queries.map((q) => parseShardQuery(q).root);
+    const ranges = MULTI_RANGE_QUERIES.map((q) => parseShardQuery(q).root);
     const where = ['Pakistan', 'Lahore', 'Karachi, Pakistan', 'Islamabad', 'Dubai'];
     const people = ranges.flatMap((r, i) =>
       makePopulation({
@@ -101,8 +108,8 @@ describe('discoverBatch', () => {
         location: (_, k) => where[k % where.length]
       })
     );
-    const twins = SEARCH_BATCHES[23].queries.map(cityTwinQuery);
-    const main = (await run(people, { queries: SEARCH_BATCHES[23].queries })).report;
+    const twins = MULTI_RANGE_QUERIES.map(cityTwinQuery);
+    const main = (await run(people, { queries: MULTI_RANGE_QUERIES })).report;
     const { report: twin } = await run(people, { queries: twins });
 
     expect(twin.sum.valid).toBe(true);
