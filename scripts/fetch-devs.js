@@ -323,6 +323,34 @@ function searchQueriesForBatch(batch) {
   return [];
 }
 
+// Search returns at most this many results for any query, however many match.
+const SEARCH_RESULT_CAP = 1000;
+
+/**
+ * Says out loud when a shard's listing cannot be trusted. Behaviour does not
+ * depend on it - run-all.js carries forward anyone a run did not see - but a
+ * degraded or capped shard should be visible in the run, not inferred later
+ * from a diff of the published file.
+ */
+export function shardQuality({ total, unique, incomplete }) {
+  const findings = [];
+  const expected = Number.isFinite(total) ? Math.min(total, SEARCH_RESULT_CAP) : null;
+  if (incomplete) findings.push('GitHub flagged incomplete_results');
+  if (expected !== null && unique < expected) {
+    findings.push(`paging returned ${unique} unique of ${expected} expected`);
+  }
+  if (Number.isFinite(total) && total >= SEARCH_RESULT_CAP) {
+    findings.push(`${total} match but only ${SEARCH_RESULT_CAP} are reachable`);
+  }
+  return findings;
+}
+
+function reportShardQuality(shard) {
+  for (const finding of shardQuality(shard)) {
+    console.warn(`::warning title=Search shard::${shard.label}: ${finding}.`);
+  }
+}
+
 async function discoverUsers(token, batches) {
   const discovered = [];
 
@@ -346,8 +374,17 @@ async function discoverUsers(token, batches) {
       const q = queries[qIdx];
       let shardCount = 0;
       let shardSuccess = false;
+      // What GitHub says the shard holds, against what paging actually
+      // delivered. Neither was read before, so a degraded listing was
+      // indistinguishable from a real one.
+      let shardTotal = null;
+      let shardIncomplete = false;
+      let shardLogins = new Set();
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
+        shardTotal = null;
+        shardIncomplete = false;
+        shardLogins = new Set();
         try {
           for (let page = 1; page <= SEARCH_MAX_PAGES; page += 1) {
             const endpoint =
@@ -355,10 +392,18 @@ async function discoverUsers(token, batches) {
               `&sort=followers&order=desc&per_page=100&page=${page}`;
             const result = await githubRequest(endpoint, token);
 
+            if (page === 1 && Number.isFinite(result?.total_count)) {
+              shardTotal = result.total_count;
+            }
+            if (result?.incomplete_results === true) {
+              shardIncomplete = true;
+            }
+
             const items = result?.items || [];
             for (const item of items) {
               if (item && typeof item.login === 'string') {
                 discovered.push(item.login);
+                shardLogins.add(item.login.toLowerCase());
                 shardCount += 1;
               }
             }
@@ -394,7 +439,16 @@ async function discoverUsers(token, batches) {
 
       if (shardSuccess) {
         batchTotal += shardCount;
-        console.log(`  -> shard ${qIdx + 1}/${queries.length}: ${shardCount} users`);
+        console.log(
+          `  -> shard ${qIdx + 1}/${queries.length}: ${shardCount} users ` +
+            `(${shardLogins.size} unique; GitHub reports ${shardTotal ?? 'unknown'})`
+        );
+        reportShardQuality({
+          label: `${batch.label} shard ${qIdx + 1}/${queries.length}`,
+          total: shardTotal,
+          unique: shardLogins.size,
+          incomplete: shardIncomplete
+        });
       }
 
       if (qIdx < queries.length - 1) {

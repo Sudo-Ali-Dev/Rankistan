@@ -5,8 +5,11 @@ import path from 'node:path';
 import {
   assertReplacementIsSafe,
   mergeBatchIntoLeaderboard,
+  remergeBatch,
+  batchEntriesPath,
   MIN_REPLACEMENT_RATIO,
-  MIN_COHORT_FOR_RATIO_CHECK
+  MIN_COHORT_FOR_RATIO_CHECK,
+  MAX_MISSED_RUNS
 } from './run-all.js';
 
 const call = (over = {}) =>
@@ -106,6 +109,8 @@ describe('mergeBatchIntoLeaderboard', () => {
     mergeBatchIntoLeaderboard({
       batchIndex: 0,
       newEntries: [row('a', 0, 900), row('z', 0, 800)],
+      // b was fetched this run and failed the gate, so it is genuinely out.
+      evaluated: ['a', 'b', 'z'],
       targetPath: tmp
     });
     const out = read(tmp);
@@ -152,7 +157,150 @@ describe('mergeBatchIntoLeaderboard', () => {
   it('still refuses a replacement that would shrink the board', () => {
     write(tmp, Array.from({ length: 200 }, (_, i) => row(`u${i}`, 0, 100 - i / 10)));
     expect(() =>
-      mergeBatchIntoLeaderboard({ batchIndex: 0, newEntries: [row('only', 0, 500)], targetPath: tmp })
+      mergeBatchIntoLeaderboard({
+        batchIndex: 0,
+        newEntries: [row('only', 0, 500)],
+        // All 200 were fetched and rejected: a real collapse, still refused.
+        evaluated: ['only', ...Array.from({ length: 200 }, (_, i) => `u${i}`)],
+        targetPath: tmp
+      })
     ).toThrow(/Data Integrity Exception/);
+  });
+
+  describe('absence from search is not evidence', () => {
+    it('carries forward a developer the run never saw, unchanged and counted', () => {
+      write(tmp, [row('seen', 0, 500), row('missed', 0, 400)]);
+      mergeBatchIntoLeaderboard({
+        batchIndex: 0,
+        newEntries: [row('seen', 0, 600)],
+        evaluated: ['seen'],
+        targetPath: tmp
+      });
+      const missed = read(tmp).find((d) => d.username === 'missed');
+      expect(missed).toBeDefined();
+      expect(missed.score).toBe(400);
+      expect(missed.missed_runs).toBe(1);
+    });
+
+    it('removes a developer on the second consecutive miss', () => {
+      write(tmp, [row('seen', 0, 500), { ...row('missed', 0, 400), missed_runs: 1 }]);
+      mergeBatchIntoLeaderboard({
+        batchIndex: 0,
+        newEntries: [row('seen', 0, 600)],
+        evaluated: ['seen'],
+        targetPath: tmp
+      });
+      expect(MAX_MISSED_RUNS).toBe(2);
+      expect(read(tmp).map((d) => d.username)).toEqual(['seen']);
+    });
+
+    it('clears the miss count once the developer is measured again', () => {
+      write(tmp, [{ ...row('back', 0, 400), missed_runs: 1 }]);
+      mergeBatchIntoLeaderboard({
+        batchIndex: 0,
+        newEntries: [row('back', 0, 450)],
+        evaluated: ['back'],
+        targetPath: tmp
+      });
+      const back = read(tmp)[0];
+      expect(back.score).toBe(450);
+      expect(back.missed_runs).toBeUndefined();
+    });
+
+    it('treats a fetch that errored like a search that missed', () => {
+      // A per-developer fetch failure leaves them out of `evaluated` too: the
+      // run did not look at them, so it cannot judge them.
+      write(tmp, [row('errored', 0, 700), row('ok', 0, 300)]);
+      mergeBatchIntoLeaderboard({
+        batchIndex: 0,
+        newEntries: [row('ok', 0, 310)],
+        evaluated: ['ok'],
+        targetPath: tmp
+      });
+      expect(read(tmp).find((d) => d.username === 'errored')?.missed_runs).toBe(1);
+    });
+
+    it('keeps rank 7 when a degraded search drops them, the #104 incident', () => {
+      // Batch 16, 2026-09-29: nadiraliofficial was #7 and absent from that
+      // run's search results, so the old merge deleted the row outright.
+      const board = [
+        row('top-1', 3, 1300),
+        ...Array.from({ length: 5 }, (_, i) => row(`peer-${i}`, 16, 1200 - i)),
+        row('nadiraliofficial', 16, 1100),
+        ...Array.from({ length: 40 }, (_, i) => row(`b16-${i}`, 16, 500 - i))
+      ];
+      write(tmp, board);
+      const reFound = board.filter((d) => d.batch_index === 16 && d.username !== 'nadiraliofficial');
+      mergeBatchIntoLeaderboard({
+        batchIndex: 16,
+        newEntries: reFound,
+        evaluated: reFound.map((d) => d.username),
+        targetPath: tmp
+      });
+      const nadir = read(tmp).find((d) => d.username === 'nadiraliofficial');
+      expect(nadir?.rank).toBe(7);
+      expect(nadir?.missed_runs).toBe(1);
+    });
+
+    it('never lets a carried row override what another batch just measured', () => {
+      write(tmp, [row('dual', 0, 100), row('dual', 5, 900)]);
+      mergeBatchIntoLeaderboard({ batchIndex: 0, newEntries: [], evaluated: [], targetPath: tmp });
+      const rows = read(tmp).filter((d) => d.username === 'dual');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].score).toBe(900);
+    });
+
+    it('still fails loudly when a second bad run would empty the batch', () => {
+      // Two degraded runs in a row turn carried rows into removals. That is a
+      // real collapse of what this batch can see, and it must stop the publish.
+      write(tmp, Array.from({ length: 30 }, (_, i) => ({ ...row(`u${i}`, 0, 100 - i), missed_runs: 1 })));
+      expect(() =>
+        mergeBatchIntoLeaderboard({
+          batchIndex: 0,
+          newEntries: [row('u0', 0, 101), row('u1', 0, 99)],
+          evaluated: ['u0', 'u1'],
+          targetPath: tmp
+        })
+      ).toThrow(/Data Integrity Exception/);
+    });
+  });
+});
+
+describe('remergeBatch', () => {
+  let dir;
+  let target;
+  const prevDir = process.env.BATCH_OUTPUT_DIR;
+  const row = (username, batch, score) => ({ username, batch_index: batch, score });
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-remerge-'));
+    process.env.BATCH_OUTPUT_DIR = dir;
+    target = path.join(dir, 'data.json');
+    fs.writeFileSync(
+      target,
+      JSON.stringify({ leaderboard: [row('kept', 2, 900), row('gone', 2, 400), row('quiet', 2, 300)] })
+    );
+  });
+  afterEach(() => {
+    process.env.BATCH_OUTPUT_DIR = prevDir;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const readNames = () =>
+    JSON.parse(fs.readFileSync(target, 'utf8')).leaderboard.map((d) => d.username).sort();
+
+  it('applies the same rule on replay: only the evaluated can be removed', () => {
+    fs.writeFileSync(
+      batchEntriesPath(2),
+      JSON.stringify({ batch_index: 2, entries: [row('kept', 2, 950)], evaluated: ['kept', 'gone'] })
+    );
+    remergeBatch(2, { targetPath: target });
+    expect(readNames()).toEqual(['kept', 'quiet']);
+  });
+
+  it('removes nobody as ineligible when the saved file predates `evaluated`', () => {
+    fs.writeFileSync(batchEntriesPath(2), JSON.stringify({ batch_index: 2, entries: [row('kept', 2, 950)] }));
+    remergeBatch(2, { targetPath: target });
+    expect(readNames()).toEqual(['gone', 'kept', 'quiet']);
   });
 });

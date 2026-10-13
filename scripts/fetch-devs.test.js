@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rateLimitWaitMs, MAX_RATE_LIMIT_RETRIES } from './fetch-devs.js';
+import { rateLimitWaitMs, MAX_RATE_LIMIT_RETRIES, shardQuality } from './fetch-devs.js';
 
 describe('rateLimitWaitMs', () => {
   const headers = (map = {}) => ({ get: (k) => map[k.toLowerCase()] ?? null });
@@ -33,5 +33,41 @@ describe('rateLimitWaitMs', () => {
 
   it('gives more than one retry before giving up', () => {
     expect(MAX_RATE_LIMIT_RETRIES).toBeGreaterThan(1);
+  });
+});
+
+describe('shardQuality', () => {
+  it('stays silent for a complete listing', () => {
+    expect(shardQuality({ total: 966, unique: 966, incomplete: false })).toEqual([]);
+  });
+
+  it('names a listing that came back short, the 560-of-881 case', () => {
+    expect(shardQuality({ total: 881, unique: 560, incomplete: false })).toEqual([
+      'paging returned 560 unique of 881 expected'
+    ]);
+  });
+
+  it('names duplicates, which shrink the unique count', () => {
+    // 2026-10-05: a mid-pagination rate-limit wait returned 1,000 items but
+    // only 848 distinct developers.
+    expect(shardQuality({ total: 1100, unique: 848, incomplete: false })[0]).toContain(
+      '848 unique of 1000'
+    );
+  });
+
+  it('names a shard over the search cap even when paging was clean', () => {
+    expect(shardQuality({ total: 1354, unique: 1000, incomplete: false })).toEqual([
+      '1354 match but only 1000 are reachable'
+    ]);
+  });
+
+  it('passes on what GitHub itself flags', () => {
+    expect(shardQuality({ total: 500, unique: 500, incomplete: true })).toEqual([
+      'GitHub flagged incomplete_results'
+    ]);
+  });
+
+  it('does not invent an expectation when the total is unknown', () => {
+    expect(shardQuality({ total: null, unique: 12, incomplete: false })).toEqual([]);
   });
 });
