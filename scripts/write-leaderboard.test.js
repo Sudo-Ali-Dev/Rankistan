@@ -18,6 +18,10 @@ describe('stripInternalFields', () => {
     }
   });
 
+  it('publishes the account id, which opt-outs match on', () => {
+    expect(stripInternalFields({ ...developer, github_id: 2 }).github_id).toBe(2);
+  });
+
   it('leaves the field off a row measured without one, rather than writing null', () => {
     const json = JSON.parse(JSON.stringify(stripInternalFields(developer)));
     expect(Object.hasOwn(json, 'discovery_source')).toBe(false);

@@ -35,6 +35,9 @@ permissions:
   # event GITHUB_TOKEN may start a workflow with, and the read of their state
   # beforehand: a disabled one fails this run.
   actions: write
+  # The registration and opt-out issues, read every run (scripts/registry.js).
+  # A run that cannot read them saves nothing.
+  issues: read
 
 concurrency:
   # Renamed from `pages-deploy` on 2026-10-13. Run 37313510144, dispatched at

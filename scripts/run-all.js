@@ -2,6 +2,8 @@
 //
 //   load      the whole board: the newest state on the `pipeline-state`
 //             release (scripts/state-store.js), or a local file
+//   registry  registrations and opt-outs, from GitHub issues
+//             (scripts/registry.js); opt-outs leave the board here
 //   measure   this batch's developers on GitHub
 //   merge     them into the board by row owner (mergeBatch)
 //   guard     verify the result, and refuse an unexplained loss (guardBoard)
@@ -42,7 +44,14 @@ import { fetchPronouns, attachPronouns } from './fetch-pronouns.js';
 import { scoreDevelopers } from './score.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
 import { verifyPublished } from './verify-published.js';
-import { makeGitHubClient, createStateStore, stateAssetName } from './state-store.js';
+import { makeGitHubClient, createStateStore, stateAssetName, DEFAULT_REPO } from './state-store.js';
+import {
+  readRegistry,
+  loadRegistry,
+  applyOptOuts,
+  withoutOptedOut,
+  emptyRegistry
+} from './registry.js';
 
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
 const DATA_JSON = path.join(PUBLIC_DIR, 'data.json');
@@ -389,6 +398,8 @@ export function guardBoard({
  *
  * - `store` is where the board lives: `load()` returns `{ payload }` or null
  *   when nothing was ever saved, `save(board, { name, label })` writes it.
+ * - `registry` reads the registrations and opt-outs (scripts/registry.js). It
+ *   is required, and a run whose read fails throws before measuring.
  * - `fallback` seeds a store that has never been saved to - the very first
  *   run against the release, from public/data.json. A store whose saves exist
  *   but cannot be read throws instead, and is never seeded over.
@@ -401,6 +412,7 @@ export async function runBatch({
   batchIndex,
   measure,
   store,
+  registry,
   fallback = null,
   allowEmpty = false,
   dispatch = null,
@@ -438,27 +450,35 @@ export async function runBatch({
     log.warn(`Skipped unreadable state ${skip.name}: ${skip.error}`);
   }
 
+  // Opt-outs leave the board on every run, whatever batch owns the row, and a
+  // run that cannot read them stops here, before it can save: republishing
+  // someone who asked to leave is worse than losing an hour.
+  const intents = await loadRegistry(registry, log);
+  const optOut = applyOptOuts(previous, intents.optedOut, log);
+
   const { newEntries, evaluated, discoveryComplete } = await measure({
     batchIndex,
-    existing: previous
+    existing: optOut.kept,
+    registry: intents
   });
   // Read after measuring, which takes up to an hour: the board is stamped, and
   // the unmeasured cutoff taken, at merge time.
   const at = typeof now === 'function' ? now(loaded.payload) : now;
   const merged = mergeBatch({
-    existing: previous,
+    existing: optOut.kept,
     batchIndex,
-    newEntries,
+    newEntries: withoutOptedOut(newEntries, intents.optedOut),
     evaluated,
     discoveryComplete,
     now: at,
     allowShrink,
     log
   });
+  const removed = [...optOut.removed, ...merged.removed];
   const guard = guardBoard({
     previous,
     board: merged.board,
-    removed: merged.removed,
+    removed,
     allowMixedVersions,
     log
   });
@@ -478,7 +498,7 @@ export async function runBatch({
   }
 
   const dispatched = dispatch ? await dispatch() : [];
-  return { ...merged, guard, saved, dispatched, source };
+  return { ...merged, removed, guard, saved, dispatched, source };
 }
 
 // What a saved state sets running: the site is built from it, and checked.
@@ -549,10 +569,11 @@ export function evaluatedLogins({ developers, screenedOut = [], locationRejected
 }
 
 /** Measures one batch on GitHub: discovery, fetch, activity gate, scoring. */
-export async function measureBatch({ batchIndex }) {
+export async function measureBatch({ batchIndex, registry }) {
   const fetched = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
+    registry,
     rawOnly: true,
     withScreening: true,
   });
@@ -646,6 +667,7 @@ async function runCli(args, env = process.env) {
     await runBatch({
       ...shared,
       measure: replayBatch,
+      registry: async () => emptyRegistry('not read, since a dry run makes no GitHub calls'),
       store: createFileStore({ readPath: path.resolve(state), writePath: DRY_RUN_DATA_JSON }),
       allowEmpty: true,
       // The file's own clock, so the unmeasured cutoff does not depend on the
@@ -656,9 +678,15 @@ async function runCli(args, env = process.env) {
   }
 
   if (state !== 'release') {
+    // Locally GITHUB_REPOSITORY is unset, and the registry is the canonical repository's.
+    const issues = makeGitHubClient({
+      token: env.MY_GITHUB_PAT || env.GITHUB_TOKEN,
+      repo: env.GITHUB_REPOSITORY || DEFAULT_REPO
+    });
     await runBatch({
       ...shared,
       measure: measureBatch,
+      registry: () => readRegistry({ api: issues }),
       store: createFileStore({ readPath: path.resolve(state) }),
       // A local file that does not exist yet is a first run.
       allowEmpty: true
@@ -675,6 +703,7 @@ async function runCli(args, env = process.env) {
   await runBatch({
     ...shared,
     measure: measureBatch,
+    registry: () => readRegistry({ api: client }),
     store: createStateStore({ client }),
     fallback: createFileStore({ readPath: DATA_JSON }),
     allowEmpty: env.ALLOW_EMPTY_STATE === '1',

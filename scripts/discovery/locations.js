@@ -93,7 +93,7 @@ export const DISCOVERY_SOURCES = Object.freeze({
   PAKISTAN: 'pakistan',
   /** Matched a CITY_TERMS city and not "pakistan". */
   CITY: 'city',
-  /** Not found by search: listed in public/registered_devs.json. */
+  /** Not found by search: registered by GitHub issue (scripts/registry.js). */
   REGISTERED: 'registered'
 });
 

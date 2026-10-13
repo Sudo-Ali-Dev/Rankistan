@@ -14,7 +14,13 @@ import {
 } from './fetch-devs.js';
 import { createSearchClient } from './discovery/graphql.js';
 import { parseShardQuery } from './discovery/partition.js';
-import { fakeGraphql, makePopulation, matcher, respond } from './discovery/fake-search.js';
+import {
+  fakeGraphql,
+  makePopulation,
+  matcher,
+  respond,
+  RATE_LIMIT
+} from './discovery/fake-search.js';
 
 describe('rateLimitWaitMs', () => {
   const headers = (map = {}) => ({ get: (k) => map[k.toLowerCase()] ?? null });
@@ -489,5 +495,111 @@ describe('fetchPakistaniDevelopers with the city twin', () => {
     await expect(run(searchFor(population, fake))).rejects.toThrow(
       /Discovery failed for batch "PK Dec2022-Feb2023"/
     );
+  });
+});
+
+describe('fetchPakistaniDevelopers registration and opt-out', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('fetches registered developers in its own range only, and never an opted-out one', async () => {
+    const batchIndex = 16;
+    const { root } = parseShardQuery(SEARCH_BATCHES[batchIndex].q);
+    const inRange = new Date((root.from + 86_400) * 1000).toISOString();
+    const people = makePopulation({ n: 3, from: root.from, to: root.to, seed: 5 });
+    const quitter = people[0];
+
+    // Registered accounts, resolved by node id: two created in this batch's range (one with too
+    // few repositories for its search), one created in batch 5's.
+    const accounts = {
+      U_in: { id: 900001, login: 'RegIn', createdAt: inRange, repos: 9 },
+      U_low: { id: 900003, login: 'RegLow', createdAt: inRange, repos: 3 },
+      U_out: { id: 900002, login: 'RegOut', createdAt: '2019-01-15T00:00:00Z', repos: 9 }
+    };
+    const fake = fakeGraphql(people);
+    const resolving = async (url, init) => {
+      const { query, variables } = JSON.parse(init.body);
+      if (!query.includes('nodes(ids: $ids)')) return fake.fetchImpl(url, init);
+      const nodes = variables.ids.map((nodeId) => {
+        const a = accounts[nodeId];
+        return { __typename: 'User', databaseId: a.id, login: a.login, createdAt: a.createdAt };
+      });
+      return respond(200, { data: { rateLimit: RATE_LIMIT, nodes } });
+    };
+    const searchClient = createSearchClient({
+      token: 't',
+      fetchImpl: resolving,
+      sleep: async () => {},
+      minIntervalMs: 0,
+      log: { warn() {} }
+    });
+
+    // REST: registered developers are active; everyone search found has an empty feed.
+    const byLogin = Object.fromEntries(
+      Object.values(accounts).map((a) => [a.login.toLowerCase(), a])
+    );
+    const fetched = [];
+    vi.stubGlobal('fetch', async (url) => {
+      const route = String(url).replace('https://api.github.com', '');
+      const login = /^\/users\/([^/?]+)/.exec(route)[1];
+      const account = byLogin[login];
+      let body = [];
+      if (route.includes('/events?')) {
+        fetched.push(login);
+        body = account ? activeFeed() : [];
+      } else if (/^\/users\/[^/?]+$/.test(route)) {
+        body = {
+          id: account.id,
+          login: account.login,
+          avatar_url: `https://avatars.githubusercontent.com/u/${account.id}?v=4`,
+          created_at: account.createdAt,
+          public_repos: account.repos,
+          followers: 5,
+          following: 1
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => body,
+        text: async () => JSON.stringify(body)
+      };
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const result = await fetchPakistaniDevelopers({
+      token: 't',
+      repoRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-registry-')),
+      batchIndex,
+      rawOnly: true,
+      withScreening: true,
+      searchClient,
+      registry: {
+        registered: Object.entries(accounts).map(([nodeId, a], i) => ({
+          id: a.id,
+          nodeId,
+          login: `old-${a.login}`,
+          issueNumber: i + 1,
+          at: '2026-10-01T00:00:00Z'
+        })),
+        optedOut: new Set([quitter.id]),
+        complete: true
+      }
+    });
+
+    // Under their current login, from GraphQL; the out-of-range account and the opt-out unfetched.
+    expect(fetched.sort()).toEqual(
+      [...people.slice(1).map((p) => p.login.toLowerCase()), 'regin', 'reglow'].sort()
+    );
+    expect(result.discoveryComplete).toBe(true);
+    expect(result.developers.map((d) => [d.username, d.github_id, d.discovery_source])).toEqual([
+      ['RegIn', 900001, 'registered']
+    ]);
+    // Fetched and below the gate its search would have applied: evaluated, and out.
+    expect(result.screenedOut).toContain('RegLow');
   });
 });

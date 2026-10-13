@@ -20,6 +20,7 @@ import {
   DISPATCHED_WORKFLOWS
 } from './run-all.js';
 import { MAX_DEVELOPERS } from './fetch-devs.js';
+import { emptyRegistry } from './registry.js';
 import { SCORE_CONFIG } from '../src/model/config.js';
 
 const call = (over = {}) =>
@@ -95,6 +96,8 @@ describe('assertReplacementIsSafe', () => {
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-10-13T12:00:00.000Z');
 const quiet = { log: () => {}, warn: () => {} };
+// No registrations and no opt-outs. runBatch requires a registry reader.
+const noIntents = async () => emptyRegistry();
 
 // Legacy-shaped rows: verify:published counts them without recomputing, so
 // these tests exercise the merge and guards rather than the scoring model.
@@ -431,6 +434,7 @@ describe('runBatch', () => {
     const calls = [];
     const store = memoryStore(state(existing), calls);
     const result = await runBatch({
+      registry: noIntents,
       batchIndex: 0,
       store,
       measure: async ({ existing: seen }) => {
@@ -462,6 +466,7 @@ describe('runBatch', () => {
     const store = memoryStore(state(existing), calls);
     await expect(
       runBatch({
+        registry: noIntents,
         batchIndex: 0,
         store,
         // A versioned row that cannot be recomputed: the board fails verification.
@@ -484,6 +489,7 @@ describe('runBatch', () => {
       calls
     );
     const result = await runBatch({
+      registry: noIntents,
       batchIndex: 0,
       store,
       measure: async () => ({
@@ -505,6 +511,7 @@ describe('runBatch', () => {
     const store = memoryStore(null, calls);
     const fallback = { load: async () => ({ payload: state(existing), source: 'data.json' }) };
     await runBatch({
+      registry: noIntents,
       batchIndex: 7,
       store,
       fallback,
@@ -519,6 +526,7 @@ describe('runBatch', () => {
     const calls = [];
     await expect(
       runBatch({
+        registry: noIntents,
         batchIndex: 0,
         store: memoryStore(null, calls),
         fallback: { load: async () => null },
@@ -537,6 +545,7 @@ describe('runBatch', () => {
     let seeded = false;
     await expect(
       runBatch({
+        registry: noIntents,
         batchIndex: 0,
         store: {
           load: async () => {
@@ -561,6 +570,7 @@ describe('runBatch', () => {
     const store = memoryStore(state(existing), calls);
     await expect(
       runBatch({
+        registry: noIntents,
         batchIndex: 0,
         store,
         measure: async () => ({ newEntries: existing.filter((d) => d.batch_index === 0) }),
@@ -580,6 +590,7 @@ describe('runBatch', () => {
     const store = memoryStore(state(existing), calls);
     let clock = NOW;
     await runBatch({
+      registry: noIntents,
       batchIndex: 0,
       store,
       measure: async () => {
@@ -597,6 +608,7 @@ describe('runBatch', () => {
     const calls = [];
     const store = memoryStore(state([row('old', 0, 5, { scored_at: at(30) })]), calls);
     await runBatch({
+      registry: noIntents,
       batchIndex: 0,
       store,
       measure: replayBatch,
@@ -606,6 +618,131 @@ describe('runBatch', () => {
     });
     // Measured 30 days before NOW, judged one day after that: still on.
     expect(names(store.saved.board)).toEqual(['old']);
+  });
+
+  describe('registrations and opt-outs', () => {
+    const avatar = (id) => `https://avatars.githubusercontent.com/u/${id}?v=4`;
+    const board = [
+      row('a', 0, 500, { github_id: 1 }),
+      row('b', 0, 400, { avatar_url: avatar(2) }),
+      row('c', 7, 300, { avatar_url: avatar(3) }),
+      row('d', 7, 200, { github_id: 4, bio: 'untouched' })
+    ];
+    const intents = (over) => async () => ({ ...emptyRegistry(), ...over });
+
+    it('removes an opted-out developer from another batch this run, and nobody else', async () => {
+      const calls = [];
+      const store = memoryStore(state(board), calls);
+      let seen = null;
+      const result = await runBatch({
+        batchIndex: 0,
+        store,
+        registry: intents({ optedOut: new Set([3]) }),
+        measure: async ({ existing }) => {
+          seen = existing.map((d) => d.username);
+          return { newEntries: [row('a', 0, 510, { github_id: 1 })], evaluated: ['a'] };
+        },
+        name: 'state-1-1.json.gz',
+        now: NOW,
+        log: quiet
+      });
+      // Batch 7 did not run, and its opted-out developer still left, with a reason.
+      expect(seen).toEqual(['a', 'b', 'd']);
+      expect(names(store.saved.board)).toEqual(['a', 'b', 'd']);
+      expect(result.removed).toEqual([{ username: 'c', batch_index: 7, reason: 'opted_out' }]);
+      expect(result.guard.unexplained).toEqual([]);
+      // On neither list: carried as it was, apart from the rank the whole board is given.
+      const { rank, ...d } = store.saved.board.leaderboard.find((r) => r.username === 'd');
+      expect(rank).toBe(3);
+      expect(d).toEqual(board[3]);
+    });
+
+    it('matches on the account id, so a renamed login cannot escape an opt-out', async () => {
+      const store = memoryStore(state(board), []);
+      const result = await runBatch({
+        batchIndex: 0,
+        store,
+        registry: intents({ optedOut: new Set([1]) }),
+        // The measurement found account 1 under a new login. It is still account 1.
+        measure: async () => ({
+          newEntries: [row('a-renamed', 0, 520, { github_id: 1 })],
+          evaluated: ['a-renamed']
+        }),
+        name: 'state-1-1.json.gz',
+        now: NOW,
+        log: quiet
+      });
+      expect(names(store.saved.board)).toEqual(['b', 'c', 'd']);
+      expect(result.removed).toEqual([{ username: 'a', batch_index: 0, reason: 'opted_out' }]);
+    });
+
+    it('stops before measuring or saving when the registry cannot be read', async () => {
+      const calls = [];
+      const store = memoryStore(state(board), calls);
+      const lines = [];
+      await expect(
+        runBatch({
+          batchIndex: 0,
+          store,
+          registry: async () => {
+            throw new Error('GET /issues -> HTTP 502');
+          },
+          measure: async () => {
+            calls.push('measure');
+            return { newEntries: [] };
+          },
+          dispatch: async () => calls.push('dispatch'),
+          now: NOW,
+          log: { log: (m) => lines.push(m), warn: () => {} }
+        })
+      ).rejects.toThrow(/saves and publishes nothing: GET \/issues -> HTTP 502/);
+      expect(calls).toEqual(['load']);
+      expect(store.saved).toBeNull();
+      expect(lines.some((l) => l.startsWith('::error title=REGISTRY_UNREADABLE::'))).toBe(true);
+    });
+
+    it('refuses to run with no registry reader at all', async () => {
+      const calls = [];
+      const store = memoryStore(state(board), calls);
+      await expect(
+        runBatch({
+          batchIndex: 0,
+          store,
+          measure: async () => ({ newEntries: [] }),
+          now: NOW,
+          log: quiet
+        })
+      ).rejects.toThrow(/no registry reader/);
+      expect(store.saved).toBeNull();
+    });
+
+    it('hands the registry to the measurement, and merges a registered developer it measured', async () => {
+      const store = memoryStore(state(board), []);
+      const registered = [{ id: 9, nodeId: 'U_9', login: 'reg', issueNumber: 1, at: at(1) }];
+      const result = await runBatch({
+        batchIndex: 0,
+        store,
+        registry: intents({ registered }),
+        measure: async ({ registry }) => {
+          expect(registry.registered).toEqual(registered);
+          return {
+            newEntries: [
+              row('a', 0, 500, { github_id: 1 }),
+              row('b', 0, 400, { avatar_url: avatar(2) }),
+              row('reg', 0, 450, { github_id: 9, discovery_source: 'registered' })
+            ],
+            evaluated: ['a', 'b', 'reg']
+          };
+        },
+        name: 'state-1-1.json.gz',
+        now: NOW,
+        log: quiet
+      });
+      expect(names(store.saved.board)).toEqual(['a', 'reg', 'b', 'c', 'd']);
+      const reg = store.saved.board.leaderboard.find((r) => r.username === 'reg');
+      expect(reg).toMatchObject({ batch_index: 0, github_id: 9, discovery_source: 'registered' });
+      expect(result.removed).toEqual([]);
+    });
   });
 });
 
@@ -673,6 +810,7 @@ describe('createFileStore', () => {
     });
     const before = (await store.load()).payload;
     await runBatch({
+      registry: noIntents,
       batchIndex: 0,
       store,
       measure: replayBatch,

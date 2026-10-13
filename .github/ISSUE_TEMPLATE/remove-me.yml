@@ -1,0 +1,24 @@
+name: Remove me
+description: Take yourself off the leaderboard and stop being measured
+title: Remove me
+# The pipeline finds opt-outs by this label (scripts/registry.js). The account
+# that opens the issue is the account removed; nothing typed into the issue is
+# read, so nobody can remove anyone else.
+labels: [opt-out]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This removes **the GitHub account that opens this issue**, and no one else.
+
+        You are taken off the board at the next pipeline run, whichever batch your row is in, and you are not measured again while the opt-out stands. To come back, open a **Register** issue: your latest issue is the one that counts.
+
+        This issue is public. Do not add anything private to it.
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: Remove my GitHub account from the leaderboard
+          required: true
