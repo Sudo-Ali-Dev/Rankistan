@@ -1,0 +1,82 @@
+name: Registration
+
+# Answers a Register or Remove me issue once, then closes it as completed. The
+# pipeline reads these issues itself on every run (scripts/registry.js), keyed
+# on the author's account id; this only tells the author what happens next.
+# Closing as completed changes nothing there: only a registration a maintainer
+# closes as `not_planned` is rejected.
+#
+# Identity comes from context.payload.issue.user, read inside the script. No
+# issue field is ever expanded into a shell command: anyone can write a title
+# or a body, and an issue expression inside `run:` is script injection
+# (scripts/registry.test.js checks for one).
+
+on:
+  issues:
+    types: [opened]
+
+# The repository default is read-only; commenting and closing is all this does.
+permissions:
+  issues: write
+
+jobs:
+  acknowledge:
+    # The issue forms apply these labels. Anything else is not ours to answer.
+    if: >-
+      contains(github.event.issue.labels.*.name, 'registration') ||
+      contains(github.event.issue.labels.*.name, 'opt-out')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Comment and close
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const { id, type, login } = issue.user;
+            const optOut = issue.labels.some((label) => label.name === 'opt-out');
+            const { owner, repo } = context.repo;
+            const form = (name) =>
+              `https://github.com/${owner}/${repo}/issues/new?template=${name}.yml`;
+
+            let body;
+            let reason = 'completed';
+            if (type !== 'User') {
+              body =
+                `Only a personal GitHub account can ${optOut ? 'opt out' : 'register'}. ` +
+                `This issue was opened by a ${type} account, so the pipeline ignores it.`;
+              reason = 'not_planned';
+            } else if (optOut) {
+              body = [
+                `Opt-out recorded for the account that opened this issue: ${login} (id ${id}).`,
+                '',
+                'It is removed from the board at the next pipeline run, and is not measured ' +
+                  'while the opt-out stands. A new Register issue reverses it: ' +
+                  `${form('register')}`
+              ].join('\n');
+            } else {
+              body = [
+                `Registered the account that opened this issue: ${login} (id ${id}).`,
+                '',
+                'Its profile is checked in the next pipeline run that covers accounts created ' +
+                  'when it was, which is at least once a day while the pipeline runs on ' +
+                  'schedule. It appears on the board only if it passes the gates, which are ' +
+                  'listed on the Register page at https://rankistan.dev.',
+                '',
+                `To leave, open a Remove me issue: ${form('remove-me')}`
+              ].join('\n');
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issue.number,
+              body
+            });
+            await github.rest.issues.update({
+              owner,
+              repo,
+              issue_number: issue.number,
+              state: 'closed',
+              state_reason: reason
+            });

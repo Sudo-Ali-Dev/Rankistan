@@ -39,11 +39,11 @@ const ACTIVITY_FILTERS = [
 const CITY_NAMES = CITY_TERMS.map((city) => city[0].toUpperCase() + city.slice(1)).join(', ');
 
 const PIPELINE_STEPS = [
-  { step: '01', title: 'DISCOVER', icon: 'search', desc: `Search GitHub for Pakistani developers in 24 batches by account creation date: location:pakistan, and a second search for locations that name one of ${CITY_TERMS.length} Pakistani cities without the country. Each search is cut into slices small enough to list whole, so the 1,000-result search cap never truncates one.` },
+  { step: '01', title: 'DISCOVER', icon: 'search', desc: `Search GitHub for Pakistani developers in 24 batches by account creation date: location:pakistan, and a second search for locations that name one of ${CITY_TERMS.length} Pakistani cities without the country. Each search is cut into slices small enough to list whole, so the 1,000-result search cap never truncates one. Developers neither search finds can register by GitHub issue instead, and are evaluated in the batch that covers their account's creation date.` },
   { step: '02', title: 'FETCH', icon: 'download', desc: 'For each developer, fetch profile, up to 200 recent events (2 pages), and all public repositories.' },
   { step: '03', title: 'FILTER', icon: 'filter_alt', desc: 'Apply activity thresholds — contributions, inactivity gaps, account age. Only genuinely active developers pass.' },
   { step: '04', title: 'SCORE', icon: 'calculate', desc: 'Calculate a weighted score from stars, recent activity, followers, and repo count. Apply new-account penalties.' },
-  { step: '05', title: 'MERGE', icon: 'merge', desc: 'Merge scored developers into the leaderboard using per-batch replacement. Deduplicate, re-sort, re-rank.' },
+  { step: '05', title: 'MERGE', icon: 'merge', desc: 'Merge scored developers into the leaderboard using per-batch replacement. Anyone who opted out is removed first, whichever batch holds their row. Deduplicate, re-sort, re-rank.' },
   { step: '06', title: 'DEPLOY', icon: 'rocket_launch', desc: 'Build the frontend and deploy to GitHub Pages. Leaderboard, map, and all pages update automatically.' },
 ];
 
@@ -100,14 +100,15 @@ const AI_SUMMARY_STEPS = [
 
 const FAQ = [
   { q: 'How often is the leaderboard updated?', a: 'Every hour. An external cron service triggers the GitHub Actions workflow 24 times per day — one batch per hour. A full cycle through all developers completes in 24 hours.' },
-  { q: 'Why am I not on the leaderboard?', a: `You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. Your GitHub location must also say "Pakistan", or name one of ${CITY_TERMS.length} Pakistani cities: ${CITY_NAMES}. Some city names are not searched because they mostly mean somewhere else ("Hyderabad" alone is usually Hyderabad, India), so if yours is one of them, add "Pakistan".` },
+  { q: 'Why am I not on the leaderboard?', a: `You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. The pipeline also has to find you: your GitHub location must say "Pakistan" or name one of ${CITY_TERMS.length} Pakistani cities (${CITY_NAMES}), or you register by GitHub issue from the Register tab. Some city names are not searched because they mostly mean somewhere else ("Hyderabad" alone is usually Hyderabad, India), so if yours is one of them, add "Pakistan" or register.` },
   { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
   { q: 'Why is my score lower than expected?', a: `Stars are capped at ${MAX_STARS_FOR_SCORING} and followers are capped at ${MAX_FOLLOWERS_FOR_SCORING} for scoring purposes. Recent activity uses diminishing returns (base / log2(n+1) per event per UTC day) with daily caps per type — spamming pushes in one day earns far less than steady work spread across the month.${PUSH_RULE.maxCountedPerDay === null ? '' : ` Only the first ${PUSH_RULE.maxCountedPerDay} pushes per day count.`} Accounts younger than ${SIX_MONTHS_DAYS} days receive a ${AGE_PENALTY_MULTIPLIER}× penalty on their entire score.` },
   { q: 'What is the "new account penalty"?', a: `If your GitHub account is less than ${SIX_MONTHS_DAYS} days old, your final score is multiplied by ${AGE_PENALTY_MULTIPLIER}. This prevents newly created accounts from dominating the board.` },
   { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026), screens every one on its first page of public events, fetches in full only those that page does not settle, then applies strict activity gates before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
-  { q: 'Can I register manually?', a: 'Yes — use the Register tab to enter a GitHub username. It validates the profile against all pipeline criteria and shows you exactly which thresholds you pass or fail.' },
+  { q: 'Can I register manually?', a: 'Yes, by opening a Register issue on GitHub (linked from the Register tab). It is for developers whose GitHub location does not say Pakistan or one of the searched cities, and it replaces only that check: every other gate still applies. The account that opens the issue is the account registered, so you can only register yourself. The Register tab also checks a profile against every gate before you do.' },
+  { q: 'How do I take myself off the leaderboard?', a: 'Open a Remove me issue on GitHub (linked from the Register tab). You are removed at the next pipeline run, whichever batch your row is in, and are not measured again while the opt-out stands. Only the account that opens the issue is removed, and a later Register issue reverses it.' },
   { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/Rankistan.' },
 ];
 
@@ -144,7 +145,7 @@ export default function About({ onChangeTab }) {
             Rankistan is an automated leaderboard that discovers, tracks, and ranks active Pakistani developers on GitHub.
             The pipeline runs every hour as a rolling daily scanner across historical and modern GitHub accounts.
             It searches about 34,800 profiles a day, screens every one, and publishes only developers that pass strict ranking gates.
-            No manual submissions. No vanity metrics. Just code.
+            Developers the location search cannot find can register themselves by GitHub issue, and anyone can opt out the same way. No vanity metrics. Just code.
           </p>
         </div>
 

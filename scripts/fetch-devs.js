@@ -5,6 +5,7 @@ import { matchTagsForDeveloper } from '../src/utils/tag-matcher.js';
 import { createSearchClient } from './discovery/graphql.js';
 import { annotation, describeDiscovery, discoverBatch } from './discovery/discover.js';
 import { DISCOVERY_SOURCES, cityTwinQuery, foreignMarker } from './discovery/locations.js';
+import { admitFetched, joinRegistry } from './registry.js';
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const MAX_DEVELOPERS = 1000;
@@ -267,56 +268,6 @@ async function githubRequest(endpoint, token, options = {}) {
   }
 
   return response.json();
-}
-
-async function loadRegisteredDevelopers(repoRoot) {
-  const registeredPath = path.join(repoRoot, 'public', 'registered_devs.json');
-
-  try {
-    const raw = await fs.readFile(registeredPath, 'utf8');
-    const parsed = JSON.parse(raw);
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed
-      .map((entry) => {
-        if (typeof entry === 'string') {
-          return entry.trim().replace(/^@/, '');
-        }
-
-        if (entry && typeof entry.username === 'string') {
-          return entry.username.trim().replace(/^@/, '');
-        }
-
-        return '';
-      })
-      .filter(Boolean);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
-function dedupeUsernames(usernames) {
-  const seen = new Set();
-  const deduped = [];
-
-  for (const username of usernames) {
-    const normalized = username.trim().toLowerCase();
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    deduped.push(normalized);
-  }
-
-  return deduped;
 }
 
 function searchQueriesForBatch(batch) {
@@ -734,6 +685,7 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
 
   const developer = {
     username: profile.login || username,
+    github_id: profile.id,
     name: profile.name || '',
     avatar_url: profile.avatar_url || '',
     bio: profile.bio || '',
@@ -822,34 +774,31 @@ async function fetchPakistaniDevelopers(options = {}) {
       : `Running all ${batches.length} search batches`
   );
 
-  const { candidates, complete: discoveryComplete } = await discoverUsers(token, batches, {
+  const { candidates, complete: searchComplete } = await discoverUsers(token, batches, {
     searchClient: options.searchClient
   });
-  const registeredUsers = batchIndex === 0 || batchIndex == null
-    ? await loadRegisteredDevelopers(repoRoot)
-    : [];
 
-  // How each login was found. Search first, so a registered developer search also lists keeps the
-  // search's source.
-  const sourceOf = new Map();
-  for (const { login, source } of candidates) {
-    const key = login.toLowerCase();
-    if (!sourceOf.has(key)) sourceOf.set(key, source);
-  }
-  for (const login of dedupeUsernames(registeredUsers)) {
-    if (!sourceOf.has(login)) sourceOf.set(login, DISCOVERY_SOURCES.REGISTERED);
-  }
+  // Registration and opt-out by GitHub issue, keyed on the account id (scripts/registry.js).
+  // Registered developers created in this batch's range join its candidates after both searches,
+  // so one a search also found keeps the search's source; anyone who opted out is never fetched.
+  const joined = await joinRegistry({
+    discovered: candidates,
+    registry: options.registry,
+    batchIndex,
+    batches: SEARCH_BATCHES,
+    graphql: options.searchClient || createSearchClient({ token })
+  });
+  const discoveryComplete = searchComplete && joined.complete;
 
-  const allUsernames = dedupeUsernames([...candidates.map((c) => c.login), ...registeredUsers]);
+  // How each login was found.
+  const sourceOf = new Map(joined.candidates.map((c) => [c.login.toLowerCase(), c.source]));
+  const allUsernames = [...sourceOf.keys()];
 
   const fromCities = candidates.filter((c) => c.source === DISCOVERY_SOURCES.CITY).length;
   console.log(
     `Discovered ${candidates.length} users from search: ${candidates.length - fromCities} ` +
     `by location:pakistan, ${fromCities} by a Pakistani city name alone.`
   );
-  if (registeredUsers.length > 0) {
-    console.log(`Loaded ${registeredUsers.length} registered users.`);
-  }
   console.log(`Total unique usernames to scan: ${allUsernames.length}`);
 
   const fetchedDevelopers = [];
@@ -881,7 +830,11 @@ async function fetchPakistaniDevelopers(options = {}) {
           reason: developer.reason
         });
       } else if (developer) {
-        fetchedDevelopers.push(developer);
+        // Registered developers meet search's own gates here, by account id (scripts/registry.js).
+        const verdict = admitFetched(joined, developer);
+        if (verdict.admit) fetchedDevelopers.push(verdict.admit);
+        else if (verdict.reject) screenedOut.push(developer.username);
+        else skippedProfile += 1;
       } else {
         skippedProfile += 1;
       }

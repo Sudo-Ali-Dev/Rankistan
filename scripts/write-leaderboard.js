@@ -16,6 +16,9 @@ const STRIP_FIELDS = new Set([
 const OUTPUT_FIELDS = [
   'rank',
   'username',
+  // The account id. Logins change and can be reclaimed by someone else; opt-outs
+  // (scripts/registry.js) match on this.
+  'github_id',
   'name',
   'avatar_url',
   'bio',

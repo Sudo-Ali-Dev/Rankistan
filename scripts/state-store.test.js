@@ -19,6 +19,7 @@ import {
 } from './state-store.js';
 import { verifyPublished } from './verify-published.js';
 import { readBoardFile, mergeBatch, runBatch, dispatchWorkflows } from './run-all.js';
+import { readRegistry } from './registry.js';
 
 const REPO = 'owner/repo';
 const API = `https://api.github.com/repos/${REPO}`;
@@ -61,6 +62,8 @@ function fakeGitHub({ withRelease = false } = {}) {
     created: [],
     dispatched: [],
     workflowStates: {},
+    // Registration and opt-out issues, served by label (scripts/registry.js).
+    issues: [],
     clock: START,
     nextId: 500,
     intercept: null
@@ -115,6 +118,13 @@ function fakeGitHub({ withRelease = false } = {}) {
       gh.created.push(JSON.parse(init.body));
       gh.release = makeRelease();
       return response(201, gh.release);
+    }
+    if (route === `GET api.github.com/repos/${REPO}/issues`) {
+      const label = u.searchParams.get('labels');
+      const per = Number(u.searchParams.get('per_page'));
+      const page = Number(u.searchParams.get('page'));
+      const labelled = gh.issues.filter((i) => i.labels.some((l) => l.name === label));
+      return response(200, labelled.slice((page - 1) * per, page * per));
     }
     if (route === `GET api.github.com/repos/${REPO}/releases/77/assets`) {
       const per = Number(u.searchParams.get('per_page'));
@@ -578,6 +588,7 @@ describe('one pipeline run against the release', () => {
     const result = await runBatch({
       batchIndex: 8,
       store,
+      registry: () => readRegistry({ api: client }),
       measure: async () => ({ newEntries: rows(8, ['c', 'd'], 950), evaluated: ['c', 'd'] }),
       dispatch: () => dispatchWorkflows({ client, log: quiet }),
       name: 'state-42-1.json.gz',
@@ -601,6 +612,41 @@ describe('one pipeline run against the release', () => {
     ]);
   });
 
+  it('takes an opted-out developer off the saved board, from the issue alone', async () => {
+    const gh = fakeGitHub({ withRelease: true });
+    const before = board([]);
+    before.leaderboard = [...rows(3, ['a', 'b'], 900), ...rows(8, ['c'], 500)].map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      avatar_url: `https://avatars.githubusercontent.com/u/${100 + i}?v=4`
+    }));
+    gh.seed('state-41-1.json.gz', gz(before));
+    // b, in batch 3, opts out; batch 8 runs.
+    gh.issues.push({
+      number: 1,
+      created_at: '2026-10-12T00:00:00Z',
+      state: 'closed',
+      state_reason: 'completed',
+      labels: [{ name: 'opt-out' }],
+      user: { id: 101, login: 'b', node_id: 'U_b', type: 'User' }
+    });
+    const client = makeGitHubClient({ token: 't', repo: REPO, fetchImpl: gh.fetch });
+    const store = createStateStore({ client, log: quiet, now: () => gh.clock });
+    const result = await runBatch({
+      batchIndex: 8,
+      store,
+      registry: () => readRegistry({ api: client }),
+      measure: async () => ({ newEntries: rows(8, ['c'], 950), evaluated: ['c'] }),
+      name: 'state-42-1.json.gz',
+      now: START,
+      log: quiet
+    });
+
+    expect((await store.load()).payload.leaderboard.map((r) => r.username)).toEqual(['c', 'a']);
+    expect(result.removed).toEqual([{ username: 'b', batch_index: 3, reason: 'opted_out' }]);
+    expect(gh.calls.filter((c) => c.url.includes('/issues?'))).toHaveLength(2);
+  });
+
   it('saves and deploys, then fails the run, when the watchdog has been disabled', async () => {
     const gh = fakeGitHub({ withRelease: true });
     gh.seed('state-41-1.json.gz', gz(board(['a'])));
@@ -612,6 +658,7 @@ describe('one pipeline run against the release', () => {
       runBatch({
         batchIndex: 0,
         store,
+        registry: () => readRegistry({ api: client }),
         measure: async () => ({ newEntries: [], evaluated: [] }),
         dispatch: () => dispatchWorkflows({ client, log: quiet }),
         name: 'state-42-1.json.gz',
@@ -634,6 +681,7 @@ describe('one pipeline run against the release', () => {
       runBatch({
         batchIndex: 0,
         store,
+        registry: () => readRegistry({ api: client }),
         // A versioned row with nothing to recompute it from: verification refuses.
         measure: async () => ({
           newEntries: [{ username: 'z', batch_index: 0, score: 1, model_version: '2.0.0' }]

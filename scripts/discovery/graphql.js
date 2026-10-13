@@ -330,5 +330,7 @@ export function createSearchClient({
   }
 
   // `sleep` is exposed so a caller's own backoff between requests runs on the same clock.
-  return { count, list, sleep, usage: () => ({ ...usage }) };
+  // `query` is one request of any other document, on the same pacing, budget and rate-limit
+  // handling: scripts/registry.js resolves registered accounts with it.
+  return { count, list, query: request, sleep, usage: () => ({ ...usage }) };
 }

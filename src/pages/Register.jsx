@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { loadBoard, loadDeveloperDetail } from '../utils/leaderboard-data';
-import { isLikelyPakistaniLocation, normalizeLocationForDisplay } from '../utils/location';
+import { normalizeLocationForDisplay } from '../utils/location';
+import {
+  COUNTRY_TERM,
+  CITY_TERMS,
+  foreignMarker,
+  locationTokens
+} from '../../scripts/discovery/locations.js';
 import ScoreBreakdownPanel from '../components/ScoreBreakdownPanel';
 import { computeDeveloperScoreBreakdown } from '../utils/score-breakdown.js';
 
@@ -14,8 +20,24 @@ const CRITERIA = {
   MAX_INACTIVITY_GAP_DAYS: 30,
 };
 
+// Registration and opt-out are GitHub issues, read by the pipeline on every run
+// (scripts/registry.js). The issue's author is the account: nothing typed into
+// it is read, so nobody can register or remove anyone else.
+const NEW_ISSUE_URL = 'https://github.com/Sudo-Ali-Dev/Rankistan/issues/new';
+const REGISTER_ISSUE_URL = `${NEW_ISSUE_URL}?template=register.yml`;
+const REMOVE_ISSUE_URL = `${NEW_ISSUE_URL}?template=remove-me.yml`;
+
 const RECENT_SYNC_LIMIT = 10;
 const RECENT_SYNC_BASE_HEIGHT_CSS = 'calc(7 * 4.75rem)';
+
+// Whether discovery's own two searches would find this location: it says
+// Pakistan, or names a searched city and no place abroad
+// (scripts/discovery/locations.js).
+function foundByLocationSearch(location) {
+  const tokens = new Set(locationTokens(location));
+  if (tokens.has(COUNTRY_TERM)) return true;
+  return CITY_TERMS.some((city) => tokens.has(city)) && !foreignMarker(location);
+}
 
 function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
@@ -203,7 +225,7 @@ export default function Register({ onChangeTab }) {
       if (stale()) return;
       setProfileData(data);
 
-      const isValidLocation = isLikelyPakistaniLocation(data.location);
+      const isValidLocation = foundByLocationSearch(data.location);
       const hasEnoughRepos = (data.public_repos || 0) > 3;
       const hasEnoughFollowers = (data.followers || 0) > 1;
       const ageDays = daysSince(data.created_at);
@@ -220,10 +242,16 @@ export default function Register({ onChangeTab }) {
       };
       setChecks(partialChecks);
 
-      const profileFailed = !isValidLocation || !hasEnoughRepos || !hasEnoughFollowers || !isOldEnough;
+      // Location is the one gate a registration replaces, so failing it does
+      // not end the check: the other gates still say whether registering would
+      // put this profile on the board.
+      const locationNote = isValidLocation
+        ? null
+        : `Location '${data.location || 'not set'}' says neither Pakistan nor a searched city. Registering by GitHub issue replaces this check`;
+      const profileFailed = !hasEnoughRepos || !hasEnoughFollowers || !isOldEnough;
       if (profileFailed) {
         const reasons = [];
-        if (!isValidLocation) reasons.push(`Location '${data.location || 'not set'}' must include 'Pakistan'`);
+        if (locationNote) reasons.push(locationNote);
         if (!hasEnoughRepos) reasons.push(`Only ${data.public_repos} public repos (need >3)`);
         if (!hasEnoughFollowers) reasons.push(`Only ${data.followers} followers (need >1)`);
         if (!isOldEnough) reasons.push(`Account is ${ageDays}d old (need >=${CRITERIA.MIN_ACCOUNT_AGE_DAYS}d)`);
@@ -288,6 +316,7 @@ export default function Register({ onChangeTab }) {
         const reasons = [];
         if (!hasContributions) reasons.push(`${count} meaningful contributions in 60d (need >=${CRITERIA.MIN_CONTRIBUTIONS_60D})`);
         if (!hasNoLongGaps) reasons.push(`Longest inactivity gap: ${longestGap}d (max ${CRITERIA.MAX_INACTIVITY_GAP_DAYS}d)`);
+        if (locationNote) reasons.push(locationNote);
         setGatesPassed(false);
         setStatus('error');
         setErrorMsg(`SYSTEM_ERR: Activity check failed. ${reasons.join('. ')}.`);
@@ -300,12 +329,25 @@ export default function Register({ onChangeTab }) {
       }
 
       setGatesPassed(true);
+
+      // Every gate a registration keeps has passed; only location has not.
+      if (locationNote) {
+        setStatus('error');
+        setErrorMsg(`SYSTEM_WARN: Every other gate passes. ${locationNote}.`);
+        setProfileData({
+          ...data,
+          _calculatedScore: calculatedScore,
+          _agePenaltyApplied: breakdown.agePenalty.applied
+        });
+        return;
+      }
+
       setStatus('complete');
 
       // A passing check is an eligibility result, not a registration. This
       // used to save the profile to this browser's localStorage and show
-      // NODE_ACCEPTED, which nobody downstream ever read
-      // (public/registered_devs.json has been `[]` since 2026-03-20).
+      // NODE_ACCEPTED, which nobody downstream ever read. Registering is a
+      // GitHub issue, linked below.
       setProfileData({
         ...data,
         _calculatedScore: calculatedScore,
@@ -333,7 +375,7 @@ export default function Register({ onChangeTab }) {
             Check <span className="text-primary">Eligibility</span>
           </h1>
           <p className="font-mono text-xs sm:text-sm text-outline max-w-xl uppercase tracking-widest leading-relaxed">
-            See whether a GitHub profile passes the leaderboard's gates. Nothing is submitted: developers join the board when the pipeline discovers them.
+            See whether a GitHub profile passes the leaderboard's gates. Nothing is submitted from this page: developers join the board when the pipeline finds them by location, or when they register by GitHub issue.
           </p>
         </div>
 
@@ -400,7 +442,7 @@ export default function Register({ onChangeTab }) {
                     {renderCheckIcon(checks.exists)} <span>Active GitHub account</span>
                   </li>
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.location)} <span>Location includes Pakistan</span>
+                    {renderCheckIcon(checks.location)} <span>Location says Pakistan or a listed city, or registered by issue</span>
                   </li>
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
                     {renderCheckIcon(checks.repos)} <span>More than 3 public repositories</span>
@@ -431,7 +473,7 @@ export default function Register({ onChangeTab }) {
                 &gt; Estimated Score: {profileData?._calculatedScore} {profileData?._agePenaltyApplied && <span className="text-error">(0.5x New Account Penalty Applied)</span>}<br />
                 <br />
                 <span className="text-tertiary/80">
-                  * Nothing has been submitted. Developers join the board when the pipeline discovers them, which needs the word "Pakistan" in your GitHub location, and the board shows the top 1,000 who pass every gate. Self-registration is being rebuilt.
+                  * Nothing has been submitted. The pipeline finds developers by their GitHub location; if yours does not say Pakistan or a listed city, register by GitHub issue below. The board shows the top 1,000 who pass every gate.
                 </span>
               </div>
             )}
@@ -486,6 +528,62 @@ export default function Register({ onChangeTab }) {
         </div>
 
         <ScoreBreakdownPanel breakdown={scoreBreakdown} gatesPassed={gatesPassed} />
+
+        <section
+          aria-labelledby="register-by-issue"
+          className="mt-8 sm:mt-12 grid grid-cols-1 lg:grid-cols-12 border border-outline-variant bg-surface-container-lowest"
+        >
+          <div className="lg:col-span-7 p-4 sm:p-6 lg:p-8 border-b lg:border-b-0 lg:border-r border-outline-variant">
+            <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest block mb-3">
+              Not found by location?
+            </span>
+            <h2
+              id="register-by-issue"
+              className="font-headline text-xl sm:text-2xl font-bold tracking-tighter uppercase text-on-surface mb-4"
+            >
+              Register by GitHub issue
+            </h2>
+            <ul className="space-y-3">
+              <li className="flex items-start gap-3 font-body text-xs sm:text-sm text-outline leading-relaxed">
+                <span className="text-primary shrink-0" aria-hidden="true">›</span>
+                <span>For developers whose GitHub location doesn't say Pakistan or a listed city, so the pipeline's location search cannot find them.</span>
+              </li>
+              <li className="flex items-start gap-3 font-body text-xs sm:text-sm text-outline leading-relaxed">
+                <span className="text-primary shrink-0" aria-hidden="true">›</span>
+                <span>Every gate above still applies. Registering replaces only the location check.</span>
+              </li>
+              <li className="flex items-start gap-3 font-body text-xs sm:text-sm text-outline leading-relaxed">
+                <span className="text-primary shrink-0" aria-hidden="true">›</span>
+                <span>The author of the issue is the account registered. You can register only yourself, and nothing typed into the issue is read.</span>
+              </li>
+            </ul>
+          </div>
+          <div className="lg:col-span-5 p-4 sm:p-6 lg:p-8 flex flex-col justify-center gap-4">
+            <a
+              href={REGISTER_ISSUE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full min-h-11 border border-primary text-primary font-headline font-bold py-4 px-6 flex items-center justify-between gap-4 hover:bg-primary/10 transition-colors duration-50 active:translate-y-px"
+            >
+              <span className="uppercase tracking-widest text-sm sm:text-base">
+                Register on GitHub<span className="sr-only"> (opens in a new tab)</span>
+              </span>
+              <span className="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+            </a>
+            <p className="font-mono text-[10px] text-outline uppercase tracking-widest leading-relaxed">
+              Checked in the next pipeline run that covers accounts created when yours was: once a day while the pipeline runs on schedule.
+            </p>
+            <a
+              href={REMOVE_ISSUE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="self-start min-h-11 inline-flex items-center gap-2 font-mono text-[10px] text-outline uppercase tracking-widest hover:text-primary hover:underline transition-colors duration-50"
+            >
+              <span className="material-symbols-outlined text-base" aria-hidden="true">person_remove</span>
+              Remove me from the board<span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          </div>
+        </section>
 
         <div className="mt-8 sm:mt-12 grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           <div className="p-4 sm:p-6 border border-outline-variant bg-surface-container-lowest">

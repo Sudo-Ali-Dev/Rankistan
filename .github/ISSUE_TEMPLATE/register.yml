@@ -1,0 +1,26 @@
+name: Register
+description: Join the leaderboard when your GitHub location does not say Pakistan
+title: Register
+# The pipeline finds registrations by this label (scripts/registry.js). The
+# account that opens the issue is the account registered; nothing typed into
+# the issue is read.
+labels: [registration]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This registers **the GitHub account that opens this issue**, and no one else.
+
+        The pipeline finds developers by the location on their GitHub profile. Registering covers you if yours does not say Pakistan or one of the cities listed on the site's About page. It replaces only that check: every other gate still applies (public repositories, followers, account age and recent activity), and you appear only if you pass them. The gates are listed on the Register page at [rankistan.dev](https://rankistan.dev).
+
+        To leave the board later, open a **Remove me** issue.
+
+        This issue is public. Do not add anything private to it.
+
+  - type: checkboxes
+    id: attestation
+    attributes:
+      label: Attestation
+      options:
+        - label: I am Pakistani, or I live in Pakistan
+          required: true
