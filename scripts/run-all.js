@@ -167,10 +167,11 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
     return;
   }
 
-  const rawDevs = await fetchPakistaniDevelopers({
+  const { developers: rawDevs, screenedOut } = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
     rawOnly: true,
+    withScreening: true,
   });
 
   console.log(`Fetched ${rawDevs.length} raw developers.`);
@@ -203,7 +204,9 @@ async function runIncremental(batchIndex, { dryRun = false } = {}) {
   // Everyone this run actually fetched, whether or not they passed. Only these
   // developers can be judged ineligible; anyone search did not return, or whose
   // fetch errored, was never looked at and is carried forward instead.
-  const evaluated = rawDevs.map((d) => d.username);
+  // Screened-out developers count too: their whole feed was read, and it
+  // failed the gate. Only a developer this run never looked at is carried.
+  const evaluated = [...rawDevs.map((d) => d.username), ...screenedOut];
 
   saveBatchEntries(batchIndex, newEntries, evaluated);
   mergeBatchIntoLeaderboard({ batchIndex, newEntries, evaluated, targetPath });
