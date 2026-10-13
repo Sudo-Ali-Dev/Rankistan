@@ -14,7 +14,18 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages-deploy
+  # Renamed from `pages-deploy` on 2026-10-13. That group wedged: from the
+  # 13:00 UTC run on 2026-10-05 onward every dispatch sat at `pending` with no
+  # job allocated, waited an hour, and was displaced by the next one - 39 runs,
+  # eight days of stale data, and no email, because GitHub only notifies on
+  # failure and a displaced run is `cancelled`. Nothing held the lock: no run
+  # was in progress anywhere in the repo, and marking the one statusless Pages
+  # deployment inactive did not release it. GitHub has no API to free a
+  # concurrency lock, so a new name is the only way to get a fresh one.
+  #
+  # Still deliberately not shared with deploy.yml (`pages-deploy-push`); see
+  # the comment there.
+  group: leaderboard-pipeline
   cancel-in-progress: false
 
 jobs:
