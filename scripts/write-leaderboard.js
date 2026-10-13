@@ -32,6 +32,14 @@ const OUTPUT_FIELDS = [
   'linkedin_url',
   'tags',
   'score',
+  // Enough to recompute `score` from this row alone (src/model/score.js,
+  // recomputePublished) and to order the board without the rounding:
+  // `score_exact` is the unrounded score, `activity_score` the exact activity
+  // term, and `scored_at` the instant the age penalty was measured from.
+  'score_exact',
+  'activity_score',
+  'model_version',
+  'scored_at',
   'batch_index'
 ];
 

@@ -68,5 +68,10 @@ jobs:
       - name: Verify activity scoring invariants
         run: npm run verify:activity
 
+      # Recomputes every versioned row of the committed board from its own
+      # published fields, and checks the board is in the model's order.
+      - name: Verify the published leaderboard against the scoring model
+        run: npm run verify:published
+
       - name: Pipeline dry run (no GitHub calls, writes gitignored output)
         run: node scripts/run-all.js --incremental 0 --dry-run
