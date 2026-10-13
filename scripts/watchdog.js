@@ -23,7 +23,9 @@
 //                      turns, plus an hour of slack. Read from the newest
 //                      `scored_at` per `batch_index` in the latest state asset
 //                      on the `pipeline-state` release, since the pipeline no
-//                      longer commits anything to main to read it from.
+//                      longer commits anything to main to read it from. A batch
+//                      with no `scored_at` on any row also alarms, in words that
+//                      say its date is unknown rather than that it is frozen.
 //   STUCK_RUN          any run queued, pending, waiting or requested for 90
 //                      min. Read by status filter, never from the newest page
 //                      of runs - the eight-day holder was older than the latest
@@ -115,22 +117,44 @@ export function evaluate(state, now = Date.now()) {
   if (state.batches?.error) {
     unreadable.push(`pipeline state (${state.batches.error})`);
   } else {
+    // Two different findings, reported in different words. A batch with a date older than the
+    // threshold is known to be frozen. A batch with no date at all has only rows from before
+    // `scored_at` existed: it may have run an hour ago, and this check cannot say, so the message
+    // must not claim it has measured nobody. Both still alarm - unknown is not healthy.
     const stale = [];
+    const undated = [];
     for (let batch = 0; batch < THRESHOLDS.BATCH_COUNT; batch += 1) {
       const last = state.batches?.lastPublished?.[batch];
-      if (!last || hoursSince(last, now) > THRESHOLDS.BATCH_STALE_HOURS) stale.push(batch);
+      if (!last) undated.push(batch);
+      else if (hoursSince(last, now) > THRESHOLDS.BATCH_STALE_HOURS) stale.push(batch);
     }
+    const which = (list) =>
+      list.length === THRESHOLDS.BATCH_COUNT
+        ? `all ${THRESHOLDS.BATCH_COUNT} batches`
+        : `batch${list.length > 1 ? 'es' : ''} ${list.join(', ')}`;
+    const findings = [];
     if (stale.length > 0) {
-      const which =
-        stale.length === THRESHOLDS.BATCH_COUNT
-          ? `all ${THRESHOLDS.BATCH_COUNT} batches`
-          : `batch${stale.length > 1 ? 'es' : ''} ${stale.join(', ')}`;
+      findings.push(
+        `Nothing measured in ${THRESHOLDS.BATCH_STALE_HOURS} h for ${which(stale)}. ` +
+          'Those rows on the board are frozen.'
+      );
+    }
+    if (undated.length > 0) {
+      findings.push(
+        `No measurement date on record for ${which(undated)}: every row ${
+          undated.length > 1 ? 'they own' : 'it owns'
+        } predates \`scored_at\`, so when ${
+          undated.length > 1 ? 'they' : 'it'
+        } last ran is unknown. ${
+          undated.length > 1 ? 'Each clears' : 'This clears'
+        } the next time it runs.`
+      );
+    }
+    if (findings.length > 0) {
       alarms.push({
         code: 'BATCH_STALE',
-        key: stale.join(','),
-        message:
-          `Nothing measured in ${THRESHOLDS.BATCH_STALE_HOURS} h for ${which}. ` +
-          'Those rows on the board are frozen.'
+        key: [...stale, ...undated].sort((a, b) => a - b).join(','),
+        message: findings.join(' ')
       });
     }
   }
