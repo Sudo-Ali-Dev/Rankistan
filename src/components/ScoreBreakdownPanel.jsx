@@ -182,7 +182,7 @@ export default function ScoreBreakdownPanel({ breakdown, gatesPassed = true }) {
       </div>
 
       <p className="p-4 sm:p-6 font-mono text-[10px] text-outline/80 uppercase leading-relaxed border-t border-outline-variant/50">
-        Points above sum to your estimated score. Official leaderboard rank updates after the next hourly batch sync.
+        Points above sum to your estimated score. The board's own score comes from the pipeline, which re-measures each developer once a day.
       </p>
     </section>
   );

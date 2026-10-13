@@ -104,19 +104,9 @@ export default function Register({ onChangeTab }) {
 
   useEffect(() => {
     async function loadRecent() {
-      let localRegs = [];
-      try {
-        const stored = localStorage.getItem('pakdev_pending_nodes');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) {
-            localRegs = parsed.map((dev) => ({
-              ...dev,
-              location: normalizeLocationForDisplay(dev?.location)
-            }));
-          }
-        }
-      } catch { /* ignored */ }
+      // This list used to merge in "pending" entries from this browser's
+      // localStorage and label them "Just Now", as if a check had submitted
+      // anything. Nothing is submitted, so they are no longer shown or saved.
 
       let lb = [];
       try {
@@ -124,18 +114,21 @@ export default function Register({ onChangeTab }) {
         lb = Array.isArray(leaderboardPayload?.leaderboard) ? leaderboardPayload.leaderboard : [];
       } catch { /* ignored */ }
 
-      const formattedLb = lb.slice(0, RECENT_SYNC_LIMIT).map((d, index) => ({
+      // Only what the published row actually says. These rows used to carry
+      // an invented job title ('Systems Engineer' when there was no bio), a
+      // seniority guessed from repo count ('Senior' / 'Mid-Level'), and a
+      // fabricated "(index + 1) * 14m ago" sync time for real people.
+      const formattedLb = lb.slice(0, RECENT_SYNC_LIMIT).map((d) => ({
         avatar: d.avatar_url,
         username: d.username || d.login,
-        role: d.bio || 'Systems Engineer',
+        role: d.bio || '',
         location: normalizeLocationForDisplay(d.location),
-        stack: d.top_languages?.[0] || (d.public_repos > 50 ? 'Senior' : 'Mid-Level'),
         score: d.score,
-        timeAgo: `${(index + 1) * 14}m ago`,
+        rank: d.rank,
         isNew: false,
       }));
 
-      setRecentDevs([...localRegs, ...formattedLb].slice(0, RECENT_SYNC_LIMIT));
+      setRecentDevs(formattedLb);
     }
     loadRecent();
   }, []);
@@ -298,34 +291,15 @@ export default function Register({ onChangeTab }) {
       setGatesPassed(true);
       setStatus('complete');
 
-      const newReg = {
-        avatar: data.avatar_url,
-        username: data.login,
-        role: data.bio || 'Systems Engineer',
-        location: normalizeLocationForDisplay(data.location),
-        stack: data.public_repos > 50 ? 'Senior' : 'Mid-Level',
-        score: calculatedScore,
-        timeAgo: 'Just Now',
-        isNew: true,
-      };
-
+      // A passing check is an eligibility result, not a registration. This
+      // used to save the profile to this browser's localStorage and show
+      // NODE_ACCEPTED, which nobody downstream ever read
+      // (public/registered_devs.json has been `[]` since 2026-03-20).
       setProfileData({
         ...data,
         _calculatedScore: calculatedScore,
         _agePenaltyApplied: breakdown.agePenalty.applied
       });
-
-      try {
-        const stored = JSON.parse(localStorage.getItem('pakdev_pending_nodes') || '[]');
-        if (!stored.find((s) => s.username.toLowerCase() === newReg.username.toLowerCase())) {
-          stored.unshift(newReg);
-          localStorage.setItem('pakdev_pending_nodes', JSON.stringify(stored));
-        }
-        setRecentDevs((prev) => {
-          if (prev.find((p) => p.username.toLowerCase() === newReg.username.toLowerCase())) return prev;
-          return [newReg, ...prev].slice(0, RECENT_SYNC_LIMIT);
-        });
-      } catch { /* ignored */ }
     } catch (e) {
       setStatus('error');
       setErrorMsg(e.message);
@@ -345,10 +319,10 @@ export default function Register({ onChangeTab }) {
 
         <div className="mb-8 border-l-4 border-primary pl-4 sm:mb-12 sm:pl-6">
           <h1 className="font-headline text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tighter uppercase text-on-surface mb-2">
-            Initialize <span className="text-primary">Profile</span>
+            Check <span className="text-primary">Eligibility</span>
           </h1>
           <p className="font-mono text-xs sm:text-sm text-outline max-w-xl uppercase tracking-widest leading-relaxed">
-            Entry point for the high-performance engineering cluster. Provide your GitHub identifier to synchronize.
+            See whether a GitHub profile passes the leaderboard's gates. Nothing is submitted: developers join the board when the pipeline discovers them.
           </p>
         </div>
 
@@ -357,7 +331,7 @@ export default function Register({ onChangeTab }) {
           <div className="lg:col-span-5 p-4 sm:p-6 lg:p-8 bg-surface-container-lowest border-b lg:border-b-0 lg:border-r border-outline-variant flex flex-col justify-between">
             <div className="space-y-6 sm:space-y-8">
               <div>
-                <label className="font-mono text-xs text-tertiary uppercase tracking-tighter mb-4 block">System Input / User ID</label>
+                <label className="font-mono text-xs text-tertiary uppercase tracking-tighter mb-4 block">GitHub Username</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                     <span className="font-mono text-primary">@</span>
@@ -373,7 +347,7 @@ export default function Register({ onChangeTab }) {
                   />
                 </div>
                 <p className="mt-4 font-mono text-[10px] text-outline leading-relaxed uppercase">
-                  By proceeding, you authorize Rankistan to fetch your public contributions and profile metadata.
+                  This check runs in your browser against public GitHub data. Nothing is stored or sent to Rankistan.
                 </p>
               </div>
 
@@ -382,7 +356,7 @@ export default function Register({ onChangeTab }) {
                   onClick={handleRegister}
                   className="w-full min-h-11 bg-primary text-on-primary font-headline font-bold py-4 px-6 flex items-center justify-between hover:bg-primary-container transition-colors duration-50 active:scale-[0.98]"
                 >
-                  <span className="uppercase tracking-widest text-sm sm:text-base">Execute Registration</span>
+                  <span className="uppercase tracking-widest text-sm sm:text-base">Check Eligibility</span>
                   <span className="material-symbols-outlined">arrow_forward</span>
                 </button>
               ) : status === 'loading' ? (
@@ -392,12 +366,12 @@ export default function Register({ onChangeTab }) {
                 >
                   <span className="uppercase tracking-widest flex items-center gap-2">
                     <span className="w-2 h-2 bg-tertiary animate-pulse inline-block"></span>
-                    SYNCING_NODE...
+                    CHECKING_PROFILE...
                   </span>
                 </button>
               ) : (
                 <div className="w-full min-h-11 bg-tertiary-container/20 border border-tertiary text-tertiary font-headline font-bold py-4 px-6 flex items-center justify-between">
-                  <span className="uppercase tracking-widest text-sm sm:text-base">NODE_ACCEPTED</span>
+                  <span className="uppercase tracking-widest text-sm sm:text-base">ELIGIBLE</span>
                   <span className="material-symbols-outlined">check_circle</span>
                 </div>
               )}
@@ -409,7 +383,7 @@ export default function Register({ onChangeTab }) {
               )}
 
               <div className="pt-6 sm:pt-8 border-t border-outline-variant/30">
-                <h3 className="font-mono text-xs text-outline-variant uppercase mb-4">Registration Requirements</h3>
+                <h3 className="font-mono text-xs text-outline-variant uppercase mb-4">Eligibility Requirements</h3>
                 <ul className="space-y-3">
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
                     {renderCheckIcon(checks.exists)} <span>Active GitHub account</span>
@@ -434,7 +408,7 @@ export default function Register({ onChangeTab }) {
                   </li>
                 </ul>
                 <p className="mt-4 font-mono text-[9px] text-outline/60 uppercase leading-relaxed">
-                  Meaningful contributions: pushes, pull requests, issues, and releases. All checks are verified in real-time against the GitHub API.
+                  Meaningful contributions: pushes, pull requests, issues, and releases. Checked live against the GitHub API; the pipeline's own check is the one that counts.
                 </p>
               </div>
             </div>
@@ -446,7 +420,7 @@ export default function Register({ onChangeTab }) {
                 &gt; Estimated Score: {profileData?._calculatedScore} {profileData?._agePenaltyApplied && <span className="text-error">(0.5x New Account Penalty Applied)</span>}<br />
                 <br />
                 <span className="text-tertiary/80">
-                  * Note: The leaderboard updates periodically in batches. Your profile and official score will be visible after the next global synchronization.
+                  * Nothing has been submitted. Developers join the board when the pipeline discovers them, which needs the word "Pakistan" in your GitHub location, and the board shows the top 1,000 who pass every gate. Self-registration is being rebuilt.
                 </span>
               </div>
             )}
@@ -455,10 +429,8 @@ export default function Register({ onChangeTab }) {
           <div className="lg:col-span-7 bg-surface p-0 flex flex-col min-h-0">
             <div className="p-4 sm:p-6 border-b border-outline-variant bg-surface-container-high flex flex-col gap-1 sm:flex-row sm:justify-between sm:items-center">
               <span className="font-mono text-xs uppercase tracking-widest flex items-center gap-2">
-                <span className="w-2 h-2 bg-tertiary animate-pulse"></span>
-                Recent Synchronizations
+                Top of the Board
               </span>
-              <span className="font-mono text-[10px] text-outline uppercase">Uptime: 99.9%</span>
             </div>
 
             <div
@@ -485,19 +457,19 @@ export default function Register({ onChangeTab }) {
                   </div>
                   <div className="min-w-0 flex-1 sm:col-span-6 sm:p-4 relative z-10">
                     <div className={`font-headline font-bold text-sm tracking-tight uppercase truncate ${dev.isNew ? 'text-tertiary' : 'text-on-surface'}`}>{dev.username}</div>
-                    <div className="font-mono text-[10px] text-outline uppercase tracking-tighter line-clamp-1">{dev.role} &bull; {dev.location}</div>
+                    <div className="font-mono text-[10px] text-outline uppercase tracking-tighter line-clamp-1">{[dev.role, dev.location].filter(Boolean).join(' \u2022 ')}</div>
                   </div>
                   <div className="shrink-0 text-right sm:col-span-4 sm:p-4 relative z-10">
                     <div className={`inline-block px-2 py-1 font-mono text-[9px] uppercase ${dev.isNew ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-secondary-container text-on-secondary-container'}`}>
-                      {typeof dev.score !== 'undefined' ? `Score: ${dev.score}` : dev.stack}
+                      {`Score: ${dev.score ?? '-'}`}
                     </div>
-                    <div className={`font-mono text-[9px] mt-1 uppercase ${dev.isNew ? 'text-tertiary' : 'text-outline-variant'}`}>{dev.timeAgo}</div>
+                    <div className={`font-mono text-[9px] mt-1 uppercase ${dev.isNew ? 'text-tertiary' : 'text-outline-variant'}`}>{dev.rank ? `Rank #${dev.rank}` : ''}</div>
                   </div>
                 </div>
               ))}
             </div>
             <div className="p-3 sm:p-4 bg-surface-container-highest border-t border-outline-variant text-center">
-              <button onClick={() => onChangeTab?.('leaderboard')} className="font-mono text-[10px] text-primary uppercase tracking-widest hover:underline min-h-11 sm:min-h-0 inline-flex items-center justify-center">View All Node Connections</button>
+              <button onClick={() => onChangeTab?.('leaderboard')} className="font-mono text-[10px] text-primary uppercase tracking-widest hover:underline min-h-11 sm:min-h-0 inline-flex items-center justify-center">View Full Leaderboard</button>
             </div>
           </div>
         </div>
@@ -507,18 +479,18 @@ export default function Register({ onChangeTab }) {
         <div className="mt-8 sm:mt-12 grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           <div className="p-4 sm:p-6 border border-outline-variant bg-surface-container-lowest">
             <span className="material-symbols-outlined text-primary mb-4">hub</span>
-            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Global Routing</h4>
-            <p className="font-body text-xs text-outline leading-relaxed">Your profile is indexed across our global edge network, making your skills discoverable by international tech recruiters.</p>
+            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Public Data Only</h4>
+            <p className="font-body text-xs text-outline leading-relaxed">Rankistan reads only what GitHub already shows publicly: your profile, your public repositories and your public activity.</p>
           </div>
           <div className="p-4 sm:p-6 border border-outline-variant bg-surface-container-lowest">
             <span className="material-symbols-outlined text-tertiary mb-4">monitoring</span>
-            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Realtime Stats</h4>
-            <p className="font-body text-xs text-outline leading-relaxed">Track your ranking within the Pakistani developer ecosystem based on commit velocity, impact, and code quality.</p>
+            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Updated Daily</h4>
+            <p className="font-body text-xs text-outline leading-relaxed">Each developer is re-measured once a day: public activity over the last 30 days, plus stars and followers. The About page shows the exact formula.</p>
           </div>
           <div className="p-4 sm:p-6 border border-outline-variant bg-surface-container-lowest">
             <span className="material-symbols-outlined text-secondary mb-4">lock_open</span>
-            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Open Standard</h4>
-            <p className="font-body text-xs text-outline leading-relaxed">Built for engineers, by engineers. Your data belongs to you, exported anytime via our public GraphQL API.</p>
+            <h4 className="font-headline font-bold uppercase text-on-surface mb-2">Open Source</h4>
+            <p className="font-body text-xs text-outline leading-relaxed">The pipeline and this site are MIT-licensed on GitHub, and the leaderboard can be exported as CSV from its own page.</p>
           </div>
         </div>
       </div>
