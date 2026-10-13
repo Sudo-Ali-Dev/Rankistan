@@ -87,16 +87,18 @@ Explain **why** in the body when it isn't obvious from the diff.
 | `src/` | React 19 + Vite frontend. `.jsx` components, `.js` utils, Tailwind classes inline. |
 | `scripts/` | The Node data pipeline. `run-all.js` is the only entry point CI calls. |
 | `cloudflare/` | Worker serving AI summaries, rank badges, and the heatmap proxy. |
-| `score-config.json` | All scoring weights and caps. Read by **both** `scripts/` and `src/` — change it here, never inline. |
+| `score-config.json` | All scoring weights and caps, validated by `src/model/config.js`. Change it here, never inline. |
 | `public/data.json` | Generated. Never edit by hand; the pipeline rewrites it hourly. |
 
 ## Things worth knowing before you touch them
 
 - **`public/data.json` is generated and committed by CI** 24 times a day. Do
   not include it in a PR; you will conflict with the bot immediately.
-- **The scoring formula is shared.** `scripts/score.js` and
-  `src/utils/score-breakdown.js` must agree, and both read `score-config.json`.
-  If you change one, change both and say so.
+- **The scoring formula exists once, in `src/model/`.** The pipeline and the
+  Register preview both call it; neither does any arithmetic of its own. If a
+  change can move any developer's score, bump the major `MODEL_VERSION` in
+  `score-config.json` (the rule is written beside it) and add a dated entry to
+  `src/pages/Evolution.jsx`.
 - **Worker changes need a deploy.** `npm run cf:deploy` is a separate step from
   merging; a merged PR does not update the Worker.
 - **`update-digest.yml` is dispatched by an external cron job** by filename. Do

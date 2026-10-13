@@ -1,11 +1,28 @@
 import React, { useState } from 'react';
 import Contributors from '../components/Contributors';
+import { SCORE_CONFIG } from '../model/config.js';
+import { SCORING_WINDOW_DAYS } from '../model/activity.js';
+
+// Every number in the scoring copy below comes from the model's config, so
+// the page cannot describe a formula the pipeline is not running.
+const {
+  STAR_WEIGHT,
+  WEIGHTS,
+  MAX_STARS_FOR_SCORING,
+  MAX_FOLLOWERS_FOR_SCORING,
+  MAX_PUBLIC_REPOS_FOR_SCORING,
+  SIX_MONTHS_DAYS,
+  AGE_PENALTY_MULTIPLIER,
+  ACTIVITY_SCORING
+} = SCORE_CONFIG;
+const PUSH_RULE = ACTIVITY_SCORING.push;
+const PUSH_COUNTED = PUSH_RULE.maxCountedPerDay === null ? '' : ` (${PUSH_RULE.maxCountedPerDay} counted)`;
 
 const SCORING_WEIGHTS = [
-  { field: 'Stars', weight: '× 2', note: 'Capped at 250 to prevent outlier dominance' },
-  { field: 'Activity (30d)', weight: 'log2 curve', note: 'Per UTC day: base / log2(n+1), then daily cap. Push 15/day (20 counted), Issue 15, PR 25, Release 20' },
-  { field: 'Followers', weight: '× 1', note: 'Capped at 500 to prevent outlier dominance' },
-  { field: 'Public Repos', weight: '× 0.5', note: 'Capped at 200 repos (max 100 points)' },
+  { field: 'Stars', weight: `× ${STAR_WEIGHT}`, note: `Capped at ${MAX_STARS_FOR_SCORING} to prevent outlier dominance` },
+  { field: `Activity (${SCORING_WINDOW_DAYS}d)`, weight: 'log2 curve', note: `Per UTC day: base / log2(n+1), then daily cap. Push ${PUSH_RULE.dailyCap}/day${PUSH_COUNTED}, Issue ${ACTIVITY_SCORING.issue.dailyCap}, PR ${ACTIVITY_SCORING.pr.dailyCap}, Release ${ACTIVITY_SCORING.release.dailyCap}` },
+  { field: 'Followers', weight: `× ${WEIGHTS.followers}`, note: `Capped at ${MAX_FOLLOWERS_FOR_SCORING} to prevent outlier dominance` },
+  { field: 'Public Repos', weight: `× ${WEIGHTS.publicRepos}`, note: `Capped at ${MAX_PUBLIC_REPOS_FOR_SCORING} repos (max ${MAX_PUBLIC_REPOS_FOR_SCORING * WEIGHTS.publicRepos} points)` },
 ];
 
 const ACTIVITY_FILTERS = [
@@ -80,8 +97,8 @@ const FAQ = [
   { q: 'How often is the leaderboard updated?', a: 'Every hour. An external cron service triggers the GitHub Actions workflow 24 times per day — one batch per hour. A full cycle through all developers completes in 24 hours.' },
   { q: 'Why am I not on the leaderboard?', a: 'You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. Your GitHub profile must also include "Pakistan" in the location field.' },
   { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
-  { q: 'Why is my score lower than expected?', a: 'Stars are capped at 250 and followers are capped at 500 for scoring purposes. Recent activity uses diminishing returns (base / log2(n+1) per event per UTC day) with daily caps per type — spamming pushes in one day earns far less than steady work spread across the month. Only the first 20 pushes per day count. Accounts younger than 6 months receive a 0.5× penalty on their entire score.' },
-  { q: 'What is the "new account penalty"?', a: 'If your GitHub account is less than 6 months old, your final score is halved (multiplied by 0.5). This prevents newly created accounts from dominating the board.' },
+  { q: 'Why is my score lower than expected?', a: `Stars are capped at ${MAX_STARS_FOR_SCORING} and followers are capped at ${MAX_FOLLOWERS_FOR_SCORING} for scoring purposes. Recent activity uses diminishing returns (base / log2(n+1) per event per UTC day) with daily caps per type — spamming pushes in one day earns far less than steady work spread across the month.${PUSH_RULE.maxCountedPerDay === null ? '' : ` Only the first ${PUSH_RULE.maxCountedPerDay} pushes per day count.`} Accounts younger than ${SIX_MONTHS_DAYS} days receive a ${AGE_PENALTY_MULTIPLIER}× penalty on their entire score.` },
+  { q: 'What is the "new account penalty"?', a: `If your GitHub account is less than ${SIX_MONTHS_DAYS} days old, your final score is multiplied by ${AGE_PENALTY_MULTIPLIER}. This prevents newly created accounts from dominating the board.` },
   { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It scans 40,000+ profiles, re-evaluates 20,000+ candidates for score changes, then applies strict activity gates before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
@@ -252,10 +269,10 @@ export default function About({ onChangeTab }) {
 
             <div className="overflow-x-auto bg-surface-container-low border border-outline-variant p-3 sm:p-5 mb-4 sm:mb-6 font-mono text-xs sm:text-sm leading-relaxed">
               <div className="text-primary">
-                base_score = (stars × 2) + (activity_score) + (followers × 1) + (min(public_repos, 200) × 0.5)
+                base_score = (min(stars, {MAX_STARS_FOR_SCORING}) × {STAR_WEIGHT}) + (activity_score) + (min(followers, {MAX_FOLLOWERS_FOR_SCORING}) × {WEIGHTS.followers}) + (min(public_repos, {MAX_PUBLIC_REPOS_FOR_SCORING}) × {WEIGHTS.publicRepos})
               </div>
               <div className="text-tertiary mt-2">
-                final_score = base_score × (account_age &lt; 6mo ? 0.5 : 1.0)
+                final_score = round(base_score × (account_age &lt; {SIX_MONTHS_DAYS}d ? {AGE_PENALTY_MULTIPLIER} : 1))
               </div>
             </div>
 
@@ -272,8 +289,8 @@ export default function About({ onChangeTab }) {
             <div className="mt-4 sm:mt-6 p-3 sm:p-4 border-l-2 border-tertiary bg-tertiary/5">
               <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest">Penalty Notice</span>
               <p className="font-body text-xs text-outline leading-relaxed mt-1">
-                Accounts younger than <span className="text-on-surface font-bold">6 months</span> receive a <span className="text-on-surface font-bold">0.5×</span> multiplier.
-                Stars are capped at <span className="text-on-surface font-bold">250</span>, followers at <span className="text-on-surface font-bold">500</span>, and public repos at <span className="text-on-surface font-bold">200</span> before weights are applied.
+                Accounts younger than <span className="text-on-surface font-bold">{SIX_MONTHS_DAYS} days</span> receive a <span className="text-on-surface font-bold">{AGE_PENALTY_MULTIPLIER}×</span> multiplier.
+                Stars are capped at <span className="text-on-surface font-bold">{MAX_STARS_FOR_SCORING}</span>, followers at <span className="text-on-surface font-bold">{MAX_FOLLOWERS_FOR_SCORING}</span>, and public repos at <span className="text-on-surface font-bold">{MAX_PUBLIC_REPOS_FOR_SCORING}</span> before weights are applied.
               </p>
             </div>
 

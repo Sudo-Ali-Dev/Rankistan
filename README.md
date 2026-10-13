@@ -51,7 +51,7 @@ The scanner is distributed across 24 hourly batches, so the full ecosystem is re
 |---|---|---|
 | **Discover** | `scripts/fetch-devs.js` | Searches GitHub for developers in Pakistan, split into multiple date ranges to stay within API search result limits (< 1000) |
 | **Fetch** | `scripts/fetch-devs.js` | Fetches profile, events (up to 2 pages / 200 events, last 60 days), repos, and linked social accounts (for LinkedIn) for each developer |
-| **Score** | [`score-config.json`](score-config.json), [`scripts/score.js`](scripts/score.js), [`src/utils/activity-score.js`](src/utils/activity-score.js) | Weighted score from stars, 30-day activity (diminishing returns per UTC day), followers, and public repo count; same math as Register |
+| **Score** | [`score-config.json`](score-config.json), [`src/model/`](src/model/), [`scripts/score.js`](scripts/score.js) | Weighted score from stars, 30-day activity (diminishing returns per UTC day), followers, and public repo count; Register runs the same code |
 | **Leaderboard** | `scripts/write-leaderboard.js` | Writes the final ranked `data.json` with public-safe fields |
 
 During **Fetch**, each developer is assigned category tags (AI/ML, Web, DevOps, etc.) by matching bio, repos, and languages against [`src/utils/tag-keywords.json`](src/utils/tag-keywords.json) via [`src/utils/tag-matcher.js`](src/utils/tag-matcher.js). Tags flow through scoring into `public/data.json`. The leaderboard UI uses those tags when present and only recomputes them for older rows missing tags. Re-run the pipeline to refresh tags after keyword changes.
@@ -141,7 +141,9 @@ The frontend location system is deterministic and does not use AI for location i
 
 ### Scoring Formula
 
-All weights and caps live in [`score-config.json`](score-config.json). The pipeline and Register share [`src/utils/activity-score.js`](src/utils/activity-score.js); Register also uses [`src/utils/score-breakdown.js`](src/utils/score-breakdown.js) for the per-component UI.
+All weights and caps live in [`score-config.json`](score-config.json), which [`src/model/config.js`](src/model/config.js) validates: a missing or malformed key throws, naming it. The formula itself exists once, in [`src/model/`](src/model/); the pipeline ([`scripts/score.js`](scripts/score.js)) and the Register preview ([`src/utils/score-breakdown.js`](src/utils/score-breakdown.js)) both call it.
+
+Every published row records the `model_version` it was scored with, plus `score_exact`, `activity_score` and `scored_at`, so its score can be recomputed from the row alone; `npm run verify:published` does that for the whole board. The board is ordered by `score_exact`, then by username compared by code point, so the order does not depend on the machine that built it.
 
 ```
 base_score = (min(stars, 250) × 2) + activity_score + (min(followers, 500) × 1) + (min(public_repos, 200) × 0.5)
@@ -280,8 +282,9 @@ You can trigger any batch manually via **Actions → "Update Leaderboard" → Ru
 score-config.json       # Weights, caps, ACTIVITY_SCORING (single source of truth)
 scripts/
   fetch-devs.js         # Developer discovery + activity fetching
-  score.js              # Batch scoring (uses activity-score.js)
+  score.js              # Batch scoring (a thin wrapper over src/model/)
   verify-activity-score.js  # Sanity checks for activity curve
+  verify-published.js   # Recomputes every versioned score on the published board
   write-leaderboard.js  # Final leaderboard output (strips internal fields)
   run-all.js            # Pipeline orchestrator (--incremental N [--dry-run])
 cloudflare/
@@ -292,6 +295,11 @@ public/
   data.dry-run.json     # Local dry-run output only (gitignored)
 src/
   App.jsx               # Main app shell (Leaderboard / Map / Badge / Register / About / Evolution)
+  model/
+    config.js           # Validates score-config.json; exports MODEL_VERSION
+    activity.js         # 30d activity curve
+    score.js            # The score, and its recomputation from a published row
+    order.js            # Board order: score_exact, then username by code point
   pages/
     Leaderboard.jsx     # Developer rankings
     DevMap.jsx          # Pakistan map + place breakdown + per-place table
@@ -302,8 +310,7 @@ src/
   components/
     ScoreBreakdownPanel.jsx  # Register score bifurcation UI
   utils/
-    activity-score.js   # Shared 30d activity curve (pipeline + Register)
-    score-breakdown.js    # Full score breakdown for Register UI
+    score-breakdown.js    # src/model/ results shaped for the Register UI
     groq.js               # Worker API URL helpers (summary + badge endpoints)
 ```
 

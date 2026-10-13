@@ -25,5 +25,5 @@ Closes #
 
 <!-- Trade-offs, follow-ups, things you deliberately left out.
      If this changes the Worker, note that it needs `npm run cf:deploy`.
-     If it changes scoring, note that scripts/score.js and
-     src/utils/score-breakdown.js must stay in agreement. -->
+     If it changes scoring, say which part of MODEL_VERSION it bumps
+     (the rule is beside it in score-config.json). -->

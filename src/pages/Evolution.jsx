@@ -1,9 +1,20 @@
 import React from 'react';
+import { SCORE_CONFIG, MODEL_VERSION } from '../model/config.js';
 
 const REPO_COMMIT_BASE = 'https://github.com/Sudo-Ali-Dev/Rankistan/commit';
 const CONFIG_URL = 'https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/score-config.json';
-const SCORING_VERSION = '2.0.0';
-const LAST_DOCUMENTED = 'May 2026';
+
+// The current formula is read from the model's config. The timeline entries
+// below are history and keep the numbers they had at the time.
+const {
+  STAR_WEIGHT,
+  WEIGHTS,
+  MAX_STARS_FOR_SCORING,
+  MAX_FOLLOWERS_FOR_SCORING,
+  MAX_PUBLIC_REPOS_FOR_SCORING,
+  SIX_MONTHS_DAYS,
+  AGE_PENALTY_MULTIPLIER
+} = SCORE_CONFIG;
 
 const INTRO_BULLETS = [
   {
@@ -25,9 +36,10 @@ const INTRO_BULLETS = [
 ];
 
 const FORMULA_PLAIN_ENGLISH = [
-  'Stars, followers, and public repos are capped (250 stars, 500 followers, 200 repos) before weights are applied.',
+  `Stars, followers, and public repos are capped (${MAX_STARS_FOR_SCORING} stars, ${MAX_FOLLOWERS_FOR_SCORING} followers, ${MAX_PUBLIC_REPOS_FOR_SCORING} repos) before weights are applied.`,
   'Activity points use diminishing returns per UTC calendar day—spamming the same event type in one day earns very little.',
-  'Accounts younger than 6 months receive half the base score (0.5× multiplier).',
+  `Accounts younger than ${SIX_MONTHS_DAYS} days have their base score multiplied by ${AGE_PENALTY_MULTIPLIER}.`,
+  'The board is ordered by the score before rounding; only an exact tie falls back to the username.',
 ];
 
 const CONSTANTS_ACROSS_ERAS = [
@@ -45,10 +57,6 @@ const BEHIND_THE_SCENES = [
   {
     text: 'Register previews your score with the same rules before you appear on the official board.',
     commit: '219b54a',
-  },
-  {
-    text: 'Older leaderboard rows without per-type event data use a neutral average until the next batch refresh.',
-    commit: '842b9a6',
   },
 ];
 
@@ -129,7 +137,26 @@ const EVOLUTION_ENTRIES = [
     reasoning:
       'Linear monthly totals still rewarded gaming—mass releases or push spam in one day. Daily caps and diminishing returns reward consistent public work and limit burst farming.',
   },
+  {
+    id: 'v8-one-model',
+    date: '2026-10-13',
+    title: 'One model, recorded on every row',
+    summary: 'No score changed. Ties break on the exact score, then the username.',
+    commit: null,
+    formula: 'order = score before rounding (desc), then username · every row records model_version 2.0.0',
+    changes: [
+      'Scores are unchanged: the weights, caps, activity curve, and new-account penalty are exactly what they were.',
+      'The board used to sort on the rounded score, so developers who rounded to the same number were put in alphabetical order. It now sorts on the score before rounding, and only an exact tie falls back to the username.',
+      'That username comparison is now the same on every machine. It used to follow the locale settings of whatever computer built the board.',
+      'Every row records the model version it was scored with, along with the unrounded score, its activity points, and when it was scored, so a published score can be recomputed from the published row alone.',
+      'Register and the batch job now run the same scoring code instead of two copies of the formula, and no score is ever estimated: it is computed from the measured events or not at all.',
+    ],
+    reasoning:
+      'On 13 October 2026 the board held 1,000 developers but only 340 distinct rounded scores, so most positions were settled by the alphabet rather than by work. And with the formula written twice, Register agreed with the board only until someone changed one copy and not the other.',
+  },
 ];
+
+const LAST_DOCUMENTED = EVOLUTION_ENTRIES[EVOLUTION_ENTRIES.length - 1].date;
 
 export default function Evolution() {
   return (
@@ -172,10 +199,10 @@ export default function Evolution() {
           </div>
           <div className="overflow-x-auto bg-surface-container-low border border-outline-variant p-3 sm:p-5 mb-4 font-mono text-xs sm:text-sm leading-relaxed">
             <div className="text-primary">
-              base_score = (min(stars, 250) × 2) + activity_score + (min(followers, 500) × 1) + (min(public_repos, 200) × 0.5)
+              base_score = (min(stars, {MAX_STARS_FOR_SCORING}) × {STAR_WEIGHT}) + activity_score + (min(followers, {MAX_FOLLOWERS_FOR_SCORING}) × {WEIGHTS.followers}) + (min(public_repos, {MAX_PUBLIC_REPOS_FOR_SCORING}) × {WEIGHTS.publicRepos})
             </div>
             <div className="text-tertiary mt-2">
-              final_score = round(base_score × (account_age &lt; 6mo ? 0.5 : 1.0))
+              final_score = round(base_score × (account_age &lt; {SIX_MONTHS_DAYS}d ? {AGE_PENALTY_MULTIPLIER} : 1))
             </div>
             <div className="text-outline mt-3 text-[11px]">
               activity_score = Σ daily min(cap, Σ base / log2(n+1)) over 30d, per type, UTC days
@@ -324,7 +351,7 @@ export default function Evolution() {
 
           <div className="p-4 border border-outline-variant/50 bg-surface-container-low font-mono text-[10px] text-outline uppercase tracking-widest leading-relaxed">
             <p>
-              Scoring version: {SCORING_VERSION} · Last documented: {LAST_DOCUMENTED}
+              Scoring version: {MODEL_VERSION} · Last documented: {LAST_DOCUMENTED}
             </p>
             <p className="mt-2 normal-case tracking-normal font-body text-xs">
               Live weights:{' '}
