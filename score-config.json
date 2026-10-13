@@ -1,9 +1,7 @@
 {
+  "MODEL_VERSION": "2.0.0",
+  "MODEL_VERSION_RULE": "Semver over published output. Major: any developer's score can change. Minor: published fields or the ordering change, with every score unchanged. Patch: no published output changes.",
   "WEIGHTS": {
-    "release": 5,
-    "pr": 4,
-    "push": 2,
-    "issue": 1.5,
     "followers": 1,
     "publicRepos": 0.5
   },
@@ -15,20 +13,23 @@
     },
     "issue": {
       "base": 1.5,
-      "dailyCap": 15
+      "dailyCap": 15,
+      "maxCountedPerDay": null
     },
     "pr": {
       "base": 4,
-      "dailyCap": 25
+      "dailyCap": 25,
+      "maxCountedPerDay": null
     },
     "release": {
       "base": 5,
-      "dailyCap": 20
+      "dailyCap": 20,
+      "maxCountedPerDay": null
     }
   },
   "STAR_WEIGHT": 2,
-  "FALLBACK_ACTIVITY_WEIGHT": 3.125,
   "SIX_MONTHS_DAYS": 180,
+  "AGE_PENALTY_MULTIPLIER": 0.5,
   "MAX_STARS_FOR_SCORING": 250,
   "MAX_FOLLOWERS_FOR_SCORING": 500,
   "MAX_PUBLIC_REPOS_FOR_SCORING": 200

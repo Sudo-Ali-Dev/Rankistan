@@ -25,7 +25,12 @@ export default function ScoreBreakdownPanel({ breakdown, gatesPassed = true }) {
     return { label, ...row };
   });
 
-  const pushNote = 'First 20 pushes per UTC day enter the curve; daily cap 15 pts.';
+  // Read from the config the score was computed with, not retyped.
+  const pushRule = activity.rules.push;
+  const pushNote =
+    pushRule.maxCountedPerDay === null
+      ? `Daily cap ${formatPoints(pushRule.dailyCap)} pts.`
+      : `First ${pushRule.maxCountedPerDay} pushes per UTC day enter the curve; daily cap ${formatPoints(pushRule.dailyCap)} pts.`;
 
   return (
     <section className="mb-8 sm:mb-12 border border-outline-variant bg-surface-container-lowest">

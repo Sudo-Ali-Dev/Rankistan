@@ -1,4 +1,13 @@
-import { computeActivityBreakdown30d } from './activity-score.js';
+/**
+ * The Register preview's view of a score: src/model/ reshaped for
+ * ScoreBreakdownPanel. No arithmetic happens here.
+ *
+ * This file used to be a second implementation of the formula, with every
+ * config value repeated as a `??` default. It agreed with the pipeline only
+ * because nobody had changed a key yet.
+ */
+import { SCORE_CONFIG } from '../model/config.js';
+import { scoreModel } from '../model/score.js';
 
 export const ACTIVITY_TYPE_ROWS = [
   { typeKey: 'push', eventType: 'PushEvent', label: 'PushEvent' },
@@ -7,95 +16,67 @@ export const ACTIVITY_TYPE_ROWS = [
   { typeKey: 'release', eventType: 'ReleaseEvent', label: 'ReleaseEvent' }
 ];
 
-function daysSince(date) {
-  if (!date) {
-    return Number.POSITIVE_INFINITY;
-  }
-  const ts = new Date(date).getTime();
-  if (Number.isNaN(ts)) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return Math.floor((Date.now() - ts) / (1000 * 60 * 60 * 24));
-}
-
+/**
+ * @param {{ events: object[], totalStars: number, followers: number,
+ *           publicRepos: number, createdAt: string, now: number | Date }} input
+ */
 export function computeDeveloperScoreBreakdown({
-  config,
   events,
   totalStars,
   followers,
   publicRepos,
-  createdAt
+  createdAt,
+  now
 }) {
-  if (!config || typeof config !== 'object') {
-    throw new Error('score-breakdown: config is required');
-  }
+  const result = scoreModel(
+    {
+      total_stars: totalStars,
+      followers,
+      public_repos: publicRepos,
+      created_at: createdAt,
+      raw_events_60d: events
+    },
+    { config: SCORE_CONFIG, now }
+  );
 
-  const starWeight = config.STAR_WEIGHT ?? 2;
-  const maxStars = config.MAX_STARS_FOR_SCORING ?? 250;
-  const maxFollowers = config.MAX_FOLLOWERS_FOR_SCORING ?? 500;
-  const maxPublicRepos = config.MAX_PUBLIC_REPOS_FOR_SCORING ?? 200;
-  const sixMonthsDays = config.SIX_MONTHS_DAYS ?? 180;
-  const followerWeight = config.WEIGHTS?.followers ?? 1;
-  const publicRepoWeight = config.WEIGHTS?.publicRepos ?? 0.5;
-
-  const rawStars = Math.max(0, Math.floor(Number(totalStars) || 0));
-  const cappedStars = Math.min(rawStars, maxStars);
-  const starsPoints = cappedStars * starWeight;
-
-  const rawFollowers = Math.max(0, Math.floor(Number(followers) || 0));
-  const cappedFollowers = Math.min(rawFollowers, maxFollowers);
-  const followersPoints = cappedFollowers * followerWeight;
-
-  const rawRepos = Math.max(0, Math.floor(Number(publicRepos) || 0));
-  const cappedRepos = Math.min(rawRepos, maxPublicRepos);
-  const publicReposPoints = cappedRepos * publicRepoWeight;
-
-  const activity = computeActivityBreakdown30d(events, { config });
-
-  const baseScore =
-    starsPoints + activity.total + followersPoints + publicReposPoints;
-
-  const accountAgeDays = daysSince(createdAt);
-  const agePenaltyApplied = accountAgeDays < sixMonthsDays;
-  const ageMultiplier = agePenaltyApplied ? 0.5 : 1;
-  const finalScore = Math.round(baseScore * ageMultiplier);
-  const penaltyPointsLost = agePenaltyApplied
-    ? Math.round(baseScore - finalScore)
-    : 0;
+  const { stars, public_repos: repos, activity, base_score: baseScore, age } = result.components;
+  const followerPart = result.components.followers;
 
   return {
     stars: {
-      raw: rawStars,
-      capped: cappedStars,
-      weight: starWeight,
-      points: starsPoints,
-      capApplied: rawStars > cappedStars
+      raw: stars.raw,
+      capped: stars.capped,
+      weight: stars.weight,
+      points: stars.points,
+      capApplied: stars.raw > stars.capped
     },
     followers: {
-      raw: rawFollowers,
-      capped: cappedFollowers,
-      points: followersPoints,
-      capApplied: rawFollowers > cappedFollowers
+      raw: followerPart.raw,
+      capped: followerPart.capped,
+      weight: followerPart.weight,
+      points: followerPart.points,
+      capApplied: followerPart.raw > followerPart.capped
     },
     publicRepos: {
-      raw: rawRepos,
-      capped: cappedRepos,
-      weight: publicRepoWeight,
-      points: publicReposPoints,
-      capApplied: rawRepos > cappedRepos
+      raw: repos.raw,
+      capped: repos.capped,
+      weight: repos.weight,
+      points: repos.points,
+      capApplied: repos.raw > repos.capped
     },
     activity: {
-      total: activity.total,
-      byType: activity.byType
+      total: activity.points,
+      byType: activity.by_type,
+      rules: SCORE_CONFIG.ACTIVITY_SCORING
     },
     baseScore,
     agePenalty: {
-      applied: agePenaltyApplied,
-      multiplier: ageMultiplier,
-      accountAgeDays: Number.isFinite(accountAgeDays) ? accountAgeDays : null,
-      pointsLost: penaltyPointsLost,
-      label: agePenaltyApplied ? '0.5× new account penalty' : null
+      applied: age.applied,
+      multiplier: age.multiplier,
+      accountAgeDays: age.account_age_days,
+      pointsLost: age.applied ? Math.round(baseScore - result.score) : 0,
+      label: age.applied ? `${age.multiplier}× new account penalty` : null
     },
-    finalScore
+    finalScore: result.score
   };
 }
