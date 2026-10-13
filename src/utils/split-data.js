@@ -72,6 +72,22 @@ export function toDeveloperRow(row) {
   return out;
 }
 
+/** Whether any row carries a PIPELINE_ONLY_FIELDS field. */
+export function hasPipelineOnlyFields(payload) {
+  const rows = Array.isArray(payload?.leaderboard) ? payload.leaderboard : [];
+  return rows.some((row) => PIPELINE_ONLY_FIELDS.some((field) => row && field in row));
+}
+
+/**
+ * The data.json the site serves: the pipeline's state with PIPELINE_ONLY_FIELDS removed from every
+ * row, and every other field and its order untouched. The Worker downloads and parses this file
+ * whole on Cloudflare's per-request CPU budget, and the browser's fallback caches it in
+ * localStorage, so the shadow measurement (about +41%) must not reach it.
+ */
+export function buildPublicPayload(payload) {
+  return { ...payload, leaderboard: payload.leaderboard.map(toDeveloperRow) };
+}
+
 /** The Digest's tables, as many rows as the page renders. */
 export const DIGEST_TOP_REPOS = 100;
 export const DIGEST_TOP_CONTRIBUTORS = 10;
