@@ -2,7 +2,7 @@
 
 **Current release: [v2.0.0](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/v2.0.0)** — Scoring v2 (diminishing returns, daily caps, Evolution tab, Register breakdown).
 
-An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by normalized profile locations on an interactive map of Pakistan, a **Badge Generator** for README rank badges, **Register** for profile checks with a live score breakdown, **Evolution** for how the scoring formula changed over time, and **About** documentation for pipeline logic, filters, and scheduling.
+An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by normalized profile locations on an interactive map of Pakistan, a **Badge Generator** for README rank badges, **Register** for profile checks with a live score breakdown and the links to register or opt out by GitHub issue, **Evolution** for how the scoring formula changed over time, and **About** documentation for pipeline logic, filters, and scheduling.
 
 > **Note:** The frontend is currently optimized for desktop. Mobile design is still under development but usable.
 
@@ -25,7 +25,7 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 | **Leaderboard** | Ranked list from `public/data.json` with search, filters, sort, CSV export, and pagination |
 | **Map** | Pakistan outline with per-place counts; place breakdown; hover a node to sync-highlight and auto-scroll that place in the list; click a place to list developers for that bucket |
 | **Badge** | Generate a dynamic Shields.io rank badge for your GitHub README (Markdown, HTML, or reST snippets) |
-| **Register** | Validate a GitHub profile against pipeline criteria; shows an estimated score breakdown (stars, activity by type, followers, repos) before batch sync |
+| **Register** | Validate a GitHub profile against pipeline criteria; shows an estimated score breakdown (stars, activity by type, followers, repos) before batch sync; links to the Register and Remove me issue forms |
 | **Evolution** | Plain-language history of scoring changes (oldest to newest), current formula, and why rules were tightened |
 | **About** | How the index works: scoring summary, activity filters, hourly batches, and FAQs |
 
@@ -49,7 +49,7 @@ The scanner is distributed across 24 hourly batches, so the full ecosystem is re
 
 | Stage | Script | Output |
 |---|---|---|
-| **Discover** | `scripts/fetch-devs.js`, [`scripts/discovery/`](scripts/discovery/) | Searches GitHub for developers whose location says Pakistan or names one of 15 Pakistani cities, by account-creation date, each range cut into slices that list whole in one request |
+| **Discover** | `scripts/fetch-devs.js`, [`scripts/discovery/`](scripts/discovery/), [`scripts/registry.js`](scripts/registry.js) | Searches GitHub for developers whose location says Pakistan or names one of 15 Pakistani cities, by account-creation date, each range cut into slices that list whole in one request; adds developers registered by GitHub issue and drops those who opted out |
 | **Fetch** | `scripts/fetch-devs.js` | Fetches profile, events (up to 2 pages / 200 events, last 60 days), repos, and linked social accounts (for LinkedIn) for each developer |
 | **Score** | [`score-config.json`](score-config.json), [`src/model/`](src/model/), [`scripts/score.js`](scripts/score.js) | Weighted score from stars, 30-day activity (diminishing returns per UTC day), followers, and public repo count; Register runs the same code |
 | **Leaderboard** | `scripts/write-leaderboard.js` | Writes the final ranked `data.json` with public-safe fields |
@@ -100,6 +100,18 @@ Measured live on 13 October 2026, the twin cost 9, 12 and 23 GraphQL points for 
 
 `batch_index` 23 covers three `created:` ranges, defined as a `queries` list on that entry in `SEARCH_BATCHES`. They are partitioned together in the same hourly run, and every row from this cohort still carries **`batch_index` 23**.
 
+### Registration and Opt-out
+
+Search finds developers whose GitHub location says Pakistan or names one of the 15 cities above, so it cannot find a Pakistani developer whose profile names somewhere else, an unsearched city, or nothing. They can register instead, and anyone can take themselves off the board. Both are GitHub issues, opened from the forms in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/), and [`scripts/registry.js`](scripts/registry.js) reads them on every run:
+
+- **Register** (`register.yml`, label `registration`) registers the account that opened the issue. Nothing typed into the issue is read, so nobody can register anyone else. Registering replaces only the location search: the developer is evaluated in the batch whose `created:` range holds their account, must meet that search's `repos:>3 followers:>1`, and then passes the same account-age and activity gates as everyone else.
+- **Remove me** (`remove-me.yml`, label `opt-out`) removes the account that opened the issue at the next run, whichever batch holds its row, and that account is not fetched again while the opt-out stands. The removal is recorded with the reason `opted_out`.
+- Each author's latest issue wins, so a later Register issue reverses an opt-out. A registration a maintainer closes as `not_planned` is rejected; an opt-out counts however it is closed. Pull requests and accounts that are not users are ignored.
+- Everything is keyed on the numeric account id, never the login, which can be renamed and then claimed by someone else. Rows record it as `github_id`; rows from before that are matched on the id in their `avatar_url`. Registered accounts are resolved to their current login and creation date with one GraphQL `nodes` query per 100 (1 point, measured on 2026-10-13), and their rows carry `discovery_source: "registered"`. One `location:pakistan` also found keeps `pakistan`; one only the city twin found is recorded as `registered`, so the twin's location re-check never rules out someone who registered.
+- **Opt-outs fail closed.** A run that cannot read the issues saves and publishes nothing, with a `REGISTRY_UNREADABLE` error. Reading them costs one REST request per label (100 issues a page): 2 a run today.
+
+[`.github/workflows/registration.yml`](.github/workflows/registration.yml) answers each new issue once and closes it as completed, which does not change how the pipeline reads it. Both labels must exist in the repository for the forms to apply them.
+
 ### Incremental Per-Batch Updates
 
 Every developer entry in `data.json` is tagged with a `batch_index`. When batch N runs:
@@ -115,7 +127,7 @@ This means developers from batch 23 stay on the leaderboard all day until batch 
 
 The board is pipeline state, not a file in git. Each run of `update-digest.yml` loads the newest state from the [`pipeline-state`](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/pipeline-state) release, merges its batch in, and saves the whole board back as a new asset, `state-<run_id>-<run_attempt>.json.gz` (the shape of `data.json`, gzipped). The newest 72 are kept. See [`scripts/state-store.js`](scripts/state-store.js).
 
-Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, or displaced below the 1,000 cap. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. A code push and a data update therefore both deploy the latest of each.
+Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, displaced below the 1,000 cap, or opted out. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. A code push and a data update therefore both deploy the latest of each.
 
 `public/data.json` used to be committed every hour, and was 98.4% of the repository's packed size.
 
@@ -313,6 +325,7 @@ You can trigger any batch manually via **Actions → "Update Leaderboard" → Ru
 score-config.json       # Weights, caps, ACTIVITY_SCORING (single source of truth)
 scripts/
   fetch-devs.js         # Developer discovery + activity fetching
+  registry.js           # Registration and opt-out issues, keyed on the account id
   score.js              # Batch scoring (a thin wrapper over src/model/)
   verify-activity-score.js  # Sanity checks for activity curve
   verify-published.js   # Recomputes every versioned score on the published board
@@ -403,7 +416,7 @@ formatting rules, and PR scope guidance. Security reports go through
 - [x] Leaderboard — Developer rankings with daily incremental updates
 - [x] Developer Map — Place distribution and per-place developer list
 - [x] Badge Generator — Dynamic README rank badges via Shields.io
-- [x] Registration — Profile validation against pipeline criteria
+- [x] Registration — Register or opt out by GitHub issue; profile validation against pipeline criteria
 - [x] About — On-site documentation for scoring, filters, and scheduling
 - [x] Evolution — Scoring formula history and plain-language rationale
 - [x] Register score breakdown — Live estimate with per-component points before batch sync

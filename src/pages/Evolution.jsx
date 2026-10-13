@@ -172,6 +172,24 @@ const EVOLUTION_ENTRIES = [
     reasoning:
       'On 13 October 2026, 26,002 GitHub accounts with more than 3 repositories and more than 1 follower said "Pakistan" in their location, and 8,836 more named one of these 15 cities without it: a third as many again, none of whom could ever appear. Each city was kept only after a sample of 30 of its matches turned out to be 30 Pakistani developers.',
   },
+  {
+    id: 'registration-by-issue',
+    date: '2026-10-13',
+    title: 'Register, or leave, by GitHub issue',
+    summary: 'Who can be on the board, not how it is scored: no score changed.',
+    commit: null,
+    formula:
+      'candidate = found by location search OR registered by issue · every other gate unchanged · opt-out removes, by account id',
+    changes: [
+      'Developers whose GitHub location says neither Pakistan nor one of the searched cities can register by opening a Register issue. The account that opens it is the account registered; nothing typed into the issue is read, so nobody can register anyone else.',
+      'Registering replaces only the location search. Every other gate still applies: more than 3 public repositories, more than 1 follower, an account at least 30 days old, and the activity thresholds.',
+      "A registered developer is measured in the batch that covers their account's creation date, like everyone else.",
+      'Anyone can take themselves off the board with a Remove me issue. It applies at the next pipeline run, whichever batch holds their row, and they are not measured while it stands. A later Register issue reverses it.',
+      'Both are keyed on the numeric GitHub account id rather than the username, which can be changed and then claimed by someone else. Rows now record that id.',
+    ],
+    reasoning:
+      'Searching by location cannot find a Pakistani developer whose profile names another country, an unsearched city, or nothing, and there was no way to ask to be taken off. A run that cannot read the opt-outs now saves nothing, rather than risk republishing someone who asked to leave.',
+  },
 ];
 
 const LAST_DOCUMENTED = EVOLUTION_ENTRIES[EVOLUTION_ENTRIES.length - 1].date;
