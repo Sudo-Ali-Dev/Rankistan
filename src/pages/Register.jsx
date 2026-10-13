@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CACHE_KEYS, cache } from '../utils/cache';
+import { loadLeaderboardData } from '../utils/leaderboard-data';
 import { isLikelyPakistaniLocation, normalizeLocationForDisplay } from '../utils/location';
 import scoreConfig from '../../score-config.json';
 import ScoreBreakdownPanel from '../components/ScoreBreakdownPanel';
@@ -120,11 +120,7 @@ export default function Register({ onChangeTab }) {
 
       let lb = [];
       try {
-        let leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
-        if (!leaderboardPayload || cache.isStale(CACHE_KEYS.LEADERBOARD)) {
-          const res = await fetch('./data.json', { cache: 'no-store' });
-          if (res.ok) leaderboardPayload = await res.json();
-        }
+        const { payload: leaderboardPayload } = await loadLeaderboardData();
         lb = Array.isArray(leaderboardPayload?.leaderboard) ? leaderboardPayload.leaderboard : [];
       } catch { /* ignored */ }
 

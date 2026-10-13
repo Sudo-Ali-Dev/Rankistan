@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import DevCard from '../components/DevCard';
 import CompareModal from '../components/CompareModal';
-import { CACHE_KEYS, cache } from '../utils/cache';
+import { loadLeaderboardData } from '../utils/leaderboard-data';
+import { freshnessOf, formatAge } from '../utils/freshness';
 import { normalizeLocationForDisplay } from '../utils/location';
 import { ensureLeaderboardTags, getAvailableTags } from '../utils/tags';
 import { generateDeveloperSummary } from '../utils/groq';
@@ -22,8 +23,48 @@ const CSV_EXPORT_COLUMNS = [
   'rank', 'username', 'name', 'location', 'score', 'followers', 'public_repos', 'events_30d', 'total_stars', 'top_languages'
 ];
 
+// Derived from `last_updated`, never asserted. This line used to read
+// LIVE_SYNC beside a pulsing dot regardless of state, including for the eight
+// days from 2026-10-05 when nothing published. The pulse now means "checked
+// and current", and only that.
+function DataStatus({ status, loading }) {
+  const fresh = freshnessOf(status.lastUpdated);
+  // A saved copy is never "live", however recent it is.
+  const word = loading ? 'LOADING' : status.fromCache ? 'OFFLINE' : fresh.status;
+  const detail = loading
+    ? ''
+    : status.fromCache
+      ? `SAVED COPY${fresh.ageHours === null ? '' : `, ${formatAge(fresh.ageHours)} OLD`}`
+      : fresh.detail;
+  const live = !loading && fresh.state === 'live' && !status.fromCache;
+  const stale = !loading && fresh.state === 'stale';
+  const tone = live ? 'text-tertiary' : stale ? 'text-error' : 'text-outline';
+  const dot = live ? 'bg-tertiary animate-pulse' : stale ? 'bg-error' : 'bg-outline';
+
+  // Below `sm` the detail takes its own line, indented under the text, so the
+  // phrase never breaks mid-way ("8D / AGO") at 375px; wider, it is one line.
+  return (
+    <div
+      className={`${tone} font-mono text-xs mb-2 tracking-widest flex flex-wrap items-center gap-x-2 gap-y-1`}
+      title={status.lastUpdated ? `Data last updated ${status.lastUpdated}` : undefined}
+    >
+      <span className="flex items-center gap-2 whitespace-nowrap">
+        <span className={`w-2 h-2 ${dot} inline-block`} aria-hidden="true"></span>
+        SYSTEM_STATUS: {word}
+      </span>
+      {detail ? (
+        <span className="basis-full whitespace-nowrap pl-4 sm:basis-auto sm:pl-0">
+          <span className="hidden sm:inline" aria-hidden="true">· </span>
+          {detail}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeTab, onNavigateToBadge }) {
   const [leaderboard, setLeaderboard] = useState([]);
+  const [dataStatus, setDataStatus] = useState({ lastUpdated: '', fromCache: false });
   const [selectedTag, setSelectedTag] = useState('All');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -50,24 +91,11 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
       setError('');
 
       try {
-        let leaderboardPayload;
-        try {
-          const response = await fetch('./data.json', { cache: 'no-store' });
-          if (response.ok) {
-            leaderboardPayload = await response.json();
-            cache.set(CACHE_KEYS.LEADERBOARD, leaderboardPayload);
-          }
-        } catch {
-          leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
-        }
-        if (!leaderboardPayload) {
-          leaderboardPayload = cache.get(CACHE_KEYS.LEADERBOARD);
-        }
-        if (!leaderboardPayload) {
-          throw new Error('Failed to load data.json and no cached data available.');
-        }
+        const { payload: leaderboardPayload, fromCache } = await loadLeaderboardData();
 
         if (!alive) return;
+
+        setDataStatus({ lastUpdated: leaderboardPayload?.last_updated || '', fromCache });
 
         const rows = Array.isArray(leaderboardPayload?.leaderboard)
           ? leaderboardPayload.leaderboard
@@ -178,10 +206,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
           <div>
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-outline-variant pb-6">
               <div className="border-l-4 border-primary pl-6">
-                <div className="text-tertiary font-mono text-xs mb-2 tracking-widest flex items-center gap-2">
-                  <span className="w-2 h-2 bg-tertiary inline-block animate-pulse"></span>
-                  SYSTEM_STATUS: LIVE_SYNC
-                </div>
+                <DataStatus status={dataStatus} loading={loading} />
                 <h1 className="font-headline text-4xl md:text-6xl font-bold tracking-tighter uppercase leading-none">
                   Top <span className="text-primary italic">Talent</span> Archive
                 </h1>

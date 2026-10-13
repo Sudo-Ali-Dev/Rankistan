@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { loadLeaderboardData } from '../utils/leaderboard-data';
 
 function formatNum(n) {
   const v = Number(n);
@@ -19,11 +20,7 @@ export default function Digest({ onChangeTab }) {
       setError('');
 
       try {
-        const res = await fetch('./data.json', { cache: 'no-store' });
-        if (!res.ok) {
-          throw new Error(`Failed to load data (${res.status}).`);
-        }
-        const data = await res.json();
+        const { payload: data } = await loadLeaderboardData();
         if (!alive) return;
 
         const rows = Array.isArray(data?.leaderboard) ? data.leaderboard : [];
