@@ -657,6 +657,24 @@ async function fetchAllUserRepos(username, token) {
 }
 
 async function fetchDeveloperActivity(username, token) {
+  // Events first: for most candidates this one call settles the gate.
+  const firstPage = await githubRequest(
+    `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=1`,
+    token,
+    { allow404: true }
+  );
+  if (firstPage === null) {
+    // By login, so this may be a rename rather than a deletion: report it as
+    // not found and let the merge's two-miss rule decide, rather than judging.
+    console.warn(`Skipping ${username}: user not found (404).`);
+    return null;
+  }
+
+  const screen = screenFirstPage(firstPage);
+  if (screen.complete && !screen.passes) {
+    return { screenedOut: true, username };
+  }
+
   const profile = await githubRequest(`/users/${encodeURIComponent(username)}`, token, { allow404: true });
   if (!profile) {
     console.warn(`Skipping ${username}: user not found (404).`);
@@ -667,8 +685,8 @@ async function fetchDeveloperActivity(username, token) {
     return null;
   }
 
-  const events = [];
-  for (let page = 1; page <= USER_EVENTS_MAX_PAGES; page += 1) {
+  const events = Array.isArray(firstPage) ? [...firstPage] : [];
+  for (let page = 2; page <= USER_EVENTS_MAX_PAGES && !screen.complete; page += 1) {
     const eventsResponse = await githubRequest(
       `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=${page}`,
       token
@@ -721,12 +739,44 @@ async function fetchDeveloperActivity(username, token) {
   return developer;
 }
 
+/** The activity gate. One definition, used by the screen and by the filter, so
+ *  the two can never disagree about who passes. */
+function passesActivityGate(metrics) {
+  const hasEnoughContributions =
+    metrics.total_contributions_60d >= ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D;
+  const hasNoLongGaps = metrics.longest_gap_days <= ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS;
+  return hasEnoughContributions && hasNoLongGaps;
+}
+
 function applyActivityFilter(developers) {
-  return developers.filter((dev) => {
-    const hasEnoughContributions = dev.total_contributions_60d >= ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D;
-    const hasNoLongGaps = dev.longest_gap_days <= ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS;
-    return hasEnoughContributions && hasNoLongGaps;
-  });
+  return developers.filter((dev) => passesActivityGate(dev));
+}
+
+/**
+ * Decides the gate from the first page of a developer's events, when it can.
+ *
+ * Why this exists: each candidate cost about 4 REST calls - profile, events,
+ * repos, social accounts - and 94% of candidates then failed the gate, so
+ * nearly all of a ~105k-call day bought nothing. Measured over 120 runs, 6.2%
+ * pass.
+ *
+ * A page holding fewer than USER_EVENTS_PER_PAGE events is the whole feed: the
+ * fetch loop below stops after such a page anyway. So the gate computed from it
+ * is not an estimate but the identical decision the full fetch would reach, and
+ * a failing developer can be rejected after one call instead of four.
+ *
+ * A full first page proves nothing - more events may follow - so it is always
+ * forwarded to the full fetch. (An earlier design also treated "the 100th event
+ * is older than the window" as complete; the feed is not reliably time-ordered,
+ * 139 of 1,000 sampled feeds were out of order by over a day, so it is not.)
+ *
+ * @returns {{ complete: boolean, passes: boolean | null }}
+ */
+function screenFirstPage(firstPage) {
+  const events = Array.isArray(firstPage) ? firstPage : [];
+  if (events.length >= USER_EVENTS_PER_PAGE) return { complete: false, passes: null };
+  const metrics = computeActivityMetrics(extractRecentEvents(events, INACTIVE_DAYS_CUTOFF));
+  return { complete: true, passes: passesActivityGate(metrics) };
 }
 
 async function fetchPakistaniDevelopers(options = {}) {
@@ -764,6 +814,7 @@ async function fetchPakistaniDevelopers(options = {}) {
   console.log(`Total unique usernames to scan: ${allUsernames.length}`);
 
   const fetchedDevelopers = [];
+  const screenedOut = [];
   let skippedProfile = 0;
   let skippedError = 0;
 
@@ -778,7 +829,9 @@ async function fetchPakistaniDevelopers(options = {}) {
 
     try {
       const developer = await fetchDeveloperActivity(username, token);
-      if (developer) {
+      if (developer?.screenedOut) {
+        screenedOut.push(developer.username);
+      } else if (developer) {
         fetchedDevelopers.push(developer);
       } else {
         skippedProfile += 1;
@@ -794,13 +847,19 @@ async function fetchPakistaniDevelopers(options = {}) {
   }
 
   console.log(
-    `Fetch complete: ${fetchedDevelopers.length} valid profiles, ` +
-    `${skippedProfile} skipped (empty/fake), ${skippedError} errors`
+    `Fetch complete: ${fetchedDevelopers.length} fetched in full, ` +
+    `${screenedOut.length} rejected on their first events page, ` +
+    `${skippedProfile} skipped (not found/fake), ${skippedError} errors`
   );
+
+  // Screened-out developers were observed and failed the gate, so a caller that
+  // asks for them can count them as evaluated - unlike a fetch that errored.
+  const withScreening = (developers) =>
+    options.withScreening ? { developers, screenedOut } : developers;
 
   if (rawOnly) {
     console.log(`Raw mode: returning ${fetchedDevelopers.length} unfiltered developers.`);
-    return fetchedDevelopers;
+    return withScreening(fetchedDevelopers);
   }
 
   const filteredDevelopers = applyActivityFilter(fetchedDevelopers);
@@ -823,12 +882,15 @@ async function fetchPakistaniDevelopers(options = {}) {
   const finalDevelopers = filteredDevelopers.slice(0, MAX_DEVELOPERS);
 
   console.log(`Final leaderboard: ${finalDevelopers.length} developers (capped at ${MAX_DEVELOPERS})`);
-  return finalDevelopers;
+  return withScreening(finalDevelopers);
 }
 
 export {
   fetchPakistaniDevelopers,
+  fetchDeveloperActivity,
   applyActivityFilter,
+  passesActivityGate,
+  screenFirstPage,
   computeActivityMetrics,
   SEARCH_BATCHES,
   MAX_DEVELOPERS,
