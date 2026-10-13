@@ -1,6 +1,8 @@
 const CACHE_KEYS = {
   LEADERBOARD: 'pakdev_leaderboard_v2',
   LEADERBOARD_TS: 'pakdev_leaderboard_ts_v2',
+  BOARD: 'pakdev_board_v1',
+  BOARD_TS: 'pakdev_board_ts_v1',
   DIGEST: 'pakdev_digest_v2',
   DIGEST_TS: 'pakdev_digest_ts_v2'
 };
@@ -13,6 +15,10 @@ const TTL = {
 const KEY_MAP = {
   [CACHE_KEYS.LEADERBOARD]: {
     tsKey: CACHE_KEYS.LEADERBOARD_TS,
+    ttl: TTL.LEADERBOARD
+  },
+  [CACHE_KEYS.BOARD]: {
+    tsKey: CACHE_KEYS.BOARD_TS,
     ttl: TTL.LEADERBOARD
   },
   [CACHE_KEYS.DIGEST]: {

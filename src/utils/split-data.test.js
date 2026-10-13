@@ -1,0 +1,217 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, it, expect } from 'vitest';
+import {
+  BOARD_FIELDS,
+  SPLIT_SCHEMA,
+  buildBoard,
+  buildDeveloperFile,
+  buildDigest,
+  developerFileName,
+  developerFilePath,
+  isBoardPayload,
+  isDeveloperFileFor,
+  isDigestPayload,
+  summarizeDigest,
+  toBoardRow
+} from './split-data';
+import { ensureLeaderboardTags } from './tags';
+
+const REAL = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public', 'data.json'), 'utf8'));
+
+// Digest.jsx's useMemo before the computation moved into split-data.js,
+// verbatim, so the precomputed digest is pinned to what the page computed.
+function legacyDigest(leaderboard) {
+  const devs = Array.isArray(leaderboard) ? leaderboard : [];
+  const repos = devs.flatMap((d) =>
+    (d.digest_repos || []).map((r) => ({
+      ...r,
+      stars: r.stars || 0,
+      dev: d.username,
+      devAvatar: d.avatar_url
+    }))
+  );
+  repos.sort((a, b) => b.stars - a.stars);
+
+  const contribMap = new Map();
+  for (const r of repos) {
+    if (!contribMap.has(r.dev)) {
+      contribMap.set(r.dev, {
+        username: r.dev,
+        avatar: r.devAvatar,
+        repoCount: 0,
+        totalStars: 0
+      });
+    }
+    const entry = contribMap.get(r.dev);
+    entry.repoCount += 1;
+    entry.totalStars += r.stars;
+  }
+  const contributors = Array.from(contribMap.values()).sort((a, b) => b.totalStars - a.totalStars);
+
+  return {
+    topRepos: repos.slice(0, 100),
+    topContributors: contributors.slice(0, 10),
+    totalRepos: repos.length,
+    devsWithRepos: devs.filter((d) => d.digest_repos?.length > 0).length
+  };
+}
+
+// The two fields the page computed and never rendered.
+function withoutUnrenderedFields(digest) {
+  return {
+    ...digest,
+    topRepos: digest.topRepos.map(({ devAvatar: _devAvatar, ...rest }) => rest),
+    topContributors: digest.topContributors.map(({ avatar: _avatar, ...rest }) => rest)
+  };
+}
+
+describe('buildBoard', () => {
+  const board = buildBoard(REAL);
+
+  it('carries every row, in order, with only the list fields', () => {
+    expect(board.leaderboard).toHaveLength(REAL.leaderboard.length);
+    board.leaderboard.forEach((row, i) => {
+      expect(row.username).toBe(REAL.leaderboard[i].username);
+      for (const key of Object.keys(row)) expect(BOARD_FIELDS).toContain(key);
+    });
+  });
+
+  it('leaves out what only the expanded card and the Digest read', () => {
+    for (const row of board.leaderboard) {
+      for (const field of ['bio', 'top_repos', 'digest_repos', 'linkedin_url']) {
+        expect(row).not.toHaveProperty(field);
+      }
+    }
+  });
+
+  it('keeps every value it carries exactly as published', () => {
+    REAL.leaderboard.forEach((source, i) => {
+      for (const field of BOARD_FIELDS.filter((f) => f !== 'tags' && f in source)) {
+        expect(board.leaderboard[i][field]).toEqual(source[field]);
+      }
+    });
+  });
+
+  it('carries the CSV export and compare columns', () => {
+    // Leaderboard.jsx CSV_EXPORT_COLUMNS and CompareModal.jsx COMPARE_ROWS.
+    const csv = ['rank', 'username', 'name', 'location', 'score', 'followers'];
+    const more = ['public_repos', 'events_30d', 'total_stars', 'top_languages', 'tags'];
+    for (const column of [...csv, ...more, 'avatar_url']) expect(BOARD_FIELDS).toContain(column);
+  });
+
+  it('computes tags the browser could no longer match from a board row', () => {
+    // A row published without tags is matched against its bio and repository
+    // text - none of which the board carries.
+    const untagged = REAL.leaderboard.findIndex(
+      (row) => !Array.isArray(row.tags) || row.tags.length === 0
+    );
+    expect(untagged).toBeGreaterThan(-1);
+    const expected = ensureLeaderboardTags(REAL.leaderboard).map((row) => row.tags);
+    expect(board.leaderboard.map((row) => row.tags)).toEqual(expected);
+  });
+
+  it('carries the file metadata and a schema version, and never the source rows', () => {
+    expect(board.schema).toBe(SPLIT_SCHEMA);
+    expect(board.last_updated).toBe(REAL.last_updated);
+    expect(board.total_devs).toBe(REAL.total_devs);
+    expect(isBoardPayload(board)).toBe(true);
+    expect(buildBoard({ ...REAL, model_version: 'v3' }).model_version).toBe('v3');
+    expect(buildBoard({ ...REAL, schema: 99 }).schema).toBe(SPLIT_SCHEMA);
+  });
+
+  it('skips a list field a row does not have rather than inventing one', () => {
+    expect(toBoardRow({ username: 'a', bio: 'x' })).toEqual({ username: 'a' });
+  });
+});
+
+describe('summarizeDigest', () => {
+  it('matches what Digest.jsx computed, on the real data.json', () => {
+    const { activeDevs, ...summary } = summarizeDigest(REAL.leaderboard);
+    expect(summary).toEqual(withoutUnrenderedFields(legacyDigest(REAL.leaderboard)));
+    expect(activeDevs).toBe(REAL.leaderboard.length);
+  });
+
+  it('keeps leaderboard order between repositories with equal stars', () => {
+    const rows = [
+      { username: 'a', digest_repos: [{ owner: 'a', name: 'one', stars: 5 }] },
+      { username: 'b', digest_repos: [{ owner: 'b', name: 'two', stars: 5 }] }
+    ];
+    expect(summarizeDigest(rows).topRepos.map((r) => r.name)).toEqual(['one', 'two']);
+    expect(summarizeDigest(rows)).toEqual({
+      ...withoutUnrenderedFields(legacyDigest(rows)),
+      activeDevs: 2
+    });
+  });
+
+  it('counts a repository with no star count as zero stars', () => {
+    const rows = [{ username: 'a', digest_repos: [{ owner: 'a', name: 'x' }] }];
+    expect(summarizeDigest(rows).topRepos[0].stars).toBe(0);
+  });
+});
+
+describe('buildDigest', () => {
+  it('survives a JSON round trip unchanged, which is how the page receives it', () => {
+    const digest = buildDigest(REAL);
+    expect(JSON.parse(JSON.stringify(digest))).toEqual(digest);
+    expect(digest.schema).toBe(SPLIT_SCHEMA);
+    expect(digest.last_updated).toBe(REAL.last_updated);
+    expect(isDigestPayload(digest)).toBe(true);
+  });
+});
+
+describe('buildDeveloperFile', () => {
+  it('carries the full row, untouched, with its schema and date', () => {
+    const row = REAL.leaderboard[0];
+    const file = buildDeveloperFile(REAL, row);
+    expect(file).toEqual({ schema: SPLIT_SCHEMA, last_updated: REAL.last_updated, developer: row });
+    expect(isDeveloperFileFor(file, row.username.toUpperCase())).toBe(true);
+    expect(isDeveloperFileFor(file, 'someone-else')).toBe(false);
+  });
+});
+
+describe('developerFileName', () => {
+  it('is the lowercased login for every real login', () => {
+    for (const { username } of REAL.leaderboard) {
+      expect(developerFileName(username)).toBe(`${username.toLowerCase()}.json`);
+    }
+  });
+
+  it('gives each real login its own file', () => {
+    const names = REAL.leaderboard.map((row) => developerFileName(row.username));
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('escapes anything that could leave the directory or need URL encoding', () => {
+    for (const login of ['../etc/passwd', 'a/b', 'a\\b', '.', '..', 'a%2Fb', 'a?b#c', 'ä', 'a b']) {
+      const name = developerFileName(login);
+      expect(name).toMatch(/^[a-z0-9_-]+\.json$/);
+      expect(encodeURIComponent(name)).toBe(name);
+    }
+    expect(developerFileName('../x')).toBe('_2e_2e_2fx.json');
+  });
+
+  it('never maps two different logins to one name', () => {
+    // `_` is always escaped, so an escape cannot be forged by a literal login.
+    expect(developerFileName('a_2fb')).not.toBe(developerFileName('a/b'));
+    expect(developerFileName('a_2fb')).toBe('a_5f2fb.json');
+  });
+
+  it('has no file for an empty or absurdly long login', () => {
+    expect(developerFileName('')).toBeNull();
+    expect(developerFileName('   ')).toBeNull();
+    expect(developerFileName(null)).toBeNull();
+    expect(developerFileName('x'.repeat(201))).toBeNull();
+    expect(developerFilePath('')).toBeNull();
+    expect(developerFilePath('Ali-Dev')).toBe('dev/ali-dev.json');
+  });
+});
+
+describe('payload checks', () => {
+  it('reject a file from another schema, which falls back to data.json', () => {
+    expect(isBoardPayload({ schema: SPLIT_SCHEMA + 1, leaderboard: [] })).toBe(false);
+    expect(isBoardPayload({ leaderboard: [] })).toBe(false);
+    expect(isDigestPayload({ schema: SPLIT_SCHEMA, topRepos: [] })).toBe(false);
+    expect(isDeveloperFileFor({ schema: SPLIT_SCHEMA, developer: {} }, 'a')).toBe(false);
+  });
+});

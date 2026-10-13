@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { resolveBadgeApiUrl } from "../utils/groq.js";
-import { loadLeaderboardData } from "../utils/leaderboard-data";
+import { loadBoard } from "../utils/leaderboard-data";
 
 const STYLES = [
   { id: "flat", label: "Flat" },
@@ -108,7 +108,7 @@ export default function BadgeGenerator({
     onInitialUsernameConsumed?.();
   }, [initialUsername, onInitialUsernameConsumed]);
 
-  // Fetch data.json and find the user's rank whenever username changes.
+  // Load the board and find the user's rank whenever username changes.
   useEffect(() => {
     if (!displayUser) {
       setRank(null);
@@ -124,7 +124,7 @@ export default function BadgeGenerator({
       setAvatarUrl(null);
       try {
         if (!leaderboardRef.current) {
-          leaderboardRef.current = (await loadLeaderboardData()).payload;
+          leaderboardRef.current = (await loadBoard()).payload;
         }
 
         const data = leaderboardRef.current;
@@ -309,7 +309,7 @@ export default function BadgeGenerator({
                   </span>
                 ) : lookupState === "error" ? (
                   <span className="font-mono text-xs text-error text-center px-2">
-                    Failed to load data.json
+                    Failed to load leaderboard data
                   </span>
                 ) : (
                   <img

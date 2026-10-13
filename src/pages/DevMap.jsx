@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { loadLeaderboardData } from '../utils/leaderboard-data';
+import { loadBoard } from '../utils/leaderboard-data';
 import { findCityKey, normalizeLocationForDisplay } from '../utils/location';
 
 const PROVINCES = [
@@ -166,7 +166,7 @@ export default function DevMap() {
   useEffect(() => {
     async function load() {
       try {
-        const { payload: lb } = await loadLeaderboardData();
+        const { payload: lb } = await loadBoard();
         setData(lb);
       } catch (e) {
         console.error('Failed to load leaderboard data', e);

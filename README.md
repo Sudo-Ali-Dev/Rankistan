@@ -213,7 +213,7 @@ node scripts/run-all.js --incremental 0 --dry-run
 # Checks - all of these also run in CI on every PR
 npm run lint          # ESLint across src/, scripts/ and cloudflare/
 npm test              # Vitest
-npm run build         # production build
+npm run build         # production build, plus the split data files the browser reads
 npm run verify:activity   # activity-scoring invariants (log2 curve + daily caps)
 
 # Formatting - see CONTRIBUTING.md before running repo-wide
@@ -287,11 +287,12 @@ scripts/
   verify-published.js   # Recomputes every versioned score on the published board
   write-leaderboard.js  # Final leaderboard output (strips internal fields)
   run-all.js            # Pipeline orchestrator (--incremental N [--dry-run])
+  build-split-data.js   # After vite build: splits data.json into dist/board.json, digest.json, dev/<login>.json
 cloudflare/
   worker.js             # Cloudflare Worker (dev summaries + badge JSON API)
   wrangler.toml         # Worker deployment config
 public/
-  data.json             # Final leaderboard (served to frontend)
+  data.json             # Final leaderboard (published unchanged at the site root; the Worker reads it)
   data.dry-run.json     # Local dry-run output only (gitignored)
 src/
   App.jsx               # Main app shell (Leaderboard / Map / Badge / Register / About / Evolution)
@@ -358,7 +359,7 @@ Configuration model:
 - Set **`GROQ_API_KEY_1` through `GROQ_API_KEY_8`** (same key format for each slot). The Worker rotates through them on rate limits.
 - `VITE_SUMMARY_API_URL`: public frontend pointer to Worker origin.
 - `SUMMARY_ALLOWED_ORIGIN`: allowed frontend origin for Worker CORS.
-- `scripts/generate-digest.js` uses the first available slot from `GROQ_API_KEY_1` … `GROQ_API_KEY_8`. Note it is **not currently wired into CI**: no workflow or npm script invokes it, and `public/digest.json` is not generated. The Repository Digest page builds itself from `public/data.json` instead.
+- `scripts/generate-digest.js` uses the first available slot from `GROQ_API_KEY_1` … `GROQ_API_KEY_8`. Note it is **not currently wired into CI**: no workflow or npm script invokes it, and `public/digest.json` is not generated. The Repository Digest page reads a `digest.json` that `npm run build` derives from `public/data.json`, and the build refuses to run if a `public/digest.json` exists rather than overwrite it.
 
 ## Contributing
 
