@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   rateLimitWaitMs,
   MAX_RATE_LIMIT_RETRIES,
-  shardQuality,
   screenFirstPage,
   passesActivityGate,
   applyActivityFilter,
-  fetchDeveloperActivity
+  fetchDeveloperActivity,
+  fetchPakistaniDevelopers,
+  SEARCH_BATCHES
 } from './fetch-devs.js';
+import { createSearchClient } from './discovery/graphql.js';
+import { parseShardQuery } from './discovery/partition.js';
+import { fakeGraphql, makePopulation, matcher } from './discovery/fake-search.js';
 
 describe('rateLimitWaitMs', () => {
   const headers = (map = {}) => ({ get: (k) => map[k.toLowerCase()] ?? null });
@@ -41,42 +48,6 @@ describe('rateLimitWaitMs', () => {
 
   it('gives more than one retry before giving up', () => {
     expect(MAX_RATE_LIMIT_RETRIES).toBeGreaterThan(1);
-  });
-});
-
-describe('shardQuality', () => {
-  it('stays silent for a complete listing', () => {
-    expect(shardQuality({ total: 966, unique: 966, incomplete: false })).toEqual([]);
-  });
-
-  it('names a listing that came back short, the 560-of-881 case', () => {
-    expect(shardQuality({ total: 881, unique: 560, incomplete: false })).toEqual([
-      'paging returned 560 unique of 881 expected'
-    ]);
-  });
-
-  it('names duplicates, which shrink the unique count', () => {
-    // 2026-10-05: a mid-pagination rate-limit wait returned 1,000 items but
-    // only 848 distinct developers.
-    expect(shardQuality({ total: 1100, unique: 848, incomplete: false })[0]).toContain(
-      '848 unique of 1000'
-    );
-  });
-
-  it('names a shard over the search cap even when paging was clean', () => {
-    expect(shardQuality({ total: 1354, unique: 1000, incomplete: false })).toEqual([
-      '1354 match but only 1000 are reachable'
-    ]);
-  });
-
-  it('passes on what GitHub itself flags', () => {
-    expect(shardQuality({ total: 500, unique: 500, incomplete: true })).toEqual([
-      'GitHub flagged incomplete_results'
-    ]);
-  });
-
-  it('does not invent an expectation when the total is unknown', () => {
-    expect(shardQuality({ total: null, unique: 12, incomplete: false })).toEqual([]);
   });
 });
 
@@ -199,5 +170,102 @@ describe('fetchDeveloperActivity', () => {
       text: async () => '{}'
     }));
     expect(await fetchDeveloperActivity('gone', 'token')).toBeNull();
+  });
+});
+
+describe('fetchPakistaniDevelopers discovery', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('fetches only the candidates of complete leaves, and names the leaf that was not', async () => {
+    const batchIndex = 16;
+    const { root } = parseShardQuery(SEARCH_BATCHES[batchIndex].q);
+    // Small, because every candidate costs a paced REST call below.
+    const people = makePopulation({ n: 12, from: root.from, to: root.to, seed: 3 });
+    // One developer comes back null in every listing that includes them. Discovery corners them
+    // in a small leaf, and only that leaf goes unlisted.
+    const broken = people[5].id;
+    const fake = fakeGraphql(people, {
+      onList: ({ body }) => {
+        const nodes = body.data.search.nodes;
+        body.data.search.nodes = nodes.map((n) => (n.databaseId === broken ? null : n));
+        return null;
+      }
+    });
+    const searchClient = createSearchClient({
+      token: 't',
+      fetchImpl: fake.fetchImpl,
+      sleep: async () => {},
+      minIntervalMs: 0,
+      log: { warn() {} }
+    });
+
+    // Every REST events feed is empty, so each candidate is screened out after one call.
+    const fetched = [];
+    vi.stubGlobal('fetch', async (url) => {
+      fetched.push(/\/users\/([^/]+)\/events/.exec(String(url))[1]);
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => [] };
+    });
+    const warnings = [];
+    vi.spyOn(console, 'warn').mockImplementation((line) => warnings.push(String(line)));
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-discovery-'));
+    const result = await fetchPakistaniDevelopers({
+      token: 't',
+      repoRoot,
+      batchIndex,
+      rawOnly: true,
+      withScreening: true,
+      searchClient
+    });
+
+    // The warning names the leaf, and that leaf is exactly who was not fetched.
+    const named = warnings
+      .map((line) =>
+        /^::warning title=Discovery::PK Dec2022-Feb2023: leaf (\S+ \S+) is incomplete/.exec(line)
+      )
+      .filter(Boolean);
+    expect(named).toHaveLength(1);
+    const failedLeaf = `location:pakistan type:user repos:>3 ${named[0][1]}`;
+    const unlisted = new Set(people.filter(matcher(failedLeaf)).map((u) => u.login.toLowerCase()));
+    expect(unlisted.has(people[5].login.toLowerCase())).toBe(true);
+    expect(unlisted.size).toBeLessThan(people.length);
+    expect(fetched.filter((login) => unlisted.has(login))).toEqual([]);
+    expect(fetched.length + unlisted.size).toBe(people.length);
+    expect(result.screenedOut).toHaveLength(fetched.length);
+  });
+
+  it('fails the run when nobody in a batch lists completely', async () => {
+    const { root } = parseShardQuery(SEARCH_BATCHES[16].q);
+    const people = makePopulation({ n: 10, from: root.from, to: root.to, seed: 9 });
+    const fake = fakeGraphql(people, {
+      onList: ({ body }) => {
+        body.data.search.nodes = body.data.search.nodes.map(() => null);
+        return null;
+      }
+    });
+    const searchClient = createSearchClient({
+      token: 't',
+      fetchImpl: fake.fetchImpl,
+      sleep: async () => {},
+      minIntervalMs: 0,
+      log: { warn() {} }
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await expect(
+      fetchPakistaniDevelopers({
+        token: 't',
+        repoRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-discovery-')),
+        batchIndex: 16,
+        rawOnly: true,
+        withScreening: true,
+        searchClient
+      })
+    ).rejects.toThrow(/listed none of its 10 developers completely/);
   });
 });

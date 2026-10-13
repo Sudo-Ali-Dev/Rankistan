@@ -2,15 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { matchTagsForDeveloper } from '../src/utils/tag-matcher.js';
+import { createSearchClient } from './discovery/graphql.js';
+import { describeDiscovery, discoverBatch } from './discovery/discover.js';
 
 const GITHUB_API_BASE = 'https://api.github.com';
-const SEARCH_DELAY_MS = 2100;
-const SEARCH_RETRY_DELAY_MS = 3000;
 const MAX_DEVELOPERS = 1000;
 const USER_EVENTS_PER_PAGE = 100;
 const USER_EVENTS_MAX_PAGES = 2;
 const USER_REPOS_PER_PAGE = 100;
-const SEARCH_MAX_PAGES = 10;
 const INACTIVE_DAYS_CUTOFF = 60;
 const MIN_ACCOUNT_AGE_DAYS = 30;
 const RATE_LIMIT_BUFFER = 150;
@@ -57,6 +56,10 @@ const MEANINGFUL_EVENT_TYPES = new Set([
   'ReleaseEvent'
 ]);
 
+// The batch -> range table. Each batch owns the leaderboard rows for developers created in its
+// range (run-all.js merges by `batch_index`), so the ranges are fixed. They no longer need to stay
+// under GitHub's 1,000-result search cap: scripts/discovery/ partitions each range into leaves
+// that list in one request apiece, however many developers the range holds.
 const SEARCH_BATCHES = [
   { label: 'PK 2000-Jun2014',    q: 'location:pakistan type:user repos:>3 followers:>1 created:2000-01-01..2014-06-30' },
   { label: 'PK Jul2014-Jan2016', q: 'location:pakistan type:user repos:>3 followers:>1 created:2014-07-01..2016-01-31' },
@@ -83,7 +86,7 @@ const SEARCH_BATCHES = [
   { label: 'PK Aug2024-Dec2024', q: 'location:pakistan type:user repos:>3 followers:>1 created:2024-08-01..2024-12-31' },
   {
     label: 'PK 2025+',
-    // GitHub caps user search at 1,000 hits per query; shard by created date so each scan stays under the cap.
+    // Three ranges, one batch. Discovery partitions all three together.
     queries: [
       'location:pakistan type:user repos:>3 followers:>1 created:2025-01-01..2025-06-30',
       'location:pakistan type:user repos:>3 followers:>1 created:2025-07-01..2025-12-31',
@@ -323,35 +326,22 @@ function searchQueriesForBatch(batch) {
   return [];
 }
 
-// Search returns at most this many results for any query, however many match.
-const SEARCH_RESULT_CAP = 1000;
-
 /**
- * Says out loud when a shard's listing cannot be trusted. Behaviour does not
- * depend on it - run-all.js carries forward anyone a run did not see - but a
- * degraded or capped shard should be visible in the run, not inferred later
- * from a diff of the published file.
+ * Every developer each batch's search matches, listed completely, leaf by leaf.
+ *
+ * This used to page `/search/users` sorted by followers, ten pages of 100 per range. A range over
+ * GitHub's 1,000-result cap lost its lowest-follower developers outright, and paging inside the cap
+ * skipped or repeated people whenever a follower tie straddled a page or a rate-limit wait shifted
+ * the results underneath it. scripts/discovery/ replaces it: each range is partitioned into leaves
+ * small enough to list in one GraphQL request apiece, and a leaf counts only if its listing is
+ * provably complete.
+ *
+ * A leaf that is not is named in an Actions warning and contributes nobody. Its developers are then
+ * not evaluated this run, and run-all.js carries their rows forward instead of removing them.
+ * The run fails only when a range cannot be partitioned at all, or nobody in it lists completely.
  */
-export function shardQuality({ total, unique, incomplete }) {
-  const findings = [];
-  const expected = Number.isFinite(total) ? Math.min(total, SEARCH_RESULT_CAP) : null;
-  if (incomplete) findings.push('GitHub flagged incomplete_results');
-  if (expected !== null && unique < expected) {
-    findings.push(`paging returned ${unique} unique of ${expected} expected`);
-  }
-  if (Number.isFinite(total) && total >= SEARCH_RESULT_CAP) {
-    findings.push(`${total} match but only ${SEARCH_RESULT_CAP} are reachable`);
-  }
-  return findings;
-}
-
-function reportShardQuality(shard) {
-  for (const finding of shardQuality(shard)) {
-    console.warn(`::warning title=Search shard::${shard.label}: ${finding}.`);
-  }
-}
-
-async function discoverUsers(token, batches) {
+async function discoverUsers(token, batches, { searchClient } = {}) {
+  const client = searchClient || createSearchClient({ token });
   const discovered = [];
 
   for (let index = 0; index < batches.length; index += 1) {
@@ -359,108 +349,41 @@ async function discoverUsers(token, batches) {
     const queries = searchQueriesForBatch(batch);
 
     if (queries.length === 0) {
-      console.warn(`[discover ${index + 1}/${SEARCH_BATCHES.length}] ${batch.label}: no search query; skipping`);
+      console.warn(`[discover ${index + 1}/${batches.length}] ${batch.label}: no search query; skipping`);
       continue;
     }
 
-    console.log(
-      `[discover ${index + 1}/${SEARCH_BATCHES.length}] ${batch.label} ` +
-      `(${queries.length} search shard(s), up to ${SEARCH_MAX_PAGES} pages each)`
-    );
+    console.log(`[discover ${index + 1}/${batches.length}] ${batch.label} (${queries.length} range(s))`);
 
-    let batchTotal = 0;
-
-    for (let qIdx = 0; qIdx < queries.length; qIdx += 1) {
-      const q = queries[qIdx];
-      let shardCount = 0;
-      let shardSuccess = false;
-      // What GitHub says the shard holds, against what paging actually
-      // delivered. Neither was read before, so a degraded listing was
-      // indistinguishable from a real one.
-      let shardTotal = null;
-      let shardIncomplete = false;
-      let shardLogins = new Set();
-
-      for (let attempt = 1; attempt <= 2; attempt += 1) {
-        shardTotal = null;
-        shardIncomplete = false;
-        shardLogins = new Set();
-        try {
-          for (let page = 1; page <= SEARCH_MAX_PAGES; page += 1) {
-            const endpoint =
-              `/search/users?q=${encodeURIComponent(q)}` +
-              `&sort=followers&order=desc&per_page=100&page=${page}`;
-            const result = await githubRequest(endpoint, token);
-
-            if (page === 1 && Number.isFinite(result?.total_count)) {
-              shardTotal = result.total_count;
-            }
-            if (result?.incomplete_results === true) {
-              shardIncomplete = true;
-            }
-
-            const items = result?.items || [];
-            for (const item of items) {
-              if (item && typeof item.login === 'string') {
-                discovered.push(item.login);
-                shardLogins.add(item.login.toLowerCase());
-                shardCount += 1;
-              }
-            }
-
-            if (items.length < 100) {
-              break;
-            }
-
-            await sleep(SEARCH_DELAY_MS);
-          }
-
-          shardSuccess = true;
-          break; // Succeeded, Break out of the retry loop.
-        } catch (error) {
-          if (attempt === 1) {
-            console.warn(
-              `Search failed for ${batch.label} shard ${qIdx + 1}/${queries.length}; retrying after 3s. ` +
-              `Reason: ${error.message}`
-            );
-            await sleep(SEARCH_RETRY_DELAY_MS);
-          } else {
-            // Fail-Fast Strategy
-            // Immediately stop execution. Do not waste API rate limits on subsequent shards/batches
-            // when this current batch is already structurally compromised.
-            throw new Error(
-              `Catastrophic execution failure in batch "${batch.label}" (Shard ${qIdx + 1}/${queries.length}) ` +
-              `after maximum retry attempts. Refusing partial dataset to protect database integrity. ` +
-              `Downstream error: ${error.message}`
-            );
-          }
-        }
-      }
-
-      if (shardSuccess) {
-        batchTotal += shardCount;
-        console.log(
-          `  -> shard ${qIdx + 1}/${queries.length}: ${shardCount} users ` +
-            `(${shardLogins.size} unique; GitHub reports ${shardTotal ?? 'unknown'})`
-        );
-        reportShardQuality({
-          label: `${batch.label} shard ${qIdx + 1}/${queries.length}`,
-          total: shardTotal,
-          unique: shardLogins.size,
-          incomplete: shardIncomplete
-        });
-      }
-
-      if (qIdx < queries.length - 1) {
-        await sleep(SEARCH_DELAY_MS);
-      }
+    let report;
+    try {
+      report = await discoverBatch({ label: batch.label, queries }, client);
+    } catch (error) {
+      // A range that could not be counted has no leaves to judge, and a rejected credential will
+      // not recover for the next leaf either.
+      throw new Error(
+        `Discovery failed for batch "${batch.label}". Refusing to publish a batch whose ` +
+        `search was not measured. Downstream error: ${error.message}`
+      );
     }
 
-    console.log(`  -> batch total (all shards): ${batchTotal} users`);
+    const { info, warnings } = describeDiscovery(report);
+    info.forEach((line) => console.log(line));
+    warnings.forEach((line) => console.warn(line));
 
-    if (index < batches.length - 1) {
-      await sleep(SEARCH_DELAY_MS);
+    // Counted in developers, not leaves: a split can leave an empty half, which is trivially
+    // complete and measures nobody.
+    const measured = report.leaves
+      .filter((leaf) => leaf.complete)
+      .reduce((total, leaf) => total + leaf.count, 0);
+    if (report.rootCount > 0 && measured === 0) {
+      throw new Error(
+        `Discovery for batch "${batch.label}" listed none of its ${report.rootCount} developers ` +
+        `completely. Refusing to publish a batch that was never measured.`
+      );
     }
+
+    discovered.push(...report.candidates.map((candidate) => candidate.login));
   }
 
   return discovered;
@@ -800,7 +723,9 @@ async function fetchPakistaniDevelopers(options = {}) {
       : `Running all ${batches.length} search batches`
   );
 
-  const discoveredUsers = await discoverUsers(token, batches);
+  const discoveredUsers = await discoverUsers(token, batches, {
+    searchClient: options.searchClient
+  });
   const registeredUsers = batchIndex === 0 || batchIndex == null
     ? await loadRegisteredDevelopers(repoRoot)
     : [];
