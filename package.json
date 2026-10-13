@@ -9,6 +9,7 @@
     "smoke": "node scripts/smoke-build.mjs",
     "verify:activity": "node scripts/verify-activity-score.js",
     "verify:published": "node scripts/verify-published.js",
+    "state:pull": "node scripts/state-store.js pull",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
