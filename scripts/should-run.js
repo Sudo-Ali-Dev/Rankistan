@@ -5,7 +5,8 @@
 // and the 14:00 UTC run simply never happened - nothing failed, so nothing
 // said so. The workflow now also has its own hourly schedule as a backup.
 //
-// Both triggers firing in the same hour would run the same batch twice: no
+// The backup (pipeline-backup.yml) firing in an hour cron-job.org already
+// covered would run the same batch twice: no
 // harm to the board, but about 1,300 wasted API calls. So a scheduled run
 // stands down when a dispatched run already covers the hour - one that is
 // queued, running, or finished successfully. A dispatched run that failed or

@@ -1,0 +1,59 @@
+name: Pipeline Backup Trigger
+
+# A second way for the leaderboard pipeline to run, kept in its own file.
+#
+# The pipeline (update-digest.yml) is dispatched hourly by cron-job.org. On
+# 2026-10-13 that scheduler's token was revoked and the 14:00 UTC run never
+# happened. This workflow fires mid-hour and dispatches the pipeline only when
+# no dispatched run already covers the hour (scripts/should-run.js), so the two
+# never process the same batch twice.
+#
+# Why a separate file: GitHub disables a workflow that has a `schedule` trigger
+# after 60 days without repository activity, and a disabled workflow cannot be
+# dispatched either. Keeping the schedule here means that can only ever switch
+# off this backup - never the pipeline, which has no schedule and stays
+# dispatchable from outside. The watchdog alarms if this file is disabled.
+
+on:
+  schedule:
+    - cron: '35 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Read the pipeline's recent runs, and dispatch it when none covers the hour.
+  actions: write
+
+concurrency:
+  group: pipeline-backup
+  cancel-in-progress: true
+
+jobs:
+  dispatch-if-needed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/should-run.js
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Dispatch the pipeline if this hour is not covered
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/workflows/update-digest.yml/runs?per_page=20" > "$RUNNER_TEMP/runs.json"
+          decision=$(node scripts/should-run.js "$RUNNER_TEMP/runs.json" schedule 0)
+          echo "$decision"
+          if [ "$decision" = "run=true" ]; then
+            gh workflow run update-digest.yml --ref main --repo "${{ github.repository }}"
+            echo "Dispatched update-digest.yml." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "A dispatched run already covers this hour; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          fi

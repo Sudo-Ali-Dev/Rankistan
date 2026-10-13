@@ -56,6 +56,10 @@ export const THRESHOLDS = {
 };
 
 export const PIPELINE_WORKFLOW = 'update-digest.yml';
+// The backup trigger. It carries the only `schedule` in the pipeline's path, so
+// it is the part GitHub can auto-disable after 60 days without activity - and
+// a disabled backup must be seen, not discovered during the next outage.
+export const BACKUP_WORKFLOW = 'pipeline-backup.yml';
 export const ISSUE_MARKER = '<!-- rankistan-watchdog -->';
 const SIGNATURE_PREFIX = '<!-- watchdog-signature: ';
 
@@ -183,6 +187,18 @@ export function evaluate(state, now = Date.now()) {
       code: 'WORKFLOW_DISABLED',
       key: String(state.workflow?.state),
       message: `${PIPELINE_WORKFLOW} is \`${state.workflow?.state}\`, so nothing will run it.`
+    });
+  }
+
+  if (state.backupWorkflow?.error) {
+    unreadable.push(`backup trigger state (${state.backupWorkflow.error})`);
+  } else if (state.backupWorkflow && state.backupWorkflow.state !== 'active') {
+    alarms.push({
+      code: 'BACKUP_DISABLED',
+      key: String(state.backupWorkflow.state),
+      message:
+        `${BACKUP_WORKFLOW} is \`${state.backupWorkflow.state}\`: the hourly backup trigger will not run, ` +
+        'and cron-job.org is now the only thing dispatching the pipeline. Re-enable it in the Actions tab.'
     });
   }
 
@@ -371,6 +387,11 @@ export async function collectState({
     return { state: info?.state };
   });
 
+  const backupWorkflow = await attempt(async () => {
+    const info = await api.request('GET', `/actions/workflows/${BACKUP_WORKFLOW}`);
+    return { state: info?.state };
+  });
+
   // Not a check, only a recorded fact: the GraphQL allowance this token really
   // has. The docs say 1,000 points/h for GITHUB_TOKEN; the REST figure the docs
   // give was already wrong for this repo, and the redesigned pipeline will
@@ -381,7 +402,7 @@ export async function collectState({
       )
     : { error: 'not requested' };
 
-  return { site, batches, runs, workflow, graphqlLimit };
+  return { site, batches, runs, workflow, backupWorkflow, graphqlLimit };
 }
 
 export function factsFrom(state, now, rateLimit) {
