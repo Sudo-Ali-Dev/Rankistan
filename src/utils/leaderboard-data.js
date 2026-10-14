@@ -12,7 +12,7 @@ import {
 // the smallest file that serves it:
 //
 //   loadBoard()               ./board.json      the list views     (~49 KB gzip)
-//   loadDeveloperDetail(l)    ./dev/<l>.json    one expanded card  (~0.8 KB)
+//   loadDeveloperDetail(l)    /dev/<l>.json     one expanded card  (~0.8 KB)
 //   loadDigest()              ./digest.json     the Digest         (~9 KB)
 //   loadLeaderboardData()     ./data.json       everything         (~400 KB)
 //
@@ -103,7 +103,7 @@ function newerOf(a, b) {
 
 const fullData = reusable(async ({ fetchImpl }) => {
   try {
-    const response = await fetchImpl('./data.json');
+    const response = await fetchImpl('/data.json');
     if (!response.ok) throw new Error(`data.json returned ${response.status}`);
     const payload = await response.json();
     cache.set(CACHE_KEYS.LEADERBOARD, payload);
@@ -125,7 +125,7 @@ export function loadLeaderboardData({ fetchImpl = globalThis.fetch, now = Date.n
 }
 
 const board = reusable(async ({ fetchImpl, now }) => {
-  const result = await fetchSplitFile(fetchImpl, './board.json', isBoardPayload);
+  const result = await fetchSplitFile(fetchImpl, '/board.json', isBoardPayload);
   if (result.ok) {
     splitUnavailable = false;
     cache.set(CACHE_KEYS.BOARD, result.value);
@@ -159,7 +159,7 @@ export function loadBoard({ fetchImpl = globalThis.fetch, now = Date.now() } = {
 
 const digest = reusable(async ({ fetchImpl, now }) => {
   if (!splitUnavailable) {
-    const result = await fetchSplitFile(fetchImpl, './digest.json', isDigestPayload);
+    const result = await fetchSplitFile(fetchImpl, '/digest.json', isDigestPayload);
     if (result.ok) {
       cache.set(CACHE_KEYS.DIGEST, result.value);
       return { payload: result.value, fromCache: false };
@@ -198,7 +198,7 @@ function loadDetail(login) {
   return async ({ fetchImpl, now }) => {
     const path = developerFilePath(login);
     if (path && !splitUnavailable) {
-      const result = await fetchSplitFile(fetchImpl, `./${path}`, (value) =>
+      const result = await fetchSplitFile(fetchImpl, `/${path}`, (value) =>
         isDeveloperFileFor(value, login)
       );
       if (result.ok) return { developer: result.value.developer, fromCache: false };

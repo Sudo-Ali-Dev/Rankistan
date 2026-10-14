@@ -33,11 +33,20 @@ if (!fs.existsSync(DIST)) {
 const html = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
 
 // 1. Every local asset the HTML references must exist on disk.
-const refs = [...html.matchAll(/(?:src|href)="\.\/([^"]+)"/g)].map((m) => m[1]);
+// Root-absolute (vite.config.js `base: '/'`), so the same page works at /map and /from/...
+const refs = [...html.matchAll(/(?:src|href)="\.?\/(?!\/)([^"]+)"/g)].map((m) => m[1]);
 for (const ref of refs) {
   if (!fs.existsSync(path.join(DIST, ref))) fail(`referenced asset missing from dist/: ${ref}`);
 }
 note(`checked ${refs.length} local asset references`);
+
+// 1b. Every tab path has its own page (scripts/build-routes.js), identical to index.html.
+for (const name of ['map.html', 'badge.html', 'register.html', 'digest.html', 'about.html', 'evolution.html', '404.html']) {
+  const file = path.join(DIST, name);
+  if (!fs.existsSync(file)) fail(`dist/${name} missing - did build-routes run?`);
+  else if (fs.readFileSync(file, 'utf8') !== html) fail(`dist/${name} differs from dist/index.html`);
+}
+if (!html.includes('id="analytics-boot"')) fail('dist/index.html lost its analytics boot script');
 
 // 2. React and react-dom must agree. A mismatch is what caused the outage, and
 //    it is cheap to assert directly rather than relying on the mount to notice.

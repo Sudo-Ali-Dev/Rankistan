@@ -15,6 +15,7 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 - [Project Structure](#project-structure)
 - [Cloudflare Worker API](#cloudflare-worker-api)
 - [Monitoring](#monitoring)
+- [Analytics](#analytics)
 - [Contributing](#contributing)
 - [TODO](#todo)
 
@@ -462,6 +463,10 @@ Three independent things watch the pipeline, so no single failure goes unnoticed
 | [`scripts/watchdog.js`](scripts/watchdog.js) | Hourly from the Worker's `:35` cron, and after every pipeline run | The live board older than 4 hours; a batch not run in 49 hours; a run stuck queued or waiting for 90 minutes; two cancelled runs in a row; the pipeline or backup workflow disabled. It keeps one issue open while anything is wrong and closes it when all is well. Only new trouble comments on the issue or fails the run, so a long recovery is one thread, not an hourly email |
 | `/api/health` + [cron-job.org](https://cron-job.org) | Hourly | Emails the owner when the board is more than 4 hours old. It holds no credentials, and catches what the watchdog cannot: the clock itself, its token, or GitHub stopping |
 | The pipeline's own log | Every run | Every removal by name with its reason; discovery completeness; the shadow measurement's aggregate line |
+
+## Analytics
+
+[Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/): cookieless and free, loaded only on `rankistan.dev`. Each tab has its own path (`/map`, `/badge`, ...) so page views are counted per tab, and UTM links are recorded as `/from/<source>/<campaign>` because Cloudflare does not store query strings. How to read it and how to build campaign links: [`docs/analytics.md`](docs/analytics.md).
 
 ## Contributing
 

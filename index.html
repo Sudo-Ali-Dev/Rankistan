@@ -9,20 +9,61 @@
     
     <!-- Open Graph / Facebook / LinkedIn -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://rankistan.com/" />
+    <meta property="og:url" content="https://rankistan.dev/" />
     <meta property="og:title" content="Rankistan | The Pakistani Developer Leaderboard" />
     <meta property="og:description" content="Discover and rank top Pakistani developers. Explore profiles, check out GitHub activity, and connect with the community." />
-    <meta property="og:image" content="https://rankistan.com/favicon.svg" />
+    <meta property="og:image" content="https://rankistan.dev/favicon.svg" />
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://rankistan.com/" />
+    <meta property="twitter:url" content="https://rankistan.dev/" />
     <meta property="twitter:title" content="Rankistan | The Pakistani Developer Leaderboard" />
     <meta property="twitter:description" content="Discover and rank top Pakistani developers. Explore profiles, check out GitHub activity, and connect with the community." />
-    <meta property="twitter:image" content="https://rankistan.com/favicon.svg" />
+    <meta property="twitter:image" content="https://rankistan.dev/favicon.svg" />
+
+    <!--
+      Cloudflare Web Analytics: cookieless, no personal data, no fingerprinting. Docs:
+      docs/analytics.md. It records paths and referrers but never query strings, so a UTM link
+      landing on / is rewritten here, before the beacon reads the URL, to a path it can see:
+      /?utm_source=linkedin&utm_campaign=infra-1  ->  /from/linkedin/infra-1
+      Only utm_source and utm_campaign are read, reduced to [a-z0-9-_] and 40 characters; the
+      other utm_* parameters are dropped, and everything else in the URL is kept. The beacon
+      loads only on rankistan.dev, so local development and tests send nothing.
+    -->
+    <script id="analytics-boot">
+      (function () {
+        var CF_WEB_ANALYTICS_TOKEN = '857e190fa40e40de94cf522ddbabbf1e';
+        var HOST = 'rankistan.dev';
+        try {
+          var loc = window.location;
+          var params = new URLSearchParams(loc.search);
+          var clean = function (value) {
+            return String(value || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+          };
+          var source = clean(params.get('utm_source'));
+          if (source && (loc.pathname === '/' || loc.pathname === '/index.html')) {
+            var campaign = clean(params.get('utm_campaign')) || 'none';
+            Array.from(params.keys()).forEach(function (key) {
+              if (/^utm_/i.test(key)) params.delete(key);
+            });
+            var rest = params.toString();
+            window.history.replaceState(null, '', '/from/' + source + '/' + campaign + (rest ? '?' + rest : '') + loc.hash);
+          }
+          if (CF_WEB_ANALYTICS_TOKEN && loc.hostname === HOST) {
+            var beacon = document.createElement('script');
+            beacon.defer = true;
+            beacon.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+            beacon.setAttribute('data-cf-beacon', JSON.stringify({ token: CF_WEB_ANALYTICS_TOKEN, spa: true }));
+            document.head.appendChild(beacon);
+          }
+        } catch (error) {
+          /* Analytics must never break the page. */
+        }
+      })();
+    </script>
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="canonical" href="https://rankistan.com/" />
+    <link rel="canonical" href="https://rankistan.dev/" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rankistan | Leaderboard</title>
     
@@ -38,11 +79,11 @@
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "Rankistan",
-      "url": "https://rankistan.com/",
+      "url": "https://rankistan.dev/",
       "description": "The ultimate leaderboard and directory for discovering top Pakistani developers.",
       "potentialAction": {
         "@type": "SearchAction",
-        "target": "https://rankistan.com/?search={search_term_string}",
+        "target": "https://rankistan.dev/?search={search_term_string}",
         "query-input": "required name=search_term_string"
       }
     }
