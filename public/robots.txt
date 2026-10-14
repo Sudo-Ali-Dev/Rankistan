@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://rankistan.com/sitemap.xml
+Sitemap: https://rankistan.dev/sitemap.xml

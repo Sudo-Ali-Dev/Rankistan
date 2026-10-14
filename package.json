@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/state-store.js pull --if-missing",
     "dev": "vite",
-    "build": "vite build && node scripts/build-split-data.js",
+    "build": "vite build && node scripts/build-split-data.js && node scripts/build-routes.js",
     "smoke": "node scripts/smoke-build.mjs",
     "verify:activity": "node scripts/verify-activity-score.js",
     "verify:published": "node scripts/verify-published.js",

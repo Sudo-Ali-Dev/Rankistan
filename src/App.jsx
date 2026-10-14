@@ -9,19 +9,16 @@ import Evolution from './pages/Evolution';
 import BadgeGenerator from './pages/BadgeGenerator';
 import Register from './pages/Register';
 import Digest from './pages/Digest';
+import { pathForTab, tabFromPath } from './utils/route';
 
-const VALID_TABS = ['leaderboard', 'register', 'digest', 'map', 'about', 'evolution', 'badge'];
-const TAB_STORAGE_KEY = 'rankistan_active_tab';
-
+// The tab comes from the URL path (src/utils/route.js). Anything else - `/`, a developer deep
+// link `/#username`, a campaign landing - shows the leaderboard.
 function getInitialTab() {
   try {
-    // A deep-link hash (e.g. #username from a shared or badge link) should land on
-    // the leaderboard, so it takes precedence over any persisted tab.
-    if (window.location.hash.slice(1)) return 'leaderboard';
-    const saved = localStorage.getItem(TAB_STORAGE_KEY);
-    if (saved && VALID_TABS.includes(saved)) return saved;
-  } catch { /* ignore storage/access errors */ }
-  return 'leaderboard';
+    return tabFromPath(window.location.pathname) || 'leaderboard';
+  } catch {
+    return 'leaderboard';
+  }
 }
 
 function App() {
@@ -43,20 +40,32 @@ function App() {
     document.title = titles[activeTab] || 'Rankistan';
   }, [activeTab]);
 
-  // Persist the active tab so a page reload restores it (#32)
+  // The URL holds the tab, so a reload restores it (#32) and the back button moves between tabs.
+  // Tabs go through history.pushState, which is what Cloudflare Web Analytics counts as a page view
+  // in a single-page app; a hash change would not be counted.
+  const goToTab = useCallback((tab) => {
+    setActiveTab(tab);
+    const path = pathForTab(tab);
+    if (window.location.pathname !== path || window.location.hash) {
+      window.history.pushState(null, '', path);
+    }
+  }, []);
+
   React.useEffect(() => {
-    try { localStorage.setItem(TAB_STORAGE_KEY, activeTab); } catch { /* ignore */ }
-  }, [activeTab]);
+    const onPopState = () => setActiveTab(tabFromPath(window.location.pathname) || 'leaderboard');
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const handleChangeTab = useCallback((tab) => {
-    setActiveTab(tab);
-  }, []);
+    goToTab(tab);
+  }, [goToTab]);
 
   const handleNavigateToBadge = useCallback((username) => {
     setBadgePrefillUsername(String(username || '').trim());
-    setActiveTab('badge');
+    goToTab('badge');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [goToTab]);
 
   const handleBadgePrefillConsumed = useCallback(() => {
     setBadgePrefillUsername('');

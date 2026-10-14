@@ -53,7 +53,7 @@ describe('loadLeaderboardData', () => {
   it('no longer opts out of the browser cache', async () => {
     const fetchImpl = okFetch();
     await loadLeaderboardData({ fetchImpl, now: 1_000 });
-    expect(fetchImpl.mock.calls[0]).toEqual(['./data.json']);
+    expect(fetchImpl.mock.calls[0]).toEqual(['/data.json']);
   });
 
   it('refetches once the in-memory copy is older than the Pages cache window', async () => {
@@ -134,10 +134,10 @@ const FULL = {
 };
 
 const SPLIT = {
-  './board.json': buildBoard(FULL),
-  './digest.json': buildDigest(FULL),
-  './dev/ali-dev.json': buildDeveloperFile(FULL, FULL.leaderboard[0]),
-  './dev/sara.json': buildDeveloperFile(FULL, FULL.leaderboard[1])
+  '/board.json': buildBoard(FULL),
+  '/digest.json': buildDigest(FULL),
+  '/dev/ali-dev.json': buildDeveloperFile(FULL, FULL.leaderboard[0]),
+  '/dev/sara.json': buildDeveloperFile(FULL, FULL.leaderboard[1])
 };
 
 const notFound = () => ({ ok: false, status: 404, json: async () => ({}) });
@@ -171,9 +171,9 @@ describe('loadBoard', () => {
   useFreshState();
 
   it('reads board.json and never downloads data.json', async () => {
-    const fetchImpl = serve({ ...SPLIT, './data.json': FULL });
+    const fetchImpl = serve({ ...SPLIT, '/data.json': FULL });
     const { payload, fromCache } = await loadBoard({ fetchImpl, now: 1_000 });
-    expect(urls(fetchImpl)).toEqual(['./board.json']);
+    expect(urls(fetchImpl)).toEqual(['/board.json']);
     expect(fromCache).toBe(false);
     expect(payload.leaderboard.map((r) => r.username)).toEqual(['Ali-Dev', 'sara']);
     expect(payload.leaderboard[0]).not.toHaveProperty('bio');
@@ -193,22 +193,22 @@ describe('loadBoard', () => {
   });
 
   it('falls back to data.json when board.json is not deployed', async () => {
-    const fetchImpl = serve({ './data.json': FULL });
+    const fetchImpl = serve({ '/data.json': FULL });
     const { payload, fromCache } = await loadBoard({ fetchImpl, now: 1_000 });
-    expect(urls(fetchImpl)).toEqual(['./board.json', './data.json']);
+    expect(urls(fetchImpl)).toEqual(['/board.json', '/data.json']);
     expect(fromCache).toBe(false);
     expect(payload.leaderboard[0].bio).toBe('Builds compilers.');
   });
 
   it('falls back when the dev server answers with index.html', async () => {
-    const fetchImpl = serve({ './board.json': indexHtml, './data.json': FULL });
+    const fetchImpl = serve({ '/board.json': indexHtml, '/data.json': FULL });
     expect((await loadBoard({ fetchImpl, now: 1_000 })).payload.leaderboard).toHaveLength(2);
-    expect(urls(fetchImpl)).toContain('./data.json');
+    expect(urls(fetchImpl)).toContain('/data.json');
   });
 
   it('falls back when board.json has a schema this bundle cannot read', async () => {
-    const newer = { ...SPLIT['./board.json'], schema: 999 };
-    const fetchImpl = serve({ './board.json': newer, './data.json': FULL });
+    const newer = { ...SPLIT['/board.json'], schema: 999 };
+    const fetchImpl = serve({ '/board.json': newer, '/data.json': FULL });
     expect((await loadBoard({ fetchImpl, now: 1_000 })).payload).toEqual(FULL);
   });
 
@@ -222,9 +222,9 @@ describe('loadBoard', () => {
 
   it('prefers the newer of two saved copies', async () => {
     cache.set(CACHE_KEYS.LEADERBOARD, { ...FULL, last_updated: '2026-10-01T00:00:00Z' });
-    cache.set(CACHE_KEYS.BOARD, SPLIT['./board.json']);
+    cache.set(CACHE_KEYS.BOARD, SPLIT['/board.json']);
     const result = await loadBoard({ fetchImpl: offline(), now: 1_000 });
-    expect(result).toEqual({ payload: SPLIT['./board.json'], fromCache: true });
+    expect(result).toEqual({ payload: SPLIT['/board.json'], fromCache: true });
   });
 
   it('fails with a clear message when nothing is reachable or saved', async () => {
@@ -233,7 +233,7 @@ describe('loadBoard', () => {
 
   it('does not save a 1.65 MB copy when the board is available', async () => {
     await loadBoard({ fetchImpl: serve(SPLIT), now: 1_000 });
-    expect(cache.get(CACHE_KEYS.BOARD)?.schema).toBe(SPLIT['./board.json'].schema);
+    expect(cache.get(CACHE_KEYS.BOARD)?.schema).toBe(SPLIT['/board.json'].schema);
     expect(cache.get(CACHE_KEYS.LEADERBOARD)).toBeNull();
   });
 });
@@ -247,7 +247,7 @@ describe('loadDeveloperDetail', () => {
       fetchImpl,
       now: 1_000
     });
-    expect(urls(fetchImpl)).toEqual(['./dev/ali-dev.json']);
+    expect(urls(fetchImpl)).toEqual(['/dev/ali-dev.json']);
     expect(fromCache).toBe(false);
     expect(developer).toEqual(FULL.leaderboard[0]);
   });
@@ -260,10 +260,10 @@ describe('loadDeveloperDetail', () => {
   });
 
   it('falls back to the matching row of data.json when the file is missing', async () => {
-    const { './dev/sara.json': _missing, ...rest } = SPLIT;
-    const fetchImpl = serve({ ...rest, './data.json': FULL });
+    const { '/dev/sara.json': _missing, ...rest } = SPLIT;
+    const fetchImpl = serve({ ...rest, '/data.json': FULL });
     const { developer } = await loadDeveloperDetail('SARA', { fetchImpl, now: 1_000 });
-    expect(urls(fetchImpl)).toEqual(['./dev/sara.json', './data.json']);
+    expect(urls(fetchImpl)).toEqual(['/dev/sara.json', '/data.json']);
     expect(developer).toEqual(FULL.leaderboard[1]);
   });
 
@@ -276,17 +276,17 @@ describe('loadDeveloperDetail', () => {
         events_window: { fetched: 1, truncated: false, days: 60 }
       }))
     };
-    const fetchImpl = serve({ './data.json': measured });
+    const fetchImpl = serve({ '/data.json': measured });
     const { developer } = await loadDeveloperDetail('sara', { fetchImpl, now: 1_000 });
     expect(developer).toEqual(FULL.leaderboard[1]);
-    expect(developer).toEqual(SPLIT['./dev/sara.json'].developer);
+    expect(developer).toEqual(SPLIT['/dev/sara.json'].developer);
   });
 
   it('does not take a file for someone else as this developer', async () => {
     const misrouted = {
       ...SPLIT,
-      './dev/sara.json': SPLIT['./dev/ali-dev.json'],
-      './data.json': FULL
+      '/dev/sara.json': SPLIT['/dev/ali-dev.json'],
+      '/data.json': FULL
     };
     const { developer } = await loadDeveloperDetail('sara', {
       fetchImpl: serve(misrouted),
@@ -296,24 +296,24 @@ describe('loadDeveloperDetail', () => {
   });
 
   it('goes straight to data.json once the board showed the split files are not deployed', async () => {
-    const fetchImpl = serve({ './data.json': FULL });
+    const fetchImpl = serve({ '/data.json': FULL });
     await loadBoard({ fetchImpl, now: 1_000 });
     await loadDeveloperDetail('Ali-Dev', { fetchImpl, now: 1_001 });
     await loadDeveloperDetail('sara', { fetchImpl, now: 1_002 });
     // One data.json download serves the board and both cards.
-    expect(urls(fetchImpl)).toEqual(['./board.json', './data.json']);
+    expect(urls(fetchImpl)).toEqual(['/board.json', '/data.json']);
   });
 
   it('still tries the files after a network blip on board.json', async () => {
-    cache.set(CACHE_KEYS.BOARD, SPLIT['./board.json']);
+    cache.set(CACHE_KEYS.BOARD, SPLIT['/board.json']);
     await loadBoard({ fetchImpl: offline(), now: 1_000 });
     const fetchImpl = serve(SPLIT);
     await loadDeveloperDetail('sara', { fetchImpl, now: 1_001 });
-    expect(urls(fetchImpl)).toEqual(['./dev/sara.json']);
+    expect(urls(fetchImpl)).toEqual(['/dev/sara.json']);
   });
 
   it('rejects a developer who is not on the leaderboard', async () => {
-    const fetchImpl = serve({ ...SPLIT, './data.json': FULL });
+    const fetchImpl = serve({ ...SPLIT, '/data.json': FULL });
     await expect(loadDeveloperDetail('nobody', { fetchImpl, now: 1_000 })).rejects.toThrow(
       /not on the leaderboard/
     );
@@ -336,24 +336,24 @@ describe('loadDigest', () => {
   useFreshState();
 
   it('reads the precomputed digest.json', async () => {
-    const fetchImpl = serve({ ...SPLIT, './data.json': FULL });
+    const fetchImpl = serve({ ...SPLIT, '/data.json': FULL });
     const { payload, fromCache } = await loadDigest({ fetchImpl, now: 1_000 });
-    expect(urls(fetchImpl)).toEqual(['./digest.json']);
+    expect(urls(fetchImpl)).toEqual(['/digest.json']);
     expect(fromCache).toBe(false);
     expect(payload.topRepos.map((r) => r.name)).toEqual(['cc']);
   });
 
   it('computes exactly what the build wrote when digest.json is missing', async () => {
-    const fetchImpl = serve({ './data.json': FULL });
+    const fetchImpl = serve({ '/data.json': FULL });
     const { payload } = await loadDigest({ fetchImpl, now: 1_000 });
-    expect(payload).toEqual(SPLIT['./digest.json']);
+    expect(payload).toEqual(SPLIT['/digest.json']);
   });
 
   it('falls back to the saved digest offline', async () => {
     await loadDigest({ fetchImpl: serve(SPLIT), now: 1_000 });
     resetLeaderboardData();
     const result = await loadDigest({ fetchImpl: offline(), now: 2_000 });
-    expect(result).toEqual({ payload: SPLIT['./digest.json'], fromCache: true });
+    expect(result).toEqual({ payload: SPLIT['/digest.json'], fromCache: true });
   });
 
   it('ignores a saved value that is not a digest of this schema', async () => {
