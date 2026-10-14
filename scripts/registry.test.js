@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
-import yaml from 'js-yaml';
+import { load as loadYaml } from 'js-yaml';
 import {
   rowGithubId,
   intentOf,
@@ -589,7 +589,7 @@ describe('admitFetched', () => {
   });
 });
 
-const read = (path) => yaml.load(fs.readFileSync(new URL(path, import.meta.url), 'utf8'));
+const read = (path) => loadYaml(fs.readFileSync(new URL(path, import.meta.url), 'utf8'));
 
 describe('the issue forms and their workflow', () => {
   it('labels each form with the label the pipeline reads', () => {
@@ -633,7 +633,7 @@ describe('the issue forms and their workflow', () => {
     const files = fs.readdirSync(dir).filter((name) => /\.ya?ml$/.test(name));
     expect(files).toContain('registration.yml');
     for (const name of files) {
-      const workflow = yaml.load(fs.readFileSync(new URL(name, dir), 'utf8'));
+      const workflow = loadYaml(fs.readFileSync(new URL(name, dir), 'utf8'));
       for (const [jobName, job] of Object.entries(workflow.jobs || {})) {
         for (const step of job.steps || []) {
           if (typeof step.run !== 'string') continue;
