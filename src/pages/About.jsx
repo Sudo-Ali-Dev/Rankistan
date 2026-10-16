@@ -7,17 +7,8 @@ import { CITY_TERMS } from '../../scripts/discovery/locations.js';
 
 // Every number in the scoring copy below comes from the model's config (score-config.json), so
 // the page cannot describe a formula the pipeline is not running.
-const {
-  SCALE,
-  WEIGHTS,
-  WINDOW_DAYS,
-  RECENCY_FLOOR,
-  WORK,
-  COLLABORATION,
-  APPRECIATION,
-  INTEGRITY,
-  MIN_ACCOUNT_AGE_DAYS
-} = SCORE_CONFIG;
+const DESIGN_URL = 'https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/docs/scoring.md';
+const { SCALE, WEIGHTS, WINDOW_DAYS, WORK, COLLABORATION, APPRECIATION, MIN_ACCOUNT_AGE_DAYS } = SCORE_CONFIG;
 const points = (weight) => Math.round(SCALE * weight);
 const WORK_POINTS = points(WEIGHTS.work);
 const COLLABORATION_POINTS = points(WEIGHTS.collaboration);
@@ -34,17 +25,17 @@ const SCORING_WEIGHTS = [
   {
     field: 'Work',
     weight: `${WORK_POINTS} pts`,
-    note: `Days in the last ${WINDOW_DAYS} with public work. A day counts once, one commit or a thousand. Recent days weigh more, yesterday 1 and the oldest day ${RECENCY_FLOOR}. Each extra day adds a little less, so working half the days earns ${HALF_WINDOW_SHARE}%.`
+    note: `The days you did public work in the last ${WINDOW_DAYS}. A day counts once, whether you made one commit or a hundred. Recent days count a little more, and each extra day adds a little less, so working half the days already earns ${HALF_WINDOW_SHARE}%.`
   },
   {
     field: 'Collaboration',
     weight: `${COLLABORATION_POINTS} pts`,
-    note: `Work another person accepted. Your pull requests merged into projects you do not own, reviews of other people's pull requests, and other people's pull requests merged into your projects. The other person's account must be ${COUNTERPARTY_AGE} old. A project counts more the more stars it has, fully at ${FULL_STAR_WEIGHT_AT.toLocaleString('en-US')}.`
+    note: `Work another person accepted. Your pull request merged into someone else's project, your review of someone else's pull request, or their pull request merged into yours. The other person's account must be at least ${COUNTERPARTY_AGE} old, and a project with more stars counts more, up to ${FULL_STAR_WEIGHT_AT.toLocaleString('en-US')} stars.`
   },
   {
     field: 'Appreciation',
     weight: `${APPRECIATION_POINTS} pts`,
-    note: `Stars on the best known project you own and worked on this month. Nothing below ${APPRECIATION.FROM_STARS} stars, then a third for every tenfold, full at ${FULL_APPRECIATION_AT.toLocaleString('en-US')}. Projects you did not work on this month earn nothing.`
+    note: `Stars on your best project, if you own it and worked on it this month. Points start at ${APPRECIATION.FROM_STARS} stars and are full at ${FULL_APPRECIATION_AT.toLocaleString('en-US')}. Projects you did not work on this month earn nothing.`
   }
 ];
 
@@ -60,9 +51,9 @@ const CITY_NAMES = CITY_TERMS.map((city) => city[0].toUpperCase() + city.slice(1
 
 const PIPELINE_STEPS = [
   { step: '01', title: 'DISCOVER', icon: 'search', desc: `Search GitHub for Pakistani developers in 24 batches by account creation date: location:pakistan, and a second search for locations that name one of ${CITY_TERMS.length} Pakistani cities without the country. Each search is cut into slices small enough to list whole, so the 1,000-result search cap never truncates one. Developers neither search finds can register by GitHub issue instead, and are evaluated in the batch that covers their account's creation date.` },
-  { step: '02', title: 'MEASURE', icon: 'download', desc: `Read each candidate's contribution calendar, then measure everyone who could qualify from GitHub's contributions API and search. That means every commit day, every pull request, issue and review, and every merge someone else made, over the last ${WINDOW_DAYS} days.` },
-  { step: '03', title: 'FILTER', icon: 'filter_alt', desc: `Keep developers with at least ${WORK.GATE_MIN_DAYS} working days in the last ${WINDOW_DAYS} and an account at least ${MIN_ACCOUNT_AGE_DAYS} days old. Drop commits that cannot be someone's own work, such as commits dated in the future or made by a bot in their name.` },
-  { step: '04', title: 'SCORE', icon: 'calculate', desc: `Score work, collaboration and appreciation out of ${SCALE.toLocaleString('en-US')}. The whole board is scored again from its measurements on every run, so no one keeps an old number.` },
+  { step: '02', title: 'MEASURE', icon: 'download', desc: `Look at each candidate's public GitHub activity in the last ${WINDOW_DAYS} days. That is every day with a commit, every pull request, issue and review, and every merge someone else made.` },
+  { step: '03', title: 'FILTER', icon: 'filter_alt', desc: `Keep developers with at least ${WORK.GATE_MIN_DAYS} days of work in the last ${WINDOW_DAYS} and an account at least ${MIN_ACCOUNT_AGE_DAYS} days old. Drop commits that cannot be their own work, like commits with impossible dates or made by a bot in their name.` },
+  { step: '04', title: 'SCORE', icon: 'calculate', desc: `Add work, collaboration and appreciation into a score out of ${SCALE.toLocaleString('en-US')}. Every run scores the whole board again, so nobody keeps an old number.` },
   { step: '05', title: 'MERGE', icon: 'merge', desc: 'Merge scored developers into the leaderboard using per-batch replacement. Anyone who opted out is removed first, whichever batch holds their row. Deduplicate, re-sort, re-rank.' },
   { step: '06', title: 'DEPLOY', icon: 'rocket_launch', desc: 'Build the frontend and deploy to GitHub Pages. Leaderboard, map, and all pages update automatically.' },
 ];
@@ -121,11 +112,11 @@ const AI_SUMMARY_STEPS = [
 const FAQ = [
   { q: 'How often is the leaderboard updated?', a: 'Every hour. A Cloudflare Worker\'s cron triggers the GitHub Actions workflow at the top of each hour, one batch per hour and 24 a day, with a backup at half past that runs only if the hour was missed. Each developer is measured again once a day, and the whole board is scored again from its measurements on every run.' },
   { q: 'Why am I not on the leaderboard?', a: `You need at least ${WORK.GATE_MIN_DAYS} working days in the last ${WINDOW_DAYS} and an account at least ${MIN_ACCOUNT_AGE_DAYS} days old. The pipeline also has to find you. Your GitHub location must say "Pakistan" or name one of ${CITY_TERMS.length} Pakistani cities (${CITY_NAMES}), or you register by GitHub issue from the Register tab. Some city names are not searched because they mostly mean somewhere else ("Hyderabad" alone is usually Hyderabad, India), so if yours is one of them, add "Pakistan" or register. The board shows the top 1,000.` },
-  { q: 'What counts as a working day?', a: `A day with at least one public commit, a pull request or issue you opened in someone else's project, or a review of someone else's pull request. A day counts once however much was done on it, so committing a thousand times in a day earns the same as committing once. Commits to forks and to profile README repositories never count. Starring, forking, watching and comments do not count.` },
-  { q: 'Why is my score lower than expected?', a: `Work alone is worth at most ${WORK_POINTS} of ${SCALE.toLocaleString('en-US')} points, and each extra working day adds a little less than the one before. The rest comes from work other people accepted and from stars on projects you are actively building. Followers, repository counts and total stars on old projects do not count at all. Private contributions do not count either, because nobody outside can check them.` },
-  { q: 'Does my account\'s age matter?', a: `Only for eligibility. An account must be ${MIN_ACCOUNT_AGE_DAYS} days old to be ranked. After that its age changes nothing. Age matters for the other side of collaboration instead, since the person who merges your work or whose pull request you review must have had their account ${COUNTERPARTY_AGE}, so a fresh second account cannot vouch for you.` },
-  { q: 'Can my score be gamed?', a: `Volume cannot help, because a day counts once. Commits dated in the future, author dates more than ${INTEGRITY.MAX_LEAD_HOURS} hours after their commit dates, and repositories where a bot commits in your name are excluded automatically. A daily script that commits as you can at most reach the full work score, and the moderation list (rankistan.dev/moderation.json) removes such a repository with public evidence. Merges by a fresh account, by a bot or by yourself earn nothing, and no single project or person can vouch for you without limit.` },
-  { q: 'Can I see exactly what my score was computed from?', a: 'Yes. Every developer\'s file on the site lists the evidence item by item. That covers each working day and each pull request, review and merge that counted, each a public link on GitHub. The Register tab measures any account live with the same code the pipeline runs.' },
+  { q: 'What counts as a working day?', a: "Any day you made a public commit, opened a pull request or issue in someone else's project, or reviewed someone else's pull request. A day counts once, so a thousand commits in a day count the same as one. Commits to forks and profile README repositories do not count, and neither do stars, forks, watches or comments." },
+  { q: 'Why is my score lower than expected?', a: `Working every day earns at most ${WORK_POINTS} points. The other ${(SCALE - WORK_POINTS).toLocaleString('en-US')} come from work other people accepted and from stars on a project you are building. Followers and repository counts earn nothing, and private work is not counted because nobody outside can check it.` },
+  { q: 'Does my account\'s age matter?', a: `Only to get on the board. Your account must be at least ${MIN_ACCOUNT_AGE_DAYS} days old, and after that its age changes nothing. The other person in a collaboration must have an account at least ${COUNTERPARTY_AGE} old, so a brand new second account cannot boost you.` },
+  { q: 'Can my score be gamed?', a: 'Not easily. Doing a lot in one day still counts as one day. Commits with impossible dates or made by a bot in your name are dropped automatically. A script that commits for you every day is found by a person reading the commits and listed in public at rankistan.dev/moderation.json, with the evidence. Merges by yourself, by a bot or by a brand new account earn nothing.' },
+  { q: 'Can I see exactly what my score was computed from?', a: 'Yes. Every developer\'s file on the site lists each day and each pull request, review and merge that counted, with a link to it on GitHub. The Register tab shows any account\'s score right now, with the same code the board uses.' },
   { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026). It reads every candidate\'s contribution calendar, measures in full only those who could qualify, then applies the eligibility gate before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
@@ -296,17 +287,15 @@ export default function About({ onChangeTab }) {
             </div>
 
             <div className="overflow-x-auto bg-surface-container-low border border-outline-variant p-3 sm:p-5 mb-4 sm:mb-6 font-mono text-xs sm:text-sm leading-relaxed">
-              <div className="text-primary">
-                score = round({SCALE} × ({WEIGHTS.work} × work + {WEIGHTS.collaboration} × collaboration + {WEIGHTS.appreciation} × appreciation))
-              </div>
+              <div className="text-primary">score = work + collaboration + appreciation</div>
               <div className="text-tertiary mt-2">
-                work = 1 − (1 − x)^{WORK.CURVE_POWER}, x = recency-weighted share of the last {WINDOW_DAYS} days you worked
+                up to {WORK_POINTS} + up to {COLLABORATION_POINTS} + up to {APPRECIATION_POINTS} = {SCALE.toLocaleString('en-US')} points
               </div>
-              <div className="text-tertiary mt-1">
-                collaboration = c / (c + {COLLABORATION.HALF_POINT}), c = accepted work counted per project and per person
-              </div>
-              <div className="text-tertiary mt-1">
-                appreciation = (log10(stars) − 1) / {APPRECIATION.DECADES} on your best active project, from {APPRECIATION.FROM_STARS} stars
+              <div className="text-outline mt-3 text-[11px]">
+                The exact formula, with every rule and the reason for it, is in{' '}
+                <a href={DESIGN_URL} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                  docs/scoring.md
+                </a>
               </div>
             </div>
 
@@ -323,9 +312,9 @@ export default function About({ onChangeTab }) {
             <div className="mt-4 sm:mt-6 p-3 sm:p-4 border-l-2 border-tertiary bg-tertiary/5">
               <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest">Not Scored</span>
               <p className="font-body text-xs text-outline leading-relaxed mt-1">
-                <span className="text-on-surface font-bold">Followers</span>, <span className="text-on-surface font-bold">repository counts</span> and <span className="text-on-surface font-bold">account age</span> never change a score.
-                <span className="text-on-surface font-bold"> Private contributions</span> are shown as context and never scored, because nobody outside can check them.
-                Commits from <span className="text-on-surface font-bold">forks</span>, <span className="text-on-surface font-bold">profile README repositories</span>, commits dated in the future or made by a bot in your name, and repositories on the public moderation list do not count.
+                <span className="text-on-surface font-bold">Followers</span>, <span className="text-on-surface font-bold">repository counts</span> and <span className="text-on-surface font-bold">account age</span> never earn points.
+                <span className="text-on-surface font-bold"> Private contributions</span> are shown on your card but not scored, because nobody outside can check them.
+                Commits to <span className="text-on-surface font-bold">forks</span> and <span className="text-on-surface font-bold">profile README repositories</span>, commits with impossible dates or made by a bot in your name, and repositories on the public moderation list do not count.
               </p>
             </div>
 
@@ -372,7 +361,7 @@ export default function About({ onChangeTab }) {
                 ))}
               </div>
               <p className="font-mono text-[9px] text-outline/60 mt-2 uppercase leading-relaxed">
-                A day counts once however much was done. Stars, forks, watches and comments do not count.
+                A day counts once, however much you did. Stars, forks, watches and comments do not count.
               </p>
             </div>
           </div>
