@@ -64,7 +64,9 @@ function byDateRepoNumber(a, b) {
 }
 
 /**
- * The repositories whose commits do not count, with why.
+ * The repositories whose commits do not count, with why. A moderation entry is listed only for a
+ * developer who committed to that repository in the window: the list is every developer's, and
+ * naming its other entries in someone's evidence would read as work of theirs that was removed.
  * @param {object[]} moderation  `{repo, reason}` entries from public/moderation.json
  */
 export function exclusions(m, { config, moderation = [] }) {
@@ -81,7 +83,10 @@ export function exclusions(m, { config, moderation = [] }) {
       add(s.repo, REASON_AHEAD);
     else if (s.bot / s.sampled >= BOT_SHARE) add(s.repo, REASON_BOT);
   }
-  for (const entry of moderation) add(entry.repo, `moderation: ${entry.reason}`);
+  const committed = new Set(m.commits.map((r) => lower(r.repo)));
+  for (const entry of moderation) {
+    if (committed.has(lower(entry.repo))) add(entry.repo, `moderation: ${entry.reason}`);
+  }
   return out;
 }
 
