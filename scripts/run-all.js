@@ -48,7 +48,14 @@ import { loadModerationFile, MODERATION_PATH } from './moderation.js';
 import { formatSuspects, moderationSuspects } from './moderation-suspects.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
 import { verifyPublished } from './verify-published.js';
-import { makeGitHubClient, createStateStore, stateAssetName, DEFAULT_REPO } from './state-store.js';
+import {
+  makeGitHubClient,
+  createStateStore,
+  dailyCloses,
+  stateAssetName,
+  DEFAULT_REPO
+} from './state-store.js';
+import { closesFromStateStore, createHistoryStore, updateHistory } from './history-store.js';
 import {
   readRegistry,
   loadRegistry,
@@ -582,6 +589,9 @@ export function recordDepartures(log, removed, previous, { now }) {
  *   batch would publish a 40-row leaderboard.
  * - `now` may be a function of the loaded payload (the dry run pins it to the
  *   file's own `last_updated`).
+ * - `history`, when given, brings Rank History up to date before the save
+ *   (updateHistory in scripts/history-store.js). Without it the state carries
+ *   the history's progress forward unchanged.
  */
 export async function runBatch({
   batchIndex,
@@ -598,6 +608,7 @@ export async function runBatch({
   moderation = [],
   rescore = rescoreRows,
   verify = verifyPublished,
+  history = null,
   log = console
 }) {
   let loaded = await store.load();
@@ -707,6 +718,41 @@ export async function runBatch({
     verify,
     log
   });
+
+  // Rank History, written before the state that records how far it got, so a failed write is
+  // tried again by the next run. It never blocks the board's own save.
+  merged.board.history_through = loaded.payload.history_through ?? null;
+  merged.board.history_scrubbed = loaded.payload.history_scrubbed ?? [];
+  if (history) {
+    try {
+      const written = await history({
+        through: merged.board.history_through,
+        scrubbed: merged.board.history_scrubbed,
+        optedOut: intents.optedOut,
+        now: at,
+        moderation,
+        log
+      });
+      merged.board.history_through = written.through;
+      merged.board.history_scrubbed = written.scrubbed;
+      if (written.written.length > 0 || written.purged.length > 0) {
+        log.log(
+          `Rank History: recorded ${written.written.length} date(s)` +
+            (written.written.length ? ` (${written.written.join(', ')})` : '') +
+            (written.gaps.length ? `, ${written.gaps.length} with no closing board` : '') +
+            (written.purged.length
+              ? `; removed opted-out developers from ${written.purged.join(', ')}`
+              : '') +
+            '.'
+        );
+      }
+    } catch (error) {
+      log.warn(
+        `::warning title=RANK_HISTORY::Rank History was not written this run: ${error.message}. ` +
+          'The board is saved as usual, and the next run tries again.'
+      );
+    }
+  }
 
   const saved = await store.save(merged.board, {
     name,
@@ -923,17 +969,26 @@ async function runCli(args, env = process.env) {
     );
   }
   const client = makeGitHubClient({ token: env.GITHUB_TOKEN, repo: env.GITHUB_REPOSITORY });
+  const store = createStateStore({ client });
+  const historyStore = createHistoryStore({ client });
+  const runId = env.GITHUB_RUN_ID || `local${Date.now()}`;
+  const runAttempt = env.GITHUB_RUN_ATTEMPT || 1;
   await runBatch({
     ...shared,
     measure: measureBatch,
     registry: () => readRegistry({ api: client }),
-    store: createStateStore({ client }),
+    store,
     fallback: createFileStore({ readPath: DATA_JSON }),
     allowEmpty: env.ALLOW_EMPTY_STATE === '1',
-    name: stateAssetName({
-      runId: env.GITHUB_RUN_ID || `local${Date.now()}`,
-      runAttempt: env.GITHUB_RUN_ATTEMPT || 1
-    }),
+    name: stateAssetName({ runId, runAttempt }),
+    history: (args) =>
+      updateHistory({
+        ...args,
+        history: historyStore,
+        closes: closesFromStateStore(store, { now: Date.now(), dailyCloses }),
+        runId,
+        runAttempt
+      }),
     dispatch: () => dispatchWorkflows({ client })
   });
 }

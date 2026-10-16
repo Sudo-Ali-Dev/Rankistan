@@ -474,7 +474,7 @@ export function createStateStore({
     return release ? { release, assets: await listAssets(release) } : null;
   }
 
-  return { load, save, prune, list, findRelease, ensureRelease, listAssets };
+  return { load, save, prune, list, findRelease, ensureRelease, listAssets, readAsset };
 }
 
 /** Writes bytes exactly, through a same-directory temp file and a rename. */

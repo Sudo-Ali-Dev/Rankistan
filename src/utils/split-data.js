@@ -75,10 +75,15 @@ export const PIPELINE_ONLY_FIELDS = Object.freeze([
 ]);
 
 // Top-level fields of the state the pipeline keeps for Rank History and no file the browser or the
-// Worker reads may carry: who left the board and why (recordDepartures in scripts/run-all.js), and
-// the last date written to the history. A departure names an account and a reason, which belongs
-// only in the history of a developer on the board (docs/rank-history-design.md).
-export const PIPELINE_ONLY_TOP_FIELDS = Object.freeze(['departures', 'history_through']);
+// Worker reads may carry: who left the board and why (recordDepartures in scripts/run-all.js), the
+// last date written to the history, and the opted-out accounts already removed from it. A
+// departure names an account and a reason, which belongs only in the history of a developer on the
+// board (docs/rank-history-design.md).
+export const PIPELINE_ONLY_TOP_FIELDS = Object.freeze([
+  'departures',
+  'history_through',
+  'history_scrubbed'
+]);
 
 // Fields only a developer's own file carries: the score's evidence, every working day and every
 // pull request, review and merge that counted, each a public GitHub item (src/model/evidence.js).
