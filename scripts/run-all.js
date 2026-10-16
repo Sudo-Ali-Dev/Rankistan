@@ -225,8 +225,9 @@ export const UNMEASURED_AFTER_DAYS = 7;
  * give them.
  *
  * `removed` lists each developer who is not on the returned board, with the
- * reason: `ineligible` (fetched this run and failed the gate, or whose stored
- * measurement no longer passes it), `unscorable` (no measurement the model
+ * reason: `ineligible` (fetched this run and failed the gate), `rescored` or
+ * `moderated` (whose stored measurement no longer passes it under a new scoring
+ * model or a new moderation list), `unscorable` (no measurement the model
  * can read), `missed`
  * (absent from MAX_MISSED_RUNS consecutive runs of their batch, the first at
  * least MIN_MISS_SPAN_HOURS ago), `unmeasured`
@@ -367,6 +368,8 @@ export function mergeBatch({
   const lines = [
     ['carried', carried],
     ['removed as ineligible', named('ineligible')],
+    ['removed as ineligible under the new scoring', named('rescored')],
+    ['removed as ineligible once a repository stopped counting', named('moderated')],
     ['removed after consecutive misses', named('missed')],
     [`removed as unmeasured for ${UNMEASURED_AFTER_DAYS} days`, named('unmeasured')],
     ['removed as unscorable (no measurement the model can read)', named('unscorable')],
@@ -390,8 +393,11 @@ export function mergeBatch({
 
 /**
  * Every row scored again from its stored measurement and the moderation list. Pure. A row with no
- * measurement the model can read is `unscorable`, and one whose measurement no longer passes the
- * gate (a repository was added to the moderation list) is `ineligible`.
+ * measurement the model can read is `unscorable`. One whose measurement no longer passes the gate
+ * is `rescored` when it was published under another scoring model, and `moderated` otherwise: the
+ * measurement is the one it was published from, so only the moderation list can have changed the
+ * answer. Rank History states why a developer left (docs/rank-history-design.md), so the two are
+ * told apart, and from a gate failure in a fresh measurement (`ineligible`).
  */
 export function rescoreRows(rows, { moderation = [] } = {}) {
   const keep = [];
@@ -405,7 +411,7 @@ export function rescoreRows(rows, { moderation = [] } = {}) {
     const [scored] = scoreDevelopers([row], { moderation });
     const { gate, ...rest } = scored;
     if (!gate) {
-      removed.push({ row, why: 'ineligible' });
+      removed.push({ row, why: row.model_version === MODEL_VERSION ? 'moderated' : 'rescored' });
       continue;
     }
     if (rest.score_exact !== row.score_exact || rest.model_version !== row.model_version)
@@ -417,7 +423,7 @@ export function rescoreRows(rows, { moderation = [] } = {}) {
     removed,
     counts: {
       unscorable: removed.filter((r) => r.why === 'unscorable').length,
-      ineligible: removed.filter((r) => r.why === 'ineligible').length,
+      ineligible: removed.filter((r) => r.why !== 'unscorable').length,
       changed
     }
   };
@@ -527,6 +533,38 @@ export function guardBoard({
     );
   }
   return { report, lost: lost.length, unexplained };
+}
+
+/** Pakistan dates of departures a state keeps: the date of the run and the one before it. */
+export const DEPARTURE_DAYS = 2;
+const PKT_OFFSET_MS = 5 * 3_600_000;
+const pktDateOfMs = (ms) => new Date(ms + PKT_OFFSET_MS).toISOString().slice(0, 10);
+
+/**
+ * The state's log of who left the board and why, for Rank History: the entries of the last
+ * DEPARTURE_DAYS Pakistan dates, plus one `{at, id, reason}` for each developer this run took off
+ * the board who was on it before. A reason exists only in the run that removes someone, so it is
+ * written down then, and each day's closing state holds that day's departures. Their figures are
+ * the previous close's. Opting out records nothing: that account's history is deleted, not
+ * explained. Pure.
+ */
+export function recordDepartures(log, removed, previous, { now }) {
+  const at = new Date(now).toISOString();
+  const oldest = pktDateOfMs(Date.parse(at) - (DEPARTURE_DAYS - 1) * DAY_MS);
+  const kept = (Array.isArray(log) ? log : []).filter(
+    (entry) => typeof entry?.at === 'string' && pktDateOfMs(Date.parse(entry.at)) >= oldest
+  );
+  const ids = new Map(
+    previous
+      .filter((row) => rowGithubId(row) !== null)
+      .map((row) => [String(row.username).toLowerCase(), rowGithubId(row)])
+  );
+  for (const { username, reason } of removed) {
+    if (reason === 'opted_out') continue;
+    const id = ids.get(String(username).toLowerCase());
+    if (id !== undefined) kept.push({ at, id, reason });
+  }
+  return kept;
 }
 
 /**
@@ -658,6 +696,9 @@ export async function runBatch({
     }
   };
   const removed = [...optOut.removed, ...merged.removed];
+  merged.board.departures = recordDepartures(loaded.payload.departures, removed, previous, {
+    now: at
+  });
   const guard = guardBoard({
     previous,
     board: merged.board,

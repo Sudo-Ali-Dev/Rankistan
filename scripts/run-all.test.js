@@ -22,7 +22,9 @@ import {
   MIN_MISS_SPAN_HOURS,
   UNMEASURED_AFTER_DAYS,
   MAX_UNEXPLAINED_LOSS,
-  DISPATCHED_WORKFLOWS
+  DISPATCHED_WORKFLOWS,
+  DEPARTURE_DAYS,
+  recordDepartures
 } from './run-all.js';
 import { MAX_DEVELOPERS } from './fetch-devs.js';
 import { emptyRegistry } from './registry.js';
@@ -488,6 +490,40 @@ describe('runBatch', () => {
     });
     expect(result.removed).toEqual([{ username: 'b', batch_index: 0, reason: 'ineligible' }]);
     expect(result.dispatched).toEqual(['deploy.yml']);
+  });
+
+  it('writes down who left the board and why, for Rank History', async () => {
+    const calls = [];
+    const earlier = [{ at: at(1), id: 3, reason: 'displaced' }];
+    const store = memoryStore(
+      {
+        ...state([
+          row('a', 0, 500, { github_id: 1 }),
+          row('b', 0, 400, { github_id: 2 }),
+          row('c', 7, 300, { github_id: 3 })
+        ]),
+        departures: earlier
+      },
+      calls
+    );
+    await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
+      registry: noIntents,
+      batchIndex: 0,
+      store,
+      measure: async () => ({
+        newEntries: [row('a', 0, 900, { github_id: 1 })],
+        evaluated: ['a', 'b']
+      }),
+      name: 'state-1-1.json.gz',
+      now: NOW,
+      log: quiet
+    });
+    expect(store.saved.board.departures).toEqual([
+      ...earlier,
+      { at: new Date(NOW).toISOString(), id: 2, reason: 'ineligible' }
+    ]);
   });
 
   it('records when this batch ran, and carries every other batch run forward', async () => {
@@ -1036,11 +1072,14 @@ describe('scoring v3 on the board', () => {
     expect(counts).toEqual({ unscorable: 1, ineligible: 0, changed: 1 });
   });
 
-  it('drops a row whose stored measurement no longer passes the gate', () => {
-    const { removed } = rescoreRows([measured('ana', 0, 20)], {
-      moderation: [{ repo: 'ana/app', reason: 'a script commits here' }]
-    });
-    expect(removed.map((r) => r.why)).toEqual(['ineligible']);
+  it('drops a row whose stored measurement no longer passes the gate, saying why', () => {
+    const moderation = [{ repo: 'ana/app', reason: 'a script commits here' }];
+    const { removed, counts } = rescoreRows([measured('ana', 0, 20)], { moderation });
+    // The same model published it, so only the moderation list can have changed the answer.
+    expect(removed.map((r) => r.why)).toEqual(['moderated']);
+    expect(counts.ineligible).toBe(1);
+    const older = { ...measured('ana', 0, 20), model_version: '3.0.0' };
+    expect(rescoreRows([older], { moderation }).removed.map((r) => r.why)).toEqual(['rescored']);
   });
 
   it('moves a measurement from its pre-switch field, and drops what v3 does not publish', () => {
@@ -1111,5 +1150,41 @@ describe('scoring v3 on the board', () => {
       log: quiet
     });
     expect(board.leaderboard[0]).toMatchObject({ model_version: MODEL_VERSION, rank: 1 });
+  });
+});
+
+describe('recordDepartures', () => {
+  const previous = [
+    { username: 'Ana', github_id: 1 },
+    { username: 'bob', github_id: 2 },
+    { username: 'legacy' }
+  ];
+  // 12:00 UTC is 17:00 in Pakistan, so the run's Pakistan date is 2026-10-13.
+  const now = NOW;
+
+  it('adds one entry per developer who was on the board, by account id', () => {
+    const removed = [
+      { username: 'ana', batch_index: 0, reason: 'displaced' },
+      { username: 'new-today', batch_index: 0, reason: 'displaced' },
+      { username: 'legacy', batch_index: 0, reason: 'missed' }
+    ];
+    expect(recordDepartures([], removed, previous, { now })).toEqual([
+      { at: new Date(now).toISOString(), id: 1, reason: 'displaced' }
+    ]);
+  });
+
+  it('records nothing for an opt-out, whose history is deleted rather than explained', () => {
+    const removed = [{ username: 'bob', batch_index: 0, reason: 'opted_out' }];
+    expect(recordDepartures(undefined, removed, previous, { now })).toEqual([]);
+  });
+
+  it(`keeps the entries of the last ${DEPARTURE_DAYS} Pakistan dates`, () => {
+    const log = [
+      { at: '2026-10-11T18:59:59.000Z', id: 9, reason: 'missed' }, // 11 October in Pakistan
+      { at: '2026-10-11T19:00:00.000Z', id: 8, reason: 'missed' }, // 12 October
+      { at: '2026-10-13T03:00:00.000Z', id: 7, reason: 'missed' },
+      { reason: 'no time' }
+    ];
+    expect(recordDepartures(log, [], previous, { now }).map((e) => e.id)).toEqual([8, 7]);
   });
 });

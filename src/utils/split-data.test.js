@@ -5,12 +5,14 @@ import {
   BOARD_FIELDS,
   DETAIL_ONLY_FIELDS,
   PIPELINE_ONLY_FIELDS,
+  PIPELINE_ONLY_TOP_FIELDS,
   SPLIT_SCHEMA,
   buildBoard,
   buildDeveloperFile,
   buildPublicPayload,
   buildDigest,
   developerFileName,
+  hasPipelineOnlyFields,
   developerFilePath,
   isBoardPayload,
   isDeveloperFileFor,
@@ -224,6 +226,25 @@ describe('pipeline-only fields', () => {
         JSON.stringify(buildDeveloperFile(REAL, REAL.leaderboard[i]))
       );
     });
+  });
+});
+
+describe('pipeline-only top-level fields', () => {
+  it('keep who left the board, and why, out of every file the browser or the Worker reads', () => {
+    expect(PIPELINE_ONLY_TOP_FIELDS).toEqual(['departures', 'history_through']);
+    const state = {
+      ...REAL,
+      departures: [{ at: '2026-10-17T03:00:00.000Z', id: 7, reason: 'displaced' }],
+      history_through: '2026-10-16'
+    };
+    expect(hasPipelineOnlyFields(state)).toBe(true);
+    const bare = { last_updated: REAL.last_updated, leaderboard: [] };
+    expect(hasPipelineOnlyFields(bare)).toBe(false);
+    expect(hasPipelineOnlyFields({ ...bare, history_through: '2026-10-16' })).toBe(true);
+    const served = buildPublicPayload(state);
+    expect(served).not.toHaveProperty('departures');
+    expect(served).not.toHaveProperty('history_through');
+    expect(JSON.stringify(buildBoard(state))).toBe(JSON.stringify(buildBoard(REAL)));
   });
 });
 

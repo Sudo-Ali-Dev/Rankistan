@@ -74,6 +74,12 @@ export const PIPELINE_ONLY_FIELDS = Object.freeze([
   'missed_since'
 ]);
 
+// Top-level fields of the state the pipeline keeps for Rank History and no file the browser or the
+// Worker reads may carry: who left the board and why (recordDepartures in scripts/run-all.js), and
+// the last date written to the history. A departure names an account and a reason, which belongs
+// only in the history of a developer on the board (docs/rank-history-design.md).
+export const PIPELINE_ONLY_TOP_FIELDS = Object.freeze(['departures', 'history_through']);
+
 // Fields only a developer's own file carries: the score's evidence, every working day and every
 // pull request, review and merge that counted, each a public GitHub item (src/model/evidence.js).
 // About 2 KB a row, so the board and data.json, which every visitor or the Worker downloads
@@ -94,8 +100,10 @@ function toPublicRow(row) {
   return out;
 }
 
-/** Whether any row carries a PIPELINE_ONLY_FIELDS field. */
+/** Whether the payload carries a PIPELINE_ONLY_TOP_FIELDS field, or any row a PIPELINE_ONLY_FIELDS one. */
 export function hasPipelineOnlyFields(payload) {
+  if (PIPELINE_ONLY_TOP_FIELDS.some((field) => payload && Object.hasOwn(payload, field)))
+    return true;
   const rows = Array.isArray(payload?.leaderboard) ? payload.leaderboard : [];
   return rows.some((row) =>
     [...PIPELINE_ONLY_FIELDS, ...DETAIL_ONLY_FIELDS].some((field) => row && field in row)
@@ -110,7 +118,9 @@ export function hasPipelineOnlyFields(payload) {
  * reach it.
  */
 export function buildPublicPayload(payload) {
-  return { ...payload, leaderboard: payload.leaderboard.map(toPublicRow) };
+  const out = { ...payload, leaderboard: payload.leaderboard.map(toPublicRow) };
+  for (const field of PIPELINE_ONLY_TOP_FIELDS) delete out[field];
+  return out;
 }
 
 /** The Digest's tables, as many rows as the page renders. */
@@ -126,7 +136,9 @@ function rowsOf(payload) {
 function metadataOf(payload) {
   const meta = {};
   for (const [key, value] of Object.entries(payload || {})) {
-    if (key !== 'leaderboard' && key !== 'schema') meta[key] = value;
+    if (key !== 'leaderboard' && key !== 'schema' && !PIPELINE_ONLY_TOP_FIELDS.includes(key)) {
+      meta[key] = value;
+    }
   }
   return meta;
 }
