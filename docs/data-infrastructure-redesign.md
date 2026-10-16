@@ -9,8 +9,8 @@ It was drawn from twelve investigations of the live repository, 90 days of Actio
 3,928 versions of `data.json`, then attacked by a separate review before any of it was built. Every
 figure below was measured, unless it says "about".
 
-**Status (14 October 2026):** steps 0–6 and 7A are shipped. Step 7B, the contributions-based
-scoring model, waits until every row carries its shadow inputs (about a day after #129).
+**Status, 16 October 2026.** Every step is shipped. Step 7B became scoring v3, recorded in
+[scoring.md](scoring.md).
 
 ## In plain words: before and after
 
@@ -156,7 +156,7 @@ Each step left the site working and shipped on its own.
 | 5    | Small files for the browser                                                                           | #114                               |
 | 6    | City-only profiles; registration and opt-out by issue                                                 | #123 #124                          |
 | 7A   | Shadow measurement of the next model's inputs                                                         | #129                               |
-| 7B   | Contributions-based scoring with per-repository and per-day limits                                    | not yet                            |
+| 7B   | Contributions-based scoring, as scoring v3 ([scoring.md](scoring.md))                                 | #136 #137 #138 #139 and the switch |
 | Ops  | Backup trigger, Worker clock and health, rebalanced batches, watchdog wording                         | #116 #118 #120 #122 #125 #127 #128 |
 
 ## 05. Budget, before and after
