@@ -566,21 +566,17 @@ export function readSearchPage(kind, search, { login, window, into }) {
 }
 
 /**
- * A committer that is automation: a GitHub App (`…[bot]`), the Actions user, or a committer
- * named as a bot ("Repo Health Bot", "Job Finder Bot"). The web editor's committer, GitHub
- * (`web-flow`), is a person's own edit and is not one.
+ * A committer that is automation: a GitHub App (`…[bot]`) or a committer named as a bot ("Repo
+ * Health Bot", "Job Finder Bot", "scraping-bot"). Not the Actions user by itself: companies that
+ * sync their engineers' commits into a public repository commit them as "Github Actions"
+ * (`actions-user`), with the engineer as author (measured on 2026-10-16, plasmicapp/plasmic). Not
+ * the web editor's committer either, GitHub (`web-flow`), which is a person's own edit.
  */
 export function isBotCommitter(committer) {
   const login = committer?.user?.login;
   const name = committer?.name;
-  const email = committer?.email;
-  if (typeof login === 'string' && (/\[bot\]$/i.test(login) || login === 'actions-user'))
-    return true;
-  if (typeof name === 'string' && (/\[bot\]$/i.test(name) || /\bbot\b/i.test(name))) return true;
-  return (
-    typeof email === 'string' &&
-    /^action@github\.com$|\[bot\]@users\.noreply\.github\.com$/i.test(email)
-  );
+  if (typeof login === 'string' && /\[bot\]$/i.test(login)) return true;
+  return typeof name === 'string' && (/\[bot\]$/i.test(name) || /\bbot\b/i.test(name));
 }
 
 /**

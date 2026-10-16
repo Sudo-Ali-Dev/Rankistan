@@ -141,8 +141,7 @@ counts in full once worked on for 4 days this month.
 Commits from forks, from profile README repositories, from repositories holding commits dated two
 or more days after the measurement, from repositories whose sampled author dates run more than 6
 hours past their commit dates or past the moment they were read, from repositories where half of
-5 or more sampled commits were committed by a bot in the developer's name (an App, the Actions
-user, or a committer named as a bot), from repositories with commits credited on 10 or more days
+5 or more sampled commits were committed by a bot in the developer's name (an App or a committer named as a bot, not the Actions user alone, which companies use to sync their engineers' own commits), from repositories with commits credited on 10 or more days
 where a complete sample of the default branch and gh-pages finds none of them, and from repositories on the moderation list (`public/moderation.json`). Private
 repositories are skipped wherever they appear, and private contributions are recorded as context
 and never scored.
@@ -301,17 +300,17 @@ v3's top 50.
 
 **What was too easy, and what changed.**
 
-| Found                                                                                                                                            | Change in v3.1                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 30 quick reviews of strangers' pull requests in famous projects scored 828, the top of the board                                                 | A review by someone with no role in the project counts as if the project had no stars                                                          |
-| One friend with a year-old account could add 12 credits, by merging, being reviewed and contributing                                             | One cap per person across all three, scaled by the stars of the best target, at least half                                                     |
-| 62 one-line fixes in 52 projects beat 66 large pull requests into one                                                                            | Each further person or place counts at 1/√k                                                                                                    |
-| The rejection factor shrank credit that the curve then saturated, so the board's #1 kept 94% of its points with 95 of 142 pull requests rejected | It multiplies the whole part, and skips repositories where the developer merges their own                                                      |
-| A pull request a colleague approved earned nothing if its author clicked merge                                                                   | The approver stands for the merger                                                                                                             |
-| A pull request merged into one's own project counted as a review and as maintained                                                               | It counts once                                                                                                                                 |
-| Scripts slipped past the bot rule ("Repo Health Bot") and the sample, which read only the default branch                                         | Bots by name, the Actions user and email, gh-pages sampled, a minimum sample of 5 for the bot share, commits missing from the history excluded |
-| Even recency steps tied developers whose days merely summed alike, 337 rows                                                                      | A constant ratio from day to day                                                                                                               |
-| A one-off moderation pass missed five script accounts the first runs admitted                                                                    | Every batch lists moderation suspects in its run summary                                                                                       |
+| Found                                                                                                                                            | Change in v3.1                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| 30 quick reviews of strangers' pull requests in famous projects scored 828, the top of the board                                                 | A review by someone with no role in the project counts as if the project had no stars                                        |
+| One friend with a year-old account could add 12 credits, by merging, being reviewed and contributing                                             | One cap per person across all three, scaled by the stars of the best target, at least half                                   |
+| 62 one-line fixes in 52 projects beat 66 large pull requests into one                                                                            | Each further person or place counts at 1/√k                                                                                  |
+| The rejection factor shrank credit that the curve then saturated, so the board's #1 kept 94% of its points with 95 of 142 pull requests rejected | It multiplies the whole part, and skips repositories where the developer merges their own                                    |
+| A pull request a colleague approved earned nothing if its author clicked merge                                                                   | The approver stands for the merger                                                                                           |
+| A pull request merged into one's own project counted as a review and as maintained                                                               | It counts once                                                                                                               |
+| Scripts slipped past the bot rule ("Repo Health Bot") and the sample, which read only the default branch                                         | Bots by App or by name, gh-pages sampled, a minimum sample of 5 for the bot share, commits missing from the history excluded |
+| Even recency steps tied developers whose days merely summed alike, 337 rows                                                                      | A constant ratio from day to day                                                                                             |
+| A one-off moderation pass missed five script accounts the first runs admitted                                                                    | Every batch lists moderation suspects in its run summary                                                                     |
 
 **Not changed, on purpose.** Squash merges create a commit day on the merge date. It looks like
 a double count, but it is the only day a squash-merged contributor's work is credited at all, since

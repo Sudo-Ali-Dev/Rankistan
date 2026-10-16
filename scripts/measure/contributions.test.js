@@ -375,11 +375,19 @@ describe('readIntegrity', () => {
     expect(r.days).toBeNull();
   });
 
-  it('treats named bots and the Actions user as bots, and the web editor as a person', () => {
+  it('treats Apps and committers named as bots as bots, and a sync or the web editor as a person', () => {
     expect(isBotCommitter({ name: 'Repo Health Bot' })).toBe(true);
     expect(isBotCommitter({ name: 'Job Finder Bot', user: { login: 'actions-user' } })).toBe(true);
+    expect(isBotCommitter({ name: 'scraping-bot' })).toBe(true);
     expect(isBotCommitter({ name: 'github-actions[bot]' })).toBe(true);
-    expect(isBotCommitter({ name: 'x', email: 'action@github.com' })).toBe(true);
+    // A company syncing its engineers' commits commits them as the Actions user.
+    expect(
+      isBotCommitter({
+        name: 'Github Actions',
+        email: 'actions@github.com',
+        user: { login: 'actions-user' }
+      })
+    ).toBe(false);
     expect(isBotCommitter({ name: 'GitHub', user: { login: 'web-flow' } })).toBe(false);
     expect(isBotCommitter({ name: 'Abbot Khan', user: { login: 'abbot' } })).toBe(false);
   });
