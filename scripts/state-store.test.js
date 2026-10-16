@@ -7,6 +7,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   STATE_TAG,
   KEEP_ASSETS,
+  KEEP_DAILY_DAYS,
+  dailyCloses,
+  pktDateOf,
   MAX_LOAD_ATTEMPTS,
   stateAssetName,
   newestFirst,
@@ -383,6 +386,50 @@ describe('createStateStore against a fake Releases API', () => {
     expect(names).toContain('state-live-1.json.gz');
     expect(names).toContain('state-new-1.json.gz');
     expect(newestFirst(gh.assets)).toHaveLength(KEEP_ASSETS);
+  });
+
+  it('keeps the last state of each Pakistan date beyond the newest few, for a history of the board', async () => {
+    const gh = fakeGitHub({ withRelease: true });
+    const HOUR = 3_600_000;
+    // Four days of hourly states, more than KEEP_ASSETS in all.
+    const hours = KEEP_ASSETS + 30;
+    for (let i = 0; i < hours; i += 1) {
+      gh.seed(`state-${i}-1.json.gz`, gz(board([`u${i}`])), { createdAt: START + i * HOUR });
+    }
+    gh.clock = START + hours * HOUR;
+    await storeFor(gh).save(board(['latest']), { name: 'state-new-1.json.gz' });
+    const left = newestFirst(gh.assets);
+    const dates = new Set(
+      gh.assets.filter((a) => a.name.startsWith('state-')).map((a) => pktDateOf(a.created_at))
+    );
+    // Every Pakistan date still has its last state, and nothing else old survives.
+    for (const date of dates) {
+      expect(left.some((a) => pktDateOf(a.created_at) === date)).toBe(true);
+    }
+    expect(left.length).toBeLessThanOrEqual(KEEP_ASSETS + dates.size);
+  });
+
+  it('counts a day by Pakistan time and keeps closes only for KEEP_DAILY_DAYS', () => {
+    expect(pktDateOf('2026-10-16T18:59:59Z')).toBe('2026-10-16');
+    expect(pktDateOf('2026-10-16T19:00:00Z')).toBe('2026-10-17');
+    const asset = (id, iso) => ({
+      id,
+      name: `state-${id}-1.json.gz`,
+      state: 'uploaded',
+      created_at: iso
+    });
+    const assets = [
+      asset(1, '2026-10-16T10:00:00Z'),
+      asset(2, '2026-10-16T18:00:00Z'),
+      asset(3, '2026-10-16T20:00:00Z')
+    ];
+    const closes = dailyCloses(assets, { now: Date.parse('2026-10-17T00:00:00Z') });
+    expect(closes.map((a) => a.id)).toEqual([3, 2]);
+    expect(
+      dailyCloses(assets, {
+        now: Date.parse('2026-10-17T00:00:00Z') + KEEP_DAILY_DAYS * 86_400_000
+      })
+    ).toEqual([]);
   });
 
   it('does not fail a save whose prune fails; the state is already written', async () => {
