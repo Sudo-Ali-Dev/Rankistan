@@ -1,4 +1,4 @@
-# Rank history (v3.3), a design for review
+# Rank History, a design for review
 
 **Status.** A proposal, written on 16 October 2026 from three design studies (the data, the look and
 place, and every edge case). Nothing below is built yet except two safeguards that could not wait,
@@ -214,8 +214,8 @@ rank, and a rank line and a score line under the current scoring only.
 ```
 
 **The developer page at `/#login`.** The badge already links there, but today the site ignores the
-link. It would show the full record, the card's history at full width, each spell on and off the
-board, and a collapsed section for older scoring if the owner wants one (see the questions).
+link. It would show the full record, the card's history at full width, and each spell on and off
+the board under the current scoring. A developer not on today's board has no page.
 
 **Register.** After a check, one short panel, "Rank 41 today, up 12 since yesterday. First on the
 board 17 October. Best rank 29 under the current scoring".
@@ -270,7 +270,7 @@ would mostly report other developers.
 
 ## Not doing
 
-- No v1 or v2 ranks or scores as numbers or lines.
+- Nothing from before scoring v3, not ranks, scores, lines, presence or first-listed dates.
 - No points recorded per run, and no best rank from an intraday peak.
 - No line, arrow or difference across a scoring change.
 - No red for a fall, no fallers list, no movement on the badge.
@@ -278,17 +278,16 @@ would mostly report other developers.
 - No history keyed by login.
 - No history in `data.json`, `board.json` or any bulk file.
 
-## Questions for the owner
+## Decided by the owner, 16 October 2026
 
-1. **Opting out.** Should it delete the history for good, so re-registering starts fresh? Recommended
-   yes.
-2. **Older scoring.** Show nothing from before v3, or one labelled fact such as "First listed June
-   2026, under older scoring"? Recommended the one fact at most, never ranks or lines.
-3. **Developers off the board.** Should someone no longer on the board keep a public page saying
-   when they were last on it? Recommended yes for 180 days, then deleted.
-4. **The version name.** Releases so far are named after the scoring model (v3.0.0, v3.1.0). Should
-   this be released as v3.3 although the scoring model stays 3.1, or should site releases and
-   scoring versions be named separately?
+1. **Opting out deletes the history for good.** Every point of that account is removed everywhere,
+   and re-registering starts a new history.
+2. **Nothing from before scoring v3.** History starts on 17 October 2026 for everyone. No old ranks,
+   scores, lines, presence or first-listed dates.
+3. **History shows only while a developer is on the board.** Someone who leaves has no public
+   history page. If they return within the retention period, their history comes back with them.
+4. **The feature has its own name, Rank History.** Version numbers stay for scoring changes only, so
+   this ships without changing `MODEL_VERSION` and is not called v3.3.
 
 ## Build order
 
