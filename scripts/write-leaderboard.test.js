@@ -29,17 +29,21 @@ describe('stripInternalFields', () => {
     expect(json.location).toBe('Lahore');
   });
 
-  it('keeps the shadow measurement and the events window, for the state and the next model', () => {
-    expect(OUTPUT_FIELDS).toContain('shadow_contributions');
-    expect(OUTPUT_FIELDS).toContain('events_window');
-    const block = { v: 1, at: '2026-10-14T00:00:00Z', t30: [1, 0, 0, 0, 0, 1, 0] };
-    const events = { fetched: 200, truncated: true, days: 6.1 };
+  it('keeps the measurement and the score parts, for the state and for recomputing', () => {
+    expect(OUTPUT_FIELDS).toContain('contributions');
+    expect(OUTPUT_FIELDS).toContain('score_parts');
+    expect(OUTPUT_FIELDS).not.toContain('activity_score');
+    expect(OUTPUT_FIELDS).not.toContain('shadow_contributions');
+    const block = { v: 2, at: '2026-10-14T00:00:00Z' };
+    const parts = { work: 0.5, collaboration: 0, appreciation: 0 };
     const row = stripInternalFields({
       ...developer,
-      shadow_contributions: block,
-      events_window: events
+      contributions: block,
+      score_parts: parts,
+      gate: true
     });
-    expect(row.shadow_contributions).toEqual(block);
-    expect(row.events_window).toEqual(events);
+    expect(row.contributions).toEqual(block);
+    expect(row.score_parts).toEqual(parts);
+    expect(row).not.toHaveProperty('gate');
   });
 });

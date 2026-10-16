@@ -57,42 +57,57 @@ export const BOARD_FIELDS = Object.freeze([
   'tags'
 ]);
 
-// Fields the pipeline keeps on a row for its own use and no page reads: the
-// shadow measurement of the next activity model's inputs, how far back the
-// events read behind today's reached (scripts/measure/contributions.js), and
-// the miss counter of a row a run did not see (mergeBatch in
-// scripts/run-all.js). They stay in data.json, which is the pipeline's state,
-// and out of every file derived for the browser, which therefore downloads
-// what it did before they existed. The measurement would roughly double a
-// detail file, and a miss counter is bookkeeping, not a fact about anyone.
+// Fields the pipeline keeps on a row for its own use and no page reads: the contributions
+// measurement the score is computed from (scripts/measure/contributions.js, the field it had
+// before the switch included), and the miss counter of a row a run did not see (mergeBatch in
+// scripts/run-all.js). They stay in the state and out of every file derived for the browser. A
+// measurement is a few kilobytes per row; the evidence derived from it is published instead, in
+// each developer's own file.
 export const PIPELINE_ONLY_FIELDS = Object.freeze([
+  'contributions',
   'shadow_contributions',
   'events_window',
   'missed_runs',
   'missed_since'
 ]);
 
-/** A row as the browser is given it: everything but PIPELINE_ONLY_FIELDS. */
+// Fields only a developer's own file carries: the score's evidence, every working day and every
+// pull request, review and merge that counted, each a public GitHub item (src/model/evidence.js).
+// About 2 KB a row, so the board and data.json, which every visitor or the Worker downloads
+// whole, leave it out.
+export const DETAIL_ONLY_FIELDS = Object.freeze(['score_evidence']);
+
+/** A row as the browser is given it in a developer's own file: everything but PIPELINE_ONLY_FIELDS. */
 export function toDeveloperRow(row) {
   const out = { ...row };
   for (const field of PIPELINE_ONLY_FIELDS) delete out[field];
   return out;
 }
 
+/** A row as data.json serves it: also without DETAIL_ONLY_FIELDS. */
+function toPublicRow(row) {
+  const out = toDeveloperRow(row);
+  for (const field of DETAIL_ONLY_FIELDS) delete out[field];
+  return out;
+}
+
 /** Whether any row carries a PIPELINE_ONLY_FIELDS field. */
 export function hasPipelineOnlyFields(payload) {
   const rows = Array.isArray(payload?.leaderboard) ? payload.leaderboard : [];
-  return rows.some((row) => PIPELINE_ONLY_FIELDS.some((field) => row && field in row));
+  return rows.some((row) =>
+    [...PIPELINE_ONLY_FIELDS, ...DETAIL_ONLY_FIELDS].some((field) => row && field in row)
+  );
 }
 
 /**
- * The data.json the site serves: the pipeline's state with PIPELINE_ONLY_FIELDS removed from every
- * row, and every other field and its order untouched. The Worker downloads and parses this file
- * whole on Cloudflare's per-request CPU budget, and the browser's fallback caches it in
- * localStorage, so the shadow measurement (about +41%) must not reach it.
+ * The data.json the site serves: the pipeline's state with PIPELINE_ONLY_FIELDS and
+ * DETAIL_ONLY_FIELDS removed from every row, and every other field and its order untouched. The
+ * Worker downloads and parses this file whole on Cloudflare's per-request CPU budget, and the
+ * browser's fallback caches it in localStorage, so neither the measurement nor the evidence may
+ * reach it.
  */
 export function buildPublicPayload(payload) {
-  return { ...payload, leaderboard: payload.leaderboard.map(toDeveloperRow) };
+  return { ...payload, leaderboard: payload.leaderboard.map(toPublicRow) };
 }
 
 /** The Digest's tables, as many rows as the page renders. */

@@ -11,10 +11,13 @@
 //
 // dist/data.json is what the Worker and outside readers fetch from the site
 // root. It is public/data.json with the pipeline-only fields removed from every
-// row (PIPELINE_ONLY_FIELDS in split-data.js: the shadow measurement of the
-// next model's inputs and the miss counter), and byte-identical to it when no
-// row carries one. This
+// row (PIPELINE_ONLY_FIELDS in split-data.js: the contributions measurement and
+// the miss counter), and byte-identical to it when no row carries one. This
 // checks the copy Vite made rather than trusting it, then rewrites it.
+//
+// Each dev/<login>.json also carries `score_evidence`, derived here from the
+// row's measurement and the moderation list (src/model/evidence.js): what the
+// score was computed from, item by item, so anyone can check it.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,6 +31,9 @@ import {
   developerFileName,
   hasPipelineOnlyFields
 } from '../src/utils/split-data.js';
+import { scoreModel } from '../src/model/score.js';
+import { CONTRIBUTIONS_FIELD } from './measure/contributions.js';
+import { loadModerationFile, MODERATION_PATH } from './moderation.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SPLIT_OUTPUTS = ['board.json', 'digest.json', 'dev'];
@@ -43,7 +49,12 @@ function writeJson(file, value) {
  *   byte sizes of board.json and digest.json, the number of developer files,
  *   and the logins that got no file (they fall back to data.json in the browser).
  */
-export function buildSplitData({ sourcePath, outDir, log = console }) {
+export function buildSplitData({
+  sourcePath,
+  outDir,
+  moderation = loadModerationFile(path.join(ROOT, MODERATION_PATH)),
+  log = console
+}) {
   const sourceBytes = fs.readFileSync(sourcePath);
   const payload = JSON.parse(sourceBytes.toString('utf8'));
   if (!Array.isArray(payload?.leaderboard)) {
@@ -108,7 +119,10 @@ export function buildSplitData({ sourcePath, outDir, log = console }) {
       skipped.push(...rows.map((row) => row.username));
       continue;
     }
-    writeJson(path.join(devDir, name), buildDeveloperFile(payload, rows[0]));
+    writeJson(
+      path.join(devDir, name),
+      buildDeveloperFile(payload, withEvidence(rows[0], moderation))
+    );
     developers += 1;
   }
 
@@ -125,6 +139,21 @@ export function buildSplitData({ sourcePath, outDir, log = console }) {
     published: publicBytes.length,
     stripped: sourceBytes.length - publicBytes.length
   };
+}
+
+/**
+ * A row with its score's evidence, derived from its measurement: every working day and every pull
+ * request, review and merge that counted. Only the developer's own file carries it. A row with no
+ * measurement the model reads gets none.
+ */
+function withEvidence(row, moderation) {
+  const block = row?.[CONTRIBUTIONS_FIELD];
+  if (block == null) return row;
+  try {
+    return { ...row, score_evidence: scoreModel(block, { moderation }).evidence };
+  } catch {
+    return row;
+  }
 }
 
 function gzipSize(file) {

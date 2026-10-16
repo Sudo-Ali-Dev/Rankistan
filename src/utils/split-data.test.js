@@ -3,10 +3,12 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   BOARD_FIELDS,
+  DETAIL_ONLY_FIELDS,
   PIPELINE_ONLY_FIELDS,
   SPLIT_SCHEMA,
   buildBoard,
   buildDeveloperFile,
+  buildPublicPayload,
   buildDigest,
   developerFileName,
   developerFilePath,
@@ -14,7 +16,8 @@ import {
   isDeveloperFileFor,
   isDigestPayload,
   summarizeDigest,
-  toBoardRow
+  toBoardRow,
+  toDeveloperRow
 } from './split-data';
 import { ensureLeaderboardTags } from './tags';
 
@@ -104,12 +107,12 @@ describe('buildBoard', () => {
   it('computes tags the browser could no longer match from a board row', () => {
     // A row published without tags is matched against its bio and repository
     // text - none of which the board carries.
-    const untagged = REAL.leaderboard.findIndex(
-      (row) => !Array.isArray(row.tags) || row.tags.length === 0
-    );
-    expect(untagged).toBeGreaterThan(-1);
-    const expected = ensureLeaderboardTags(REAL.leaderboard).map((row) => row.tags);
-    expect(board.leaderboard.map((row) => row.tags)).toEqual(expected);
+    const untagged = {
+      ...REAL,
+      leaderboard: REAL.leaderboard.map((row, i) => (i === 0 ? { ...row, tags: [] } : row))
+    };
+    const expected = ensureLeaderboardTags(untagged.leaderboard).map((row) => row.tags);
+    expect(buildBoard(untagged).leaderboard.map((row) => row.tags)).toEqual(expected);
   });
 
   it('carries the file metadata and a schema version, and never the source rows', () => {
@@ -165,7 +168,12 @@ describe('buildDeveloperFile', () => {
   it('carries the row as the browser is given it, with its schema and date', () => {
     const row = REAL.leaderboard[0];
     const file = buildDeveloperFile(REAL, row);
-    expect(file).toEqual({ schema: SPLIT_SCHEMA, last_updated: REAL.last_updated, developer: row });
+    expect(file).toEqual({
+      schema: SPLIT_SCHEMA,
+      last_updated: REAL.last_updated,
+      developer: toDeveloperRow(row)
+    });
+    expect(file.developer).not.toHaveProperty('contributions');
     expect(isDeveloperFileFor(file, row.username.toUpperCase())).toBe(true);
     expect(isDeveloperFileFor(file, 'someone-else')).toBe(false);
   });
@@ -176,7 +184,8 @@ describe('pipeline-only fields', () => {
     ...REAL,
     leaderboard: REAL.leaderboard.map((row) => ({
       ...row,
-      shadow_contributions: { v: 1, at: '2026-10-14T00:00:00Z', cal60: [1, 2, 3] },
+      contributions: { v: 2, at: '2026-10-14T00:00:00Z' },
+      shadow_contributions: { v: 1, at: '2026-10-13T00:00:00Z', cal60: [1, 2, 3] },
       events_window: { fetched: 200, truncated: true, days: 6.1 },
       missed_runs: 1,
       missed_since: '2026-10-14T00:00:00.000Z'
@@ -185,11 +194,14 @@ describe('pipeline-only fields', () => {
 
   it('are named, and none is a board field', () => {
     expect(PIPELINE_ONLY_FIELDS).toEqual([
+      'contributions',
       'shadow_contributions',
       'events_window',
       'missed_runs',
       'missed_since'
     ]);
+    expect(DETAIL_ONLY_FIELDS).toEqual(['score_evidence']);
+    for (const field of DETAIL_ONLY_FIELDS) expect(BOARD_FIELDS).not.toContain(field);
     for (const field of PIPELINE_ONLY_FIELDS) expect(BOARD_FIELDS).not.toContain(field);
   });
 
@@ -201,6 +213,21 @@ describe('pipeline-only fields', () => {
         JSON.stringify(buildDeveloperFile(REAL, REAL.leaderboard[i]))
       );
     });
+  });
+});
+
+describe('detail-only fields', () => {
+  it("reach a developer's own file and nothing else", () => {
+    const evidence = { working_days: ['2026-10-01'] };
+    const withEvidence = {
+      ...REAL,
+      leaderboard: REAL.leaderboard.map((row) => ({ ...row, score_evidence: evidence }))
+    };
+    expect(
+      buildDeveloperFile(withEvidence, withEvidence.leaderboard[0]).developer.score_evidence
+    ).toEqual(evidence);
+    expect(JSON.stringify(buildBoard(withEvidence))).not.toContain('score_evidence');
+    expect(JSON.stringify(buildPublicPayload(withEvidence))).not.toContain('score_evidence');
   });
 });
 

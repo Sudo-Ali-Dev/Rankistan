@@ -1,14 +1,12 @@
 /**
  * The contributions measurement: what each developer did in public over the last 30 days, read
  * from GitHub's contributions API and search, and stored on their row in the compact form
- * defined in src/model/measurement.js.
+ * defined in src/model/measurement.js. It is what the score is computed from (src/model/), and
+ * what the eligibility gate reads (scripts/measure/gate.js).
  *
- * Shadow for now: the block is attached after scoring (scripts/run-all.js) and nothing scores
- * it. It holds what the next model (scoring v3) needs, so the board can switch in one run with
- * every row already measured. The events feed today's score reads is capped at 300 events, so
- * the busier a developer the less time it covers: one top-30 developer's "30 days" held 6.
- * `contributionsCollection` is keyed on dates instead and sees the whole window however busy the
- * account is.
+ * The events feed scoring v2 read was capped at 300 events, so the busier a developer the less
+ * time it covered: one top-30 developer's "30 days" held 6. `contributionsCollection` is keyed on
+ * dates instead and sees the whole window however busy the account is.
  *
  * ## What is read
  *
@@ -39,8 +37,9 @@
  *
  * ## Failure
  *
- * Fail-soft for the run, strict per developer: a developer is measured whole or not at all, and
- * one this run could not measure keeps the previous block, with its own `at` (attachShadow).
+ * Fail-soft for the run, strict per developer: a developer is measured whole or not at all. One
+ * this run could not measure was not evaluated: a row of theirs on the board is carried with its
+ * previous block (scripts/run-all.js), and removed only after UNMEASURED_AFTER_DAYS.
  * Within a request:
  *
  *   - 200 carrying `errors[]` is discarded whole and the batch split. The one exception is
@@ -89,7 +88,10 @@ import {
 
 export { SHAPE_VERSION, decodeMeasurement, encodeMeasurement, measurementWindow };
 
-export const SHADOW_FIELD = 'shadow_contributions';
+/** The row field the measurement is stored in. */
+export const CONTRIBUTIONS_FIELD = 'contributions';
+/** Where the measurement was stored while nothing scored it (2026-10-16 to the switch). */
+export const LEGACY_FIELD = 'shadow_contributions';
 
 /**
  * Developers per main request. Shape 1 measured 15 per request (2026-10-13); with pull
@@ -684,7 +686,7 @@ async function runSlices(
         if (!stats.stopped) {
           stats.stopped = error.message;
           log.warn(
-            `::warning title=SHADOW_CONTRIBUTIONS::Stopped measuring (${label}) after ${done} of ` +
+            `::warning title=CONTRIBUTIONS::Stopped measuring (${label}) after ${done} of ` +
               `${parts.length} requests: ${error.message}. Rows keep their previous block.`
           );
         }
@@ -703,7 +705,7 @@ async function runSlices(
 }
 
 /** A GraphQL client for this measurement: the discovery client, with long waits refused. */
-export function createShadowClient({ token, maxWaitMs = MAX_WAIT_MS, ...options }) {
+export function createMeasurementClient({ token, maxWaitMs = MAX_WAIT_MS, ...options }) {
   const sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   return createSearchClient({
     token,
@@ -764,12 +766,20 @@ export function integrityTargets(main) {
  * Measure `developers` (`{username, github_id}` rows). Never throws for GitHub's behaviour:
  * whatever cannot be measured is listed in `failed`.
  *
- * @returns {{ blocks: Map<string, object>, failed: Map<string, string>, stats: object }}
- *   `blocks` keyed by lowercased login, holding encoded blocks.
+ * `prefilter(partial)`, when given, sees each developer's measurement after the main phase (no
+ * searches or commit-date samples yet) and returns false for one who cannot pass the gate
+ * whatever those add: the searches and samples are then skipped, and the developer is listed in
+ * `ineligible` with that partial measurement, encoded. Working days come from the main phase
+ * alone, and the later phases can only remove days, so this never turns away anyone the gate
+ * would admit.
+ *
+ * @returns {{ blocks: Map<string, object>, ineligible: Map<string, object>,
+ *             failed: Map<string, string>, stats: object }}
+ *   `blocks` and `ineligible` keyed by lowercased login, holding encoded blocks.
  */
-export async function measureShadowContributions(
+export async function measureContributions(
   developers,
-  { client, now = Date.now(), batchSize = BATCH_SIZE, log = console }
+  { client, now = Date.now(), batchSize = BATCH_SIZE, prefilter = null, log = console }
 ) {
   const nowMs = now instanceof Date ? now.getTime() : now;
   const window = measurementWindow(nowMs);
@@ -876,6 +886,39 @@ export async function measureShadowContributions(
       }
       main.values.delete(keyOf(target));
       failed.set(keyOf(target), `a further page: ${error.message}`);
+    }
+  }
+
+  const assemble = (m, s, sampled) => ({
+    version: SHAPE_VERSION,
+    measured_at: measuredAt,
+    login: m.login,
+    github_id: m.github_id,
+    window: { from: window.from, to: window.to },
+    restricted: m.restricted,
+    commits: m.commits,
+    pull_requests: [...m.lists.pull_requests.values()],
+    issues: [...m.lists.issues.values()],
+    reviews: [...m.lists.reviews.values()],
+    accepted: s ? [...s.accepted.values()] : [],
+    maintained: s ? [...s.maintained.values()] : [],
+    future_repos: m.future_repos,
+    integrity: sampled,
+    cut: m.cut
+  });
+
+  // The gate's early answer: no searches or samples for someone who cannot pass it.
+  const ineligible = new Map();
+  if (prefilter) {
+    for (const target of targets) {
+      const key = keyOf(target);
+      const m = main.values.get(key);
+      if (!m) continue;
+      const partial = assemble(m, null, []);
+      if (!prefilter(partial)) {
+        ineligible.set(key, encodeMeasurement(partial));
+        main.values.delete(key);
+      }
     }
   }
 
@@ -1012,6 +1055,7 @@ export async function measureShadowContributions(
   const blocks = new Map();
   for (const target of targets) {
     const key = keyOf(target);
+    if (ineligible.has(key)) continue;
     const m = main.values.get(key);
     const s = search.values.get(key);
     if (!m || !s) {
@@ -1024,24 +1068,7 @@ export async function measureShadowContributions(
       if (value) sampled.push(value);
       else m.cut |= CUT_INTEGRITY;
     }
-    const measurement = {
-      version: SHAPE_VERSION,
-      measured_at: measuredAt,
-      login: m.login,
-      github_id: m.github_id,
-      window: { from: window.from, to: window.to },
-      restricted: m.restricted,
-      commits: m.commits,
-      pull_requests: [...m.lists.pull_requests.values()],
-      issues: [...m.lists.issues.values()],
-      reviews: [...m.lists.reviews.values()],
-      accepted: [...s.accepted.values()],
-      maintained: [...s.maintained.values()],
-      future_repos: m.future_repos,
-      integrity: sampled,
-      cut: m.cut
-    };
-    blocks.set(key, encodeMeasurement(measurement));
+    blocks.set(key, encodeMeasurement(assemble(m, s, sampled)));
     failed.delete(key);
   }
 
@@ -1049,12 +1076,13 @@ export async function measureShadowContributions(
   stats.requests = end.requests - start.requests;
   stats.points = end.points - start.points;
   log.log(
-    `Contributions measured: ${blocks.size} of ${targets.length}, ${failed.size} failed, ` +
+    `Contributions measured: ${blocks.size} of ${targets.length} in full, ` +
+      `${ineligible.size} short of the gate on their working days alone, ${failed.size} failed, ` +
       `${stats.degraded} on a shorter repository list; ${stats.requests} requests, ` +
       `${stats.points} points, ${stats.rejected} rejected, ${stats.bisections} bisections, ` +
       `${stats.retries} retries.`
   );
-  return { blocks, failed, stats };
+  return { blocks, ineligible, failed, stats };
 }
 
 /**
@@ -1092,106 +1120,4 @@ export async function screenCalendars(candidates, { client, now = Date.now(), lo
     log
   });
   return { days: values, failed, stats };
-}
-
-/** Previous blocks from board rows, keyed by account id and by login. */
-export function previousBlocks(rows) {
-  const byId = new Map();
-  const byLogin = new Map();
-  for (const row of rows || []) {
-    const block = row?.[SHADOW_FIELD];
-    if (!block) continue;
-    if (Number.isInteger(row.github_id)) byId.set(row.github_id, { block, row });
-    if (typeof row.username === 'string') byLogin.set(row.username.toLowerCase(), { block, row });
-  }
-  return { byId, byLogin };
-}
-
-/**
- * Each developer with this run's block, or failing that the previous one for the same account,
- * unchanged with its own `at`. A block is never assembled from parts: it is one measurement.
- *
- * @returns {{ developers: object[], fresh: number, kept: number, none: number }}
- */
-export function attachShadow(developers, { blocks, previous = previousBlocks([]) }) {
-  let fresh = 0;
-  let kept = 0;
-  let none = 0;
-  const out = (developers || []).map((dev) => {
-    const login = String(dev?.username || '').toLowerCase();
-    const block = blocks.get(login);
-    if (block) {
-      fresh += 1;
-      return { ...dev, [SHADOW_FIELD]: block };
-    }
-    const id = Number.isInteger(dev?.github_id) ? dev.github_id : null;
-    let prior = id != null ? previous.byId.get(id) : undefined;
-    if (!prior) {
-      const candidate = previous.byLogin.get(login);
-      // By login only when neither side has an id to contradict it.
-      const otherId = candidate?.row?.github_id;
-      if (candidate && (id == null || !Number.isInteger(otherId) || otherId === id)) {
-        prior = candidate;
-      }
-    }
-    if (prior) {
-      kept += 1;
-      return { ...dev, [SHADOW_FIELD]: prior.block };
-    }
-    none += 1;
-    const rest = { ...dev };
-    delete rest[SHADOW_FIELD];
-    return rest;
-  });
-  return { developers: out, fresh, kept, none };
-}
-
-function describeFailures(failed, shown = 5) {
-  const list = [...failed].slice(0, shown).map(([login, reason]) => `${login}: ${reason}`);
-  const more = failed.size > shown ? `; +${failed.size - shown} more` : '';
-  return list.length ? ` (${list.join('; ')}${more})` : '';
-}
-
-/**
- * The pipeline's step: measure `developers`, attach this run's blocks, keep the previous block
- * for anyone this run could not measure. Never throws: the measurement is not scored yet, and a
- * batch must not fail for it.
- *
- * @param {object[]} developers  scored rows; the block is attached after scoring
- * @param {{existing: object[], client: object|null, now: number, log: object}} options
- *   `existing` is the board the run loaded, where previous blocks are found.
- */
-export async function shadowContributionsStep(
-  developers,
-  { existing = [], client, now = Date.now(), log = console } = {}
-) {
-  const previous = previousBlocks(existing);
-  let blocks = new Map();
-  if (!client) {
-    log.warn('::warning title=SHADOW_CONTRIBUTIONS::No GitHub token; nothing measured.');
-  } else if (developers.length > 0) {
-    try {
-      const measured = await measureShadowContributions(developers, { client, now, log });
-      blocks = measured.blocks;
-      if (measured.failed.size > 0) {
-        log.log(`Contributions not measured${describeFailures(measured.failed)}.`);
-      }
-      if (measured.stats.developers > 0 && blocks.size === 0) {
-        log.warn(
-          `::warning title=SHADOW_CONTRIBUTIONS::Measured none of ${measured.stats.developers} developers.`
-        );
-      }
-    } catch (error) {
-      log.warn(
-        `::warning title=SHADOW_CONTRIBUTIONS::Shadow measurement failed: ${error.message}. ` +
-          'Rows keep their previous block.'
-      );
-    }
-  }
-  const attached = attachShadow(developers, { blocks, previous });
-  log.log(
-    `Contributions on this batch's rows: ${attached.fresh} measured this run, ` +
-      `${attached.kept} kept from an earlier run, ${attached.none} without one.`
-  );
-  return attached;
 }

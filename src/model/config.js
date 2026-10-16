@@ -1,91 +1,88 @@
 /**
- * The scoring configuration, validated once, for every caller.
+ * The scoring configuration (score-config.json), validated once, for every caller.
  *
- * Before this module the formula read score-config.json from two places, and
- * one of them carried a shadow copy of every value as a `??` default
- * (`config.STAR_WEIGHT ?? 2`). Deleting a key from the file therefore did two
- * different things: the pipeline multiplied by `undefined` and scored NaN,
- * which it then wrote as 0, while the Register preview kept using 2. Neither
- * said anything.
+ * The model reads no key that is not declared below, a missing, malformed or unknown key is an
+ * exception that names it, and there is no fallback value anywhere: a config the model cannot
+ * read is a build that does not start, which CI sees, rather than a board that is silently
+ * wrong. (Version 2 once read the file from two places, one with a `??` default for every value,
+ * so deleting a key scored NaN in the pipeline and kept the old number in the browser.) And:
  *
- * So the model reads no key that is not declared below, and a missing or
- * malformed key is an exception that names it. There is no fallback value
- * anywhere in src/model/: a config the model cannot read is a build that does
- * not start, which CI sees, rather than a board that is silently wrong.
+ *   - every constant carries its reason in DERIVATIONS, keyed by its path, and a constant without
+ *     one is an error. A number nobody can explain is a number nobody can defend, or safely
+ *     change.
+ *   - cross-checks: the weights sum to 1, the window is the measurement's window, the gate fits
+ *     in the window.
  *
- * Pure ESM with no Node-only imports: the pipeline and the Vite bundle both
- * load this file.
+ * Pure ESM with no Node-only imports: the pipeline, the Vite bundle and the Worker load it.
  */
 import rawConfig from '../../score-config.json' with { type: 'json' };
+import { WINDOW_DAYS as MEASURED_WINDOW_DAYS } from './measurement.js';
 
-/**
- * `MODEL_VERSION` is semver over *published output*, and it is stamped on
- * every row the pipeline scores:
- *
- *   major - any developer's score can change (a weight, a cap, the curve).
- *   minor - published fields or the ordering change; every score is unchanged.
- *   patch - no published output changes at all.
- *
- * The same rule is written beside the version in score-config.json, as
- * `MODEL_VERSION_RULE`, so it is in front of whoever edits a number there.
- */
+const FILE = 'score-config.json';
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-export const ACTIVITY_TYPES = Object.freeze(['push', 'issue', 'pr', 'release']);
-
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
-const nonNegative = (v) => isFiniteNumber(v) && v >= 0;
 const positive = (v) => isFiniteNumber(v) && v > 0;
-const nonNegativeInteger = (v) => Number.isInteger(v) && v >= 0;
+const unit = (v) => isFiniteNumber(v) && v >= 0 && v <= 1;
+const openUnit = (v) => isFiniteNumber(v) && v > 0 && v <= 1;
 const positiveInteger = (v) => Number.isInteger(v) && v > 0;
+const text = (v) => typeof v === 'string' && v.trim() !== '';
 
-/**
- * Every key the model reads, and what it must hold. Order is the order errors
- * are reported in.
- */
-const RULES = [
-  ['MODEL_VERSION', (v) => typeof v === 'string' && SEMVER.test(v), 'a semver string like "2.0.0"'],
-  ['MODEL_VERSION_RULE', (v) => typeof v === 'string' && v.trim() !== '', 'a non-empty string'],
-  ['STAR_WEIGHT', nonNegative, 'a finite number >= 0'],
-  ['WEIGHTS.followers', nonNegative, 'a finite number >= 0'],
-  ['WEIGHTS.publicRepos', nonNegative, 'a finite number >= 0'],
-  ['MAX_STARS_FOR_SCORING', nonNegativeInteger, 'an integer >= 0'],
-  ['MAX_FOLLOWERS_FOR_SCORING', nonNegativeInteger, 'an integer >= 0'],
-  ['MAX_PUBLIC_REPOS_FOR_SCORING', nonNegativeInteger, 'an integer >= 0'],
-  ['SIX_MONTHS_DAYS', positiveInteger, 'an integer number of days > 0'],
+export const PART_IDS = Object.freeze(['work', 'collaboration', 'appreciation']);
+
+/** Every number the model reads, and what it must hold. Order is the order errors are reported. */
+const NUMBERS = [
+  ['SCALE', positiveInteger, 'an integer > 0'],
+  ...PART_IDS.map((id) => [`WEIGHTS.${id}`, unit, 'a number in [0, 1]']),
+  ['WINDOW_DAYS', positiveInteger, 'an integer number of days > 0'],
+  ['RECENCY_FLOOR', openUnit, 'a number in (0, 1]'],
+  ['WORK.CURVE_POWER', (v) => isFiniteNumber(v) && v >= 1, 'a number >= 1'],
+  ['WORK.GATE_MIN_DAYS', positiveInteger, 'an integer number of days > 0'],
+  ['MIN_ACCOUNT_AGE_DAYS', (v) => Number.isInteger(v) && v >= 0, 'an integer number of days >= 0'],
+  ['COLLABORATION.HALF_POINT', positive, 'a number > 0'],
+  ['COLLABORATION.CAP_PER_GROUP', positive, 'a number > 0'],
+  ['COLLABORATION.REVIEW_WEIGHT', unit, 'a number in [0, 1]'],
+  ['COLLABORATION.MAINTAINED_WEIGHT', unit, 'a number in [0, 1]'],
   [
-    'AGE_PENALTY_MULTIPLIER',
-    (v) => isFiniteNumber(v) && v > 0 && v <= 1,
-    'a finite number in (0, 1]'
+    'COLLABORATION.COUNTERPARTY_MIN_AGE_DAYS',
+    (v) => Number.isInteger(v) && v >= 0,
+    'an integer >= 0'
   ],
-  ...ACTIVITY_TYPES.flatMap((type) => [
-    [`ACTIVITY_SCORING.${type}.base`, positive, 'a finite number > 0'],
-    [`ACTIVITY_SCORING.${type}.dailyCap`, positive, 'a finite number > 0'],
-    // Explicitly null rather than absent, so that deleting push's limit is an
-    // error and not a quiet switch to "count every push".
-    [
-      `ACTIVITY_SCORING.${type}.maxCountedPerDay`,
-      (v) => v === null || positiveInteger(v),
-      'null (no per-day limit) or an integer > 0'
-    ]
-  ])
+  ['COLLABORATION.REJECTION_PRIOR', positive, 'a number > 0'],
+  ['COLLABORATION.STARS_FLOOR', unit, 'a number in [0, 1]'],
+  ['COLLABORATION.STARS_PER_DIGIT', positive, 'a number > 0'],
+  ['COLLABORATION.TINY_MAX_FILES', (v) => Number.isInteger(v) && v >= 0, 'an integer >= 0'],
+  ['COLLABORATION.TINY_MAX_LINES', (v) => Number.isInteger(v) && v >= 0, 'an integer >= 0'],
+  ['COLLABORATION.TINY_WEIGHT', unit, 'a number in [0, 1]'],
+  ['APPRECIATION.FROM_STARS', positiveInteger, 'an integer > 0'],
+  ['APPRECIATION.DECADES', positive, 'a number > 0'],
+  ['APPRECIATION.FULL_AFTER_DAYS', positiveInteger, 'an integer number of days > 0'],
+  ['INTEGRITY.MAX_LEAD_HOURS', (v) => isFiniteNumber(v) && v >= 0, 'a number of hours >= 0'],
+  ['INTEGRITY.MAX_AHEAD_HOURS', (v) => isFiniteNumber(v) && v >= 0, 'a number of hours >= 0'],
+  ['INTEGRITY.BOT_SHARE', openUnit, 'a number in (0, 1]']
 ];
 
-/** Every key path the model requires, in report order. */
-export const REQUIRED_CONFIG_KEYS = Object.freeze(RULES.map(([key]) => key));
+const RULES = [
+  ['MODEL_VERSION', (v) => typeof v === 'string' && SEMVER.test(v), 'a semver string like "3.0.0"'],
+  ['MODEL_VERSION_RULE', text, 'a non-empty string'],
+  ...NUMBERS
+];
 
-// Every path that must be an object because a required key sits beneath it.
+/** The constants that need a derivation: every number. */
+export const DERIVED_KEYS = Object.freeze(NUMBERS.map(([key]) => key));
+export const REQUIRED_CONFIG_KEYS = Object.freeze([...RULES.map(([key]) => key), 'DERIVATIONS']);
+
 const CONTAINERS = new Set(
-  REQUIRED_CONFIG_KEYS.flatMap((key) => {
+  RULES.flatMap(([key]) => {
     const parts = key.split('.');
     return parts.slice(1).map((_, i) => parts.slice(0, i + 1).join('.'));
   })
 );
-const KNOWN = new Set([...REQUIRED_CONFIG_KEYS, ...CONTAINERS]);
+const KNOWN = new Set([...RULES.map(([key]) => key), ...CONTAINERS, 'DERIVATIONS']);
 
 export class ScoreConfigError extends Error {
   constructor(key, message) {
-    super(`score-config.json: ${message}`);
+    super(`${FILE}: ${message}`);
     this.name = 'ScoreConfigError';
     this.key = key;
   }
@@ -93,15 +90,8 @@ export class ScoreConfigError extends Error {
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+const describe = (value) => (value === undefined ? 'undefined' : JSON.stringify(value));
 
-function describe(value) {
-  if (value === undefined) return 'undefined';
-  return JSON.stringify(value);
-}
-
-// A key nobody reads is a key somebody will edit expecting it to do
-// something. `WEIGHTS.pr` survived for months after ACTIVITY_SCORING replaced
-// it, and changing it did nothing.
 function rejectUnknownKeys(obj, prefix) {
   for (const key of Object.keys(obj)) {
     const path = prefix ? `${prefix}.${key}` : key;
@@ -145,34 +135,71 @@ function deepFreeze(value) {
 const validated = new WeakSet();
 
 /**
- * Returns a frozen, validated copy of `config`, or throws a ScoreConfigError
- * naming the first key that is missing, malformed or unknown.
+ * Returns a frozen, validated copy of `config`, or throws a ScoreConfigError naming the first key
+ * that is missing, malformed, unknown, unexplained or inconsistent.
  */
 export function validateScoreConfig(config) {
   if (!isPlainObject(config)) {
     throw new ScoreConfigError('', `expected an object, got ${describe(config)}`);
   }
-
   for (const [key, check, expected] of RULES) {
     const value = lookup(config, key);
     if (!check(value)) {
       throw new ScoreConfigError(key, `\`${key}\` must be ${expected}, got ${describe(value)}`);
     }
   }
-
   rejectUnknownKeys(config, '');
+
+  const derivations = config.DERIVATIONS;
+  if (!isPlainObject(derivations)) {
+    throw new ScoreConfigError('DERIVATIONS', '`DERIVATIONS` must be an object of reasons');
+  }
+  for (const key of DERIVED_KEYS) {
+    if (!text(derivations[key])) {
+      throw new ScoreConfigError(
+        `DERIVATIONS.${key}`,
+        `\`${key}\` has no derivation; say why it is ${describe(lookup(config, key))}`
+      );
+    }
+  }
+  for (const key of Object.keys(derivations)) {
+    if (!DERIVED_KEYS.includes(key)) {
+      throw new ScoreConfigError(
+        `DERIVATIONS.${key}`,
+        `a derivation for \`${key}\`, which is not a constant the model reads`
+      );
+    }
+  }
+
+  const weights = PART_IDS.reduce((sum, id) => sum + config.WEIGHTS[id], 0);
+  if (Math.abs(weights - 1) > 1e-12) {
+    throw new ScoreConfigError('WEIGHTS', `the weights must sum to 1, not ${weights}`);
+  }
+  if (config.WINDOW_DAYS !== MEASURED_WINDOW_DAYS) {
+    throw new ScoreConfigError(
+      'WINDOW_DAYS',
+      `\`WINDOW_DAYS\` is ${config.WINDOW_DAYS}, but the measurement covers ${MEASURED_WINDOW_DAYS} days`
+    );
+  }
+  if (config.WORK.GATE_MIN_DAYS > config.WINDOW_DAYS) {
+    throw new ScoreConfigError(
+      'WORK.GATE_MIN_DAYS',
+      'the gate needs more days than the window holds'
+    );
+  }
+  if (config.APPRECIATION.FULL_AFTER_DAYS > config.WINDOW_DAYS) {
+    throw new ScoreConfigError(
+      'APPRECIATION.FULL_AFTER_DAYS',
+      'full appreciation needs more days than the window holds'
+    );
+  }
 
   const copy = deepFreeze(JSON.parse(JSON.stringify(config)));
   validated.add(copy);
   return copy;
 }
 
-/**
- * The model takes its config as an argument so tests can vary it, but only a
- * config that has been through validateScoreConfig. Validating on every call
- * would be cheap; letting an unvalidated object through even once is how the
- * `??` defaults got started.
- */
+/** The model takes its config as an argument so tests can vary it, but only a validated one. */
 export function assertValidatedConfig(config) {
   if (!validated.has(config)) {
     throw new TypeError(
@@ -191,5 +218,4 @@ export function majorVersion(version) {
 
 /** The configuration every caller scores with. */
 export const SCORE_CONFIG = validateScoreConfig(rawConfig);
-
 export const MODEL_VERSION = SCORE_CONFIG.MODEL_VERSION;

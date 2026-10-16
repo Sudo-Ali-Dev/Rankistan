@@ -7,23 +7,19 @@ import {
   MAX_SINGLE_RETRIES,
   MAX_WAIT_MS,
   SEARCH_BATCH_SIZE,
-  SHADOW_FIELD,
-  attachShadow,
   buildQuery,
   buildSearchQuery,
   calendarActiveDays,
-  createShadowClient,
+  createMeasurementClient,
   decodeMeasurement,
   integrityTargets,
   judgeAliased,
-  measureShadowContributions,
-  previousBlocks,
+  measureContributions,
   readIntegrity,
   readMain,
   readSearchPage,
   screenCalendars,
-  searchQueries,
-  shadowContributionsStep
+  searchQueries
 } from './contributions.js';
 import {
   CUT_DEGRADED,
@@ -46,12 +42,6 @@ import {
   repo,
   reviewNode
 } from './fake-contributions.js';
-import { verifyPublished } from '../verify-published.js';
-import { scoreDevelopers } from '../score.js';
-import { scoreFromPublished, scoreModel } from '../../src/model/score.js';
-import { SCORE_CONFIG } from '../../src/model/config.js';
-import fs from 'node:fs';
-import path from 'node:path';
 
 const quiet = { log() {}, warn() {} };
 
@@ -59,7 +49,7 @@ function client(fetchImpl, extra = {}) {
   const waits = [];
   return {
     waits,
-    client: createShadowClient({
+    client: createMeasurementClient({
       token: 't',
       fetchImpl,
       sleep: async (ms) => waits.push(ms),
@@ -81,7 +71,7 @@ async function measure(rows, fetchImpl, options = {}) {
   const { client: c, waits } = client(fetchImpl, options.client);
   const lines = [];
   const log = { log: (line) => lines.push(line), warn: (line) => lines.push(line) };
-  const result = await measureShadowContributions(rows, {
+  const result = await measureContributions(rows, {
     client: c,
     now: NOW,
     log,
@@ -351,7 +341,7 @@ describe('judgeAliased', () => {
   });
 });
 
-describe('measureShadowContributions', () => {
+describe('measureContributions', () => {
   it(`measures ${BATCH_SIZE} developers per main request and ${SEARCH_BATCH_SIZE} per search`, async () => {
     const rows = devs(7);
     const fake = fakeGitHub(peopleFor(rows));
@@ -526,9 +516,7 @@ describe('measureShadowContributions', () => {
     // Nothing after the stop is sent, and nothing measured before it is stored half-done.
     expect(blocks.size).toBe(0);
     expect(failed.size).toBe(8);
-    expect(lines.some((line) => line.startsWith('::warning title=SHADOW_CONTRIBUTIONS::'))).toBe(
-      true
-    );
+    expect(lines.some((line) => line.startsWith('::warning title=CONTRIBUTIONS::'))).toBe(true);
   });
 
   it('is fail-soft on a rejected credential: every developer listed as failed', async () => {
@@ -570,109 +558,21 @@ describe('screenCalendars', () => {
   });
 });
 
-describe('attachShadow', () => {
-  const block = (at) => ({ v: 2, at });
-  const previous = previousBlocks([
-    { username: 'ana', github_id: 1, [SHADOW_FIELD]: block('2026-10-13T09:00:00Z') },
-    { username: 'old-name', github_id: 2, [SHADOW_FIELD]: block('2026-10-12T09:00:00Z') },
-    { username: 'taken', github_id: 3, [SHADOW_FIELD]: block('2026-10-11T09:00:00Z') }
-  ]);
-
-  it("uses this run's block, or else keeps the previous one with its own date", () => {
-    const fresh = block('2026-10-14T09:30:00Z');
-    const { developers, ...counts } = attachShadow(
-      [
-        { username: 'ana', github_id: 1 },
-        { username: 'new-name', github_id: 2 },
-        { username: 'nobody', github_id: 9 }
-      ],
-      { blocks: new Map([['ana', fresh]]), previous }
-    );
-    expect(developers[0][SHADOW_FIELD]).toBe(fresh);
-    expect(developers[1][SHADOW_FIELD].at).toBe('2026-10-12T09:00:00Z');
-    expect(developers[2]).not.toHaveProperty(SHADOW_FIELD);
-    expect(counts).toEqual({ fresh: 1, kept: 1, none: 1 });
-  });
-
-  it('never hands one account the block of another that held its login', () => {
-    const { developers } = attachShadow([{ username: 'taken', github_id: 4 }], {
-      blocks: new Map(),
-      previous
-    });
-    expect(developers[0]).not.toHaveProperty(SHADOW_FIELD);
-  });
-});
-
-describe('shadowContributionsStep', () => {
-  it('attaches fresh blocks, keeps the previous one for a failure, and summarises', async () => {
-    const rows = devs(2);
+describe('the prefilter', () => {
+  it('skips the searches and samples for a developer who cannot pass the gate, and lists them', async () => {
+    const rows = devs(3);
     const people = peopleFor(rows);
-    delete people.dev1;
-    const { client: c } = client(fakeGitHub(people).fetchImpl);
-    const lines = [];
-    const log = { log: (l) => lines.push(l), warn: (l) => lines.push(l) };
-    const existing = [
-      { username: 'dev1', github_id: 1001, [SHADOW_FIELD]: { v: 2, at: 'earlier' } }
-    ];
-    const { developers, fresh, kept } = await shadowContributionsStep(rows, {
-      existing,
-      client: c,
-      now: NOW,
-      log
+    people.dev1 = person('dev1', { id: 1001, commits: { 'dev1/app': { 0: 1 } } });
+    const fake = fakeGitHub(people);
+    const { blocks, ineligible } = await measure(rows, fake.fetchImpl, {
+      run: { prefilter: (m) => m.commits.reduce((n, r) => n + r.days.length, 0) >= 2 }
     });
-    expect(fresh).toBe(1);
-    expect(kept).toBe(1);
-    expect(developers[1][SHADOW_FIELD].at).toBe('earlier');
-    expect(lines.at(-1)).toBe(
-      "Contributions on this batch's rows: 1 measured this run, 1 kept from an earlier run, 0 without one."
-    );
-  });
-
-  it('never throws, whatever the measurement does', async () => {
-    const broken = {
-      query: async () => {
-        throw new TypeError('boom');
-      },
-      usage: () => ({ requests: 0, points: 0 }),
-      sleep: async () => {}
-    };
-    const result = await shadowContributionsStep(devs(1), { client: broken, now: NOW, log: quiet });
-    expect(result.none).toBe(1);
-  });
-});
-
-describe('the score does not see the block', () => {
-  const sample = JSON.parse(
-    fs.readFileSync(path.join(process.cwd(), 'fixtures', 'data.sample.json'), 'utf8')
-  );
-  const withBlocks = {
-    ...sample,
-    leaderboard: sample.leaderboard.map((row) => ({
-      ...row,
-      [SHADOW_FIELD]: { v: 2, at: 'x', cr: [['a/b', 1, 1, [0, 999999]]] }
-    }))
-  };
-
-  it('recomputes every published score identically with and without one', () => {
-    const stamped = withBlocks.leaderboard.filter((row) => row.model_version);
-    for (const row of stamped)
-      expect(scoreFromPublished(row)).toBe(
-        scoreFromPublished({ ...row, [SHADOW_FIELD]: undefined })
-      );
-    expect(verifyPublished(withBlocks, { allowMixedVersions: true }).errors).toEqual([]);
-  });
-
-  it('scores a developer identically with and without one', () => {
-    const dev = {
-      total_stars: 3,
-      followers: 4,
-      public_repos: 5,
-      created_at: '2020-01-01T00:00:00Z',
-      raw_events_60d: []
-    };
-    const a = scoreModel(dev, { config: SCORE_CONFIG, now: NOW });
-    const b = scoreModel({ ...dev, [SHADOW_FIELD]: { v: 2 } }, { config: SCORE_CONFIG, now: NOW });
-    expect(b).toEqual(a);
-    expect(scoreDevelopers([{ username: 'x', ...dev }], { now: NOW })[0].score).toBe(a.score);
+    expect([...blocks.keys()].sort()).toEqual(['dev0', 'dev2']);
+    expect([...ineligible.keys()]).toEqual(['dev1']);
+    expect(decodeMeasurement(ineligible.get('dev1')).accepted).toEqual([]);
+    const searched = fake.calls
+      .filter((c) => c.kind === 'search')
+      .flatMap((c) => Object.values(c.variables));
+    expect(searched.some((q) => q.includes('dev1'))).toBe(false);
   });
 });

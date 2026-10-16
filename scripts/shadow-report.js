@@ -17,11 +17,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SHADOW_FIELD, decodeMeasurement } from './measure/contributions.js';
-import { workingDays, GATE_MIN_DAYS } from './measure/prescreen-log.js';
-import { deriveEvidence } from '../src/model/next/evidence.js';
-import { scoreEvidence } from '../src/model/next/score.js';
-import { SCORE_CONFIG as NEXT_CONFIG } from '../src/model/next/config.js';
+import { CONTRIBUTIONS_FIELD, LEGACY_FIELD, decodeMeasurement } from './measure/contributions.js';
+import { workingDays, GATE_MIN_DAYS } from './measure/gate.js';
+import { deriveEvidence } from '../src/model/evidence.js';
+import { scoreEvidence } from '../src/model/score.js';
+import { SCORE_CONFIG as NEXT_CONFIG } from '../src/model/config.js';
 import {
   CUT_ACCEPTED,
   CUT_COMMIT_REPOS,
@@ -33,6 +33,7 @@ import {
   CUT_REVIEWS,
   FLAG_FORK,
   FLAG_OWNED,
+  FLAG_PROFILE,
   KIND_BOT,
   KIND_USER,
   OUTCOME_CLOSED,
@@ -216,7 +217,7 @@ function cadence(days) {
  * like a metronome).
  */
 export function nextModelPreview(measured, { config = NEXT_CONFIG } = {}) {
-  const out = ['## Scoring v3 preview', ''];
+  const out = ['## Scoring v3', ''];
   if (measured.length === 0) return out;
   const scored = measured.map(({ row, m }) => ({
     row,
@@ -302,6 +303,8 @@ export function nextModelPreview(measured, { config = NEXT_CONFIG } = {}) {
   const suspects = scored
     .flatMap(({ m, r }) =>
       m.commits
+        // forks and profile repositories never count, so there is nothing for a moderator to decide
+        .filter((c) => !(c.flags & (FLAG_FORK | FLAG_PROFILE)))
         .filter((c) => c.days.length >= 20 && !r.evidence.excluded.some((e) => e.repo === c.repo))
         .map((c) => ({
           login: m.login,
@@ -347,7 +350,7 @@ export function buildReport(payload, { source = 'board' } = {}) {
   let undecodable = 0;
   let bytes = 0;
   for (const row of rows) {
-    const block = row?.[SHADOW_FIELD];
+    const block = row?.[CONTRIBUTIONS_FIELD] ?? row?.[LEGACY_FIELD];
     if (block == null) continue;
     if (block.v !== SHAPE_VERSION) {
       previousShape += 1;
@@ -379,7 +382,7 @@ export function buildReport(payload, { source = 'board' } = {}) {
   const ages = measured.map(({ m }) => (boardAt - Date.parse(m.measured_at)) / 3600000);
   out.push(
     `Block age at the board's last update, hours: ${describeStats(summarize(ages), 1)}.`,
-    `Block size, bytes: ${describeStats(summarize(measured.map(({ row }) => JSON.stringify(row[SHADOW_FIELD]).length)))}; ` +
+    `Block size, bytes: ${describeStats(summarize(measured.map(({ row }) => JSON.stringify(row[CONTRIBUTIONS_FIELD] ?? row[LEGACY_FIELD]).length)))}; ` +
       `${bytes} in all.`,
     ''
   );

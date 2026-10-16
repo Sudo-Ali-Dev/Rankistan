@@ -3,15 +3,7 @@ import fsSync from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const STRIP_FIELDS = new Set([
-  'total_contributions_60d',
-  'longest_gap_days',
-  'raw_events_60d',
-  'repos_active_7d',
-  'following',
-  'age_penalty_applied',
-  'event_counts_30d'
-]);
+const STRIP_FIELDS = new Set(['repos_active_7d', 'following', 'gate']);
 
 export const OUTPUT_FIELDS = [
   'rank',
@@ -35,12 +27,12 @@ export const OUTPUT_FIELDS = [
   'linkedin_url',
   'tags',
   'score',
-  // Enough to recompute `score` from this row alone (src/model/score.js,
+  // Enough to recompute `score` without the measurement (src/model/score.js,
   // recomputePublished) and to order the board without the rounding:
-  // `score_exact` is the unrounded score, `activity_score` the exact activity
-  // term, and `scored_at` the instant the age penalty was measured from.
+  // `score_exact` is the unrounded score, `score_parts` the three parts it is
+  // the weighted sum of, and `scored_at` when its measurement was taken.
   'score_exact',
-  'activity_score',
+  'score_parts',
   'model_version',
   'scored_at',
   'batch_index',
@@ -49,14 +41,10 @@ export const OUTPUT_FIELDS = [
   // scripts/discovery/locations.js) or `registered`. Context only: nothing
   // scores it, and a row measured before it existed has none.
   'discovery_source',
-  // How far back the events read that `activity_score` came from reached
-  // (scripts/fetch-devs.js, eventsWindow). Context only.
-  'events_window',
-  // The next activity model's inputs, measured and dated, scored by nothing
-  // (scripts/measure/contributions.js). Kept here so the state carries them
-  // for the model that will read them; split-data.js keeps both out of every
-  // file the browser reads.
-  'shadow_contributions'
+  // The measurement the score is computed from (scripts/measure/contributions.js), so every run
+  // can score the whole board again from the state alone. split-data.js keeps it out of every
+  // file the browser reads, and publishes the evidence derived from it in dev/<login>.json.
+  'contributions'
 ];
 
 export function hasValidRankAndScore(entry) {

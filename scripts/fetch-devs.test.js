@@ -5,12 +5,9 @@ import path from 'node:path';
 import {
   rateLimitWaitMs,
   MAX_RATE_LIMIT_RETRIES,
-  screenFirstPage,
-  passesActivityGate,
-  applyActivityFilter,
   fetchDeveloperActivity,
   fetchPakistaniDevelopers,
-  eventsWindow,
+  isLikelyFakeFromProfile,
   SEARCH_BATCHES
 } from './fetch-devs.js';
 import { createSearchClient } from './discovery/graphql.js';
@@ -73,75 +70,11 @@ const activeFeed = () => Array.from({ length: 40 }, (_, i) => pushEvent(i + 0.5)
 // 10 pushes: a complete feed that fails the contributions threshold.
 const quietFeed = () => Array.from({ length: 10 }, (_, i) => pushEvent(i + 0.5));
 
-describe('screenFirstPage', () => {
-  it('rejects a complete feed that fails the gate', () => {
-    expect(screenFirstPage(quietFeed())).toEqual({ complete: true, passes: false });
-  });
-
-  it('passes a complete feed that meets the gate', () => {
-    expect(screenFirstPage(activeFeed())).toEqual({ complete: true, passes: true });
-  });
-
-  it('treats an empty feed as complete and failing', () => {
-    expect(screenFirstPage([])).toEqual({ complete: true, passes: false });
-  });
-
-  it('never judges a full first page, which may continue on page 2', () => {
-    const full = Array.from({ length: 100 }, (_, i) => pushEvent(i * 0.1));
-    expect(screenFirstPage(full)).toEqual({ complete: false, passes: null });
-  });
-
-  it('applies the same gate as the activity filter', () => {
-    const cases = [
-      { total_contributions_60d: 30, longest_gap_days: 30 },
-      { total_contributions_60d: 29, longest_gap_days: 1 },
-      { total_contributions_60d: 90, longest_gap_days: 31 }
-    ];
-    for (const c of cases) {
-      expect(applyActivityFilter([c]).length === 1).toBe(passesActivityGate(c));
-    }
-  });
-});
-
-describe('eventsWindow', () => {
-  const at = (iso) => ({ type: 'PushEvent', created_at: iso });
-  const readAt = Date.parse('2026-10-14T00:00:00Z');
-
-  it('covers the whole window when the read was not cut, however old its oldest event', () => {
-    // One event two days ago is a quiet month, not a two-day window.
-    expect(eventsWindow([at('2026-10-12T00:00:00Z')], { truncated: false, readAt })).toEqual({
-      fetched: 1,
-      truncated: false,
-      days: 60
-    });
-  });
-
-  it('measures a cut read to the newest of its last events, not to a straggler', () => {
-    const events = [
-      ...Array.from({ length: 190 }, () => at('2026-10-12T00:00:00Z')),
-      // The last ten read: nine from six days ago and one straggler from August.
-      ...Array.from({ length: 9 }, () => at('2026-10-08T00:00:00Z')),
-      at('2026-08-01T00:00:00Z')
-    ];
-    expect(eventsWindow(events, { truncated: true, readAt })).toEqual({
-      fetched: 200,
-      truncated: true,
-      days: 6
-    });
-  });
-
-  it('rounds down, and never claims more than the window', () => {
-    const cut = (iso) => eventsWindow([at(iso)], { truncated: true, readAt }).days;
-    expect(cut('2026-10-12T14:24:00Z')).toBe(1.4);
-    expect(cut('2026-01-01T00:00:00Z')).toBe(60);
-  });
-});
-
 describe('fetchDeveloperActivity', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   // A fake GitHub that records every request path.
-  function stubGitHub({ pages, location = '' }) {
+  function stubGitHub({ pages, location = '', profile = {} }) {
     const seen = [];
     vi.stubGlobal('fetch', async (url) => {
       const path = String(url).replace('https://api.github.com', '');
@@ -159,7 +92,8 @@ describe('fetchDeveloperActivity', () => {
           public_repos: 10,
           followers: 5,
           following: 1,
-          location
+          location,
+          ...profile
         };
       } else status = 404;
       return {
@@ -173,55 +107,42 @@ describe('fetchDeveloperActivity', () => {
     return seen;
   }
 
-  it('rejects a quiet developer after one request instead of four', async () => {
-    const seen = stubGitHub({ pages: [quietFeed()] });
-    const result = await fetchDeveloperActivity('dev', 'token');
-    expect(result).toEqual({ screenedOut: true, username: 'dev' });
-    expect(seen).toHaveLength(1);
-    expect(seen[0]).toContain('/events?');
+  it('reads the profile first, and stops there for a throwaway account', async () => {
+    const seen = stubGitHub({
+      pages: [activeFeed()],
+      profile: { created_at: new Date().toISOString() }
+    });
+    expect(await fetchDeveloperActivity('dev', 'token')).toBeNull();
+    expect(seen).toEqual(['/users/dev']);
   });
 
-  it('fetches the full profile for an active developer, without a needless page 2', async () => {
+  it('builds the row the board shows, without a needless page 2', async () => {
     const seen = stubGitHub({ pages: [activeFeed()] });
     const result = await fetchDeveloperActivity('dev', 'token');
     expect(result.username).toBe('dev');
-    expect(result.total_contributions_60d).toBe(40);
+    // Context the board shows; the score reads none of it.
+    expect(result.events_30d).toBe(30);
+    expect(result).not.toHaveProperty('raw_events_60d');
+    expect(result).not.toHaveProperty('total_contributions_60d');
     expect(seen.some((p) => p.includes('page=2'))).toBe(false);
-    expect(seen.some((p) => /^\/users\/dev$/.test(p))).toBe(true);
-  });
-
-  it('reaches the same verdict the full fetch would', async () => {
-    // The screen reads exactly the events the full path would have read for a
-    // short feed, so a passing developer's gate metrics are unchanged by it.
-    stubGitHub({ pages: [activeFeed()] });
-    const result = await fetchDeveloperActivity('dev', 'token');
-    expect(passesActivityGate(result)).toBe(true);
   });
 
   it('still reads page 2 when page 1 is full', async () => {
     const full = Array.from({ length: 100 }, (_, i) => pushEvent(i * 0.3));
     const seen = stubGitHub({ pages: [full, quietFeed()] });
-    const result = await fetchDeveloperActivity('dev', 'token');
+    await fetchDeveloperActivity('dev', 'token');
     expect(seen.some((p) => p.includes('page=2'))).toBe(true);
-    // Page 2 was short, so the read reached the end of the feed.
-    expect(result.events_window).toEqual({ fetched: 110, truncated: false, days: 60 });
   });
 
-  it('records that a read stopped on a full last page, and how far back it reached', async () => {
-    const page = (from) => Array.from({ length: 100 }, (_, i) => pushEvent(from + i * 0.05));
-    stubGitHub({ pages: [page(0), page(5)] });
-    const result = await fetchDeveloperActivity('dev', 'token');
-    expect(result.events_window.fetched).toBe(200);
-    expect(result.events_window.truncated).toBe(true);
-    // The tail ends near 9.95 days back; the newest of its last ten is 9.5 days back.
-    expect(result.events_window.days).toBeGreaterThanOrEqual(9.4);
-    expect(result.events_window.days).toBeLessThanOrEqual(9.5);
-  });
-
-  it('calls a complete first page not truncated', async () => {
-    stubGitHub({ pages: [activeFeed()] });
-    const result = await fetchDeveloperActivity('dev', 'token');
-    expect(result.events_window).toEqual({ fetched: 40, truncated: false, days: 60 });
+  it('holds a registered developer to account age alone', async () => {
+    const bare = { public_repos: 0, followers: 0, following: 0 };
+    stubGitHub({ pages: [activeFeed()], profile: bare });
+    expect(await fetchDeveloperActivity('dev', 'token')).toBeNull();
+    expect((await fetchDeveloperActivity('dev', 'token', { registered: true }))?.username).toBe(
+      'dev'
+    );
+    const young = { created_at: new Date().toISOString() };
+    expect(isLikelyFakeFromProfile({ ...bare, ...young }, { registered: true })).toBe(true);
   });
 
   it('does not count a city-sourced developer whose location names a place abroad', async () => {
@@ -299,11 +220,15 @@ describe('fetchPakistaniDevelopers discovery', () => {
       log: { warn() {} }
     });
 
-    // Every REST events feed is empty, so each candidate is screened out after one call.
+    // The gate is handed every candidate discovery listed, and turns them all away, so nobody's
+    // profile is fetched.
     const fetched = [];
-    vi.stubGlobal('fetch', async (url) => {
-      fetched.push(/\/users\/([^/]+)\/events/.exec(String(url))[1]);
-      return { ok: true, status: 200, headers: { get: () => null }, json: async () => [] };
+    const gate = async (candidates) => {
+      fetched.push(...candidates.map((c) => c.login.toLowerCase()));
+      return { passed: new Map(), screenedOut: candidates.map((c) => c.login), complete: true };
+    };
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('no profile should be fetched');
     });
     const warnings = [];
     vi.spyOn(console, 'warn').mockImplementation((line) => warnings.push(String(line)));
@@ -314,12 +239,11 @@ describe('fetchPakistaniDevelopers discovery', () => {
       token: 't',
       repoRoot,
       batchIndex,
-      rawOnly: true,
-      withScreening: true,
-      searchClient
+      searchClient,
+      gate
     });
 
-    // The warning names the leaf, and that leaf is exactly who was not fetched.
+    // The warning names the leaf, and that leaf is exactly who was not evaluated.
     const named = warnings
       .map((line) =>
         new RegExp(`^::warning title=Discovery::${BATCH16}: leaf (\\S+ \\S+) is incomplete`).exec(
@@ -362,8 +286,6 @@ describe('fetchPakistaniDevelopers discovery', () => {
         token: 't',
         repoRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-discovery-')),
         batchIndex: 16,
-        rawOnly: true,
-        withScreening: true,
         searchClient
       })
     ).rejects.toThrow(/listed none of its 10 developers completely/);
@@ -439,8 +361,6 @@ describe('fetchPakistaniDevelopers with the city twin', () => {
       token: 't',
       repoRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-discovery-')),
       batchIndex,
-      rawOnly: true,
-      withScreening: true,
       searchClient
     });
 
@@ -473,7 +393,7 @@ describe('fetchPakistaniDevelopers with the city twin', () => {
     const result = await run(searchFor(population, fake));
 
     expect(result.discoveryComplete).toBe(true);
-    expect(requested).toHaveLength(new Set(requested).size);
+    expect(requested).toHaveLength(new Set(requested.map((l) => l.toLowerCase())).size);
     const expected = {};
     population.forEach((u, i) => {
       const at = where[i % where.length];
@@ -485,7 +405,7 @@ describe('fetchPakistaniDevelopers with the city twin', () => {
 
     // Found by "Lahore", then ruled out on the location the profile gives.
     const abroad = population.filter((u) => u.location === 'Lahore, India');
-    expect(result.locationRejected.map((r) => r.username).sort()).toEqual(
+    expect(result.locationRejected.map((r) => r.username.toLowerCase()).sort()).toEqual(
       abroad.map((u) => u.login.toLowerCase()).sort()
     );
     expect(result.locationRejected[0].reason).toMatch(/also names "india"/);
@@ -597,14 +517,16 @@ describe('fetchPakistaniDevelopers registration and opt-out', () => {
       log: { warn() {} }
     });
 
-    // REST: registered developers are active; everyone search found has an empty feed.
+    // The gate passes the registered developers and turns away everyone search found, as their
+    // contributions would.
     const byLogin = Object.fromEntries(
       Object.values(accounts).map((a) => [a.login.toLowerCase(), a])
     );
     const fetched = [];
+    const gated = [];
     vi.stubGlobal('fetch', async (url) => {
       const route = String(url).replace('https://api.github.com', '');
-      const login = /^\/users\/([^/?]+)/.exec(route)[1];
+      const login = /^\/users\/([^/?]+)/.exec(route)[1].toLowerCase();
       const account = byLogin[login];
       let body = [];
       if (route.includes('/events?')) {
@@ -636,9 +558,18 @@ describe('fetchPakistaniDevelopers registration and opt-out', () => {
       token: 't',
       repoRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'rankistan-registry-')),
       batchIndex,
-      rawOnly: true,
-      withScreening: true,
       searchClient,
+      gate: async (candidates) => {
+        gated.push(...candidates.map((c) => c.login.toLowerCase()));
+        const isRegistered = (c) => Object.values(accounts).some((a) => a.id === c.id);
+        return {
+          passed: new Map(
+            candidates.filter(isRegistered).map((c) => [c.login.toLowerCase(), null])
+          ),
+          screenedOut: candidates.filter((c) => !isRegistered(c)).map((c) => c.login),
+          complete: true
+        };
+      },
       registry: {
         registered: Object.entries(accounts).map(([nodeId, a], i) => ({
           id: a.id,
@@ -652,15 +583,17 @@ describe('fetchPakistaniDevelopers registration and opt-out', () => {
       }
     });
 
-    // Under their current login, from GraphQL; the out-of-range account and the opt-out unfetched.
-    expect(fetched.sort()).toEqual(
+    // Under their current login, from GraphQL; the out-of-range account and the opt-out never
+    // reach the gate.
+    expect(gated.sort()).toEqual(
       [...people.slice(1).map((p) => p.login.toLowerCase()), 'regin', 'reglow'].sort()
     );
+    expect(fetched.sort()).toEqual(['regin', 'reglow']);
     expect(result.discoveryComplete).toBe(true);
+    // Registration is not held to search's repository and follower qualifiers: RegLow is in.
     expect(result.developers.map((d) => [d.username, d.github_id, d.discovery_source])).toEqual([
-      ['RegIn', 900001, 'registered']
+      ['RegIn', 900001, 'registered'],
+      ['RegLow', 900003, 'registered']
     ]);
-    // Fetched and below the gate its search would have applied: evaluated, and out.
-    expect(result.screenedOut).toContain('RegLow');
   });
 });

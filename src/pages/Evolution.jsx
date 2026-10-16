@@ -6,47 +6,41 @@ const CONFIG_URL = 'https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/score-co
 
 // The current formula is read from the model's config. The timeline entries
 // below are history and keep the numbers they had at the time.
-const {
-  STAR_WEIGHT,
-  WEIGHTS,
-  MAX_STARS_FOR_SCORING,
-  MAX_FOLLOWERS_FOR_SCORING,
-  MAX_PUBLIC_REPOS_FOR_SCORING,
-  SIX_MONTHS_DAYS,
-  AGE_PENALTY_MULTIPLIER
-} = SCORE_CONFIG;
+const { SCALE, WEIGHTS, WINDOW_DAYS, RECENCY_FLOOR, WORK, COLLABORATION, APPRECIATION, MIN_ACCOUNT_AGE_DAYS } =
+  SCORE_CONFIG;
+const pts = (weight) => Math.round(SCALE * weight);
 
 const INTRO_BULLETS = [
   {
-    label: 'Open source only',
-    text: 'Stars come from your public repositories. Activity uses public Push, Pull Request, Issue, and Release events from the last 30 days.',
+    label: 'Public work only',
+    text: `The score reads your public contributions over the last ${WINDOW_DAYS} days from GitHub's contributions API. Private contributions are shown as context and never scored.`,
   },
   {
     label: 'What does not count',
-    text: 'Watching, starring, forking, and commenting on repos do not affect your score or contribution gates.',
+    text: 'Followers, repository counts, account age, stars on projects you are not working on, and watching, starring, forking or commenting.',
   },
   {
     label: 'Fairness',
-    text: 'Stars and followers are capped so fame metrics cannot drown out builders. Steady work across many days beats one-day bursts.',
+    text: 'A day counts once however much was done on it, so volume cannot be farmed. To reach the top, other people have to accept your work.',
   },
   {
-    label: 'Score vs rank',
-    text: 'Register shows an estimated score right away. Your official leaderboard rank updates after the next hourly batch sync.',
+    label: 'Check any score',
+    text: 'Every developer\'s file lists the evidence behind their score, item by item, and Register measures any account live with the pipeline\'s own code.',
   },
 ];
 
 const FORMULA_PLAIN_ENGLISH = [
-  `Stars, followers, and public repos are capped (${MAX_STARS_FOR_SCORING} stars, ${MAX_FOLLOWERS_FOR_SCORING} followers, ${MAX_PUBLIC_REPOS_FOR_SCORING} repos) before weights are applied.`,
-  'Activity points use diminishing returns per UTC calendar day—spamming the same event type in one day earns very little.',
-  `Accounts younger than ${SIX_MONTHS_DAYS} days have their base score multiplied by ${AGE_PENALTY_MULTIPLIER}.`,
-  'The board is ordered by the score before rounding; only an exact tie falls back to the username.',
+  `Work is worth up to ${pts(WEIGHTS.work)} points. It is the share of the last ${WINDOW_DAYS} days you did public work, recent days weighing more (yesterday 1, the oldest day ${RECENCY_FLOOR}), on a curve where each extra day adds a little less.`,
+  `Collaboration is worth up to ${pts(WEIGHTS.collaboration)} points. It is work another person accepted, counted per project and per person so that no one can vouch for you without limit, and it reaches half at ${COLLABORATION.HALF_POINT} merges into well-known projects by different people.`,
+  `Appreciation is worth up to ${pts(WEIGHTS.appreciation)} points. It is the stars on the best known project you own and worked on this month, from ${APPRECIATION.FROM_STARS} stars up, a third for every tenfold.`,
+  `You are ranked with at least ${WORK.GATE_MIN_DAYS} working days in the last ${WINDOW_DAYS} and an account ${MIN_ACCOUNT_AGE_DAYS} days old. Equal scores share a rank.`,
 ];
 
 const CONSTANTS_ACROSS_ERAS = [
-  'Only Push, Pull Request, Issue, and Release events count toward activity.',
-  'Activity is scored over the last 30 days, grouped by UTC day, with a daily cap per event type.',
-  'The leaderboard may show a raw 30-day event count—that number can be higher than the capped activity points in your score.',
-  'Accounts under 6 months old get a 0.5× multiplier on the full base score.',
+  'Only public work counts.',
+  'Activity is measured over the last 30 days.',
+  'Every number the score uses lives in one config file, read by the pipeline, the site and the Worker.',
+  'Every row records the model version it was scored with, so any published score can be recomputed.',
 ];
 
 const BEHIND_THE_SCENES = [
@@ -55,8 +49,8 @@ const BEHIND_THE_SCENES = [
     commit: 'a5ec558',
   },
   {
-    text: 'Register previews your score with the same rules before you appear on the official board.',
-    commit: '219b54a',
+    text: 'Register previews a score with the same code the pipeline runs, on the Cloudflare Worker.',
+    commit: null,
   },
 ];
 
@@ -190,6 +184,29 @@ const EVOLUTION_ENTRIES = [
     reasoning:
       'Searching by location cannot find a Pakistani developer whose profile names another country, an unsearched city, or nothing, and there was no way to ask to be taken off. A run that cannot read the opt-outs now saves nothing, rather than risk republishing someone who asked to leave.',
   },
+  {
+    id: 'v10-contributions',
+    date: '2026-10-16',
+    title: 'Scoring v3, ranked by public work and work others accepted',
+    summary: 'Every score changed. Followers, repository counts and the new-account penalty are gone.',
+    commit: null,
+    formula:
+      'score = 1000 × (0.5 work + 0.4 collaboration + 0.1 appreciation) · work = 1 − (1 − x)², x = recency-weighted share of working days · collaboration = c / (c + 3)',
+    changes: [
+      'Activity now comes from GitHub\'s contributions API, which is keyed on dates and sees the whole month. The events feed version 2 read stopped at 200 events, so for 199 of the 1,000 developers on the board a "30-day" score covered fewer days, one of them six.',
+      'Work counts days, not commits. A day with a public commit, a pull request or issue opened in someone else\'s project, or a review of someone else\'s pull request counts once, however much was done on it.',
+      'Collaboration is new. A pull request someone else merged into a project you do not own, a review of someone else\'s pull request, and someone else\'s pull request merged into your project count, if the other person\'s account was a year old. Each project and each person can vouch for you only so far, and a spray of pull requests that are mostly closed unmerged earns less.',
+      'Stars count only for a project you own and worked on this month, from 10 stars up, and are worth at most 100 points. Followers and repository counts no longer count at all.',
+      'Commits never count from forks, from profile README repositories, from repositories holding commits dated in the future or author dates hours after their commit dates, or from repositories a bot commits to in your name. A public moderation list can remove a repository whose commits a script makes, with the evidence beside it.',
+      'The new-account penalty is gone. An account must be 30 days old to be ranked, and after that its age changes nothing.',
+      'Equal scores share a rank, and the order within a tie changes daily instead of following the alphabet.',
+      'The whole board is scored again from its measurements on every run, and each developer\'s evidence is published with their score.',
+    ],
+    example:
+      'One account on the board made 1,031,238 commits in 30 days to a repository nobody had starred, 1,028,906 of them on a single day. Under version 3 that is one working day per day it committed, the same as one commit. Two accounts pay a service that paints their contribution graph, its commits dated up to 21.8 hours after they were made, and those commits now count for nothing. Measured on the whole board before the switch, 896 of 997 developers pass the new gate, 3 of version 2\'s top 50 stay in the top 50, and the score no longer follows followers or stars, with rank correlations of −0.06 and −0.12.',
+    reasoning:
+      'Version 2 claimed to rank active developers, but stars and followers decided the order. Activity supplied 40% of the points and almost none of the ranking, and the top ten were accounts at the star and follower caps. Volume could be farmed with a script, and work other people accepted, the one thing a single account cannot fake, was not measured at all.',
+  },
 ];
 
 const LAST_DOCUMENTED = EVOLUTION_ENTRIES[EVOLUTION_ENTRIES.length - 1].date;
@@ -206,8 +223,8 @@ export default function Evolution() {
             <span className="text-primary font-normal tracking-normal">Evolution</span>
           </h1>
           <p className="font-body text-sm sm:text-base text-outline max-w-2xl leading-relaxed">
-            How Rankistan calculates your score—and why the rules changed over time to reward steady
-            open-source work, not bursts or fame metrics.
+            How Rankistan calculates your score, and why the rules changed over time to reward steady
+            public work and work others accept, not bursts or fame.
           </p>
         </div>
 
@@ -221,8 +238,8 @@ export default function Evolution() {
           <ul className="space-y-3">
             {INTRO_BULLETS.map(({ label, text }) => (
               <li key={label} className="font-body text-xs sm:text-sm text-outline leading-relaxed">
-                <span className="text-on-surface font-medium">{label}</span>
-                <span className="text-outline"> — {text}</span>
+                <span className="text-on-surface font-medium">{label}.</span>
+                <span className="text-outline"> {text}</span>
               </li>
             ))}
           </ul>
@@ -235,13 +252,13 @@ export default function Evolution() {
           </div>
           <div className="overflow-x-auto bg-surface-container-low border border-outline-variant p-3 sm:p-5 mb-4 font-mono text-xs sm:text-sm leading-relaxed">
             <div className="text-primary">
-              base_score = (min(stars, {MAX_STARS_FOR_SCORING}) × {STAR_WEIGHT}) + activity_score + (min(followers, {MAX_FOLLOWERS_FOR_SCORING}) × {WEIGHTS.followers}) + (min(public_repos, {MAX_PUBLIC_REPOS_FOR_SCORING}) × {WEIGHTS.publicRepos})
+              score = round({SCALE} × ({WEIGHTS.work} × work + {WEIGHTS.collaboration} × collaboration + {WEIGHTS.appreciation} × appreciation))
             </div>
             <div className="text-tertiary mt-2">
-              final_score = round(base_score × (account_age &lt; {SIX_MONTHS_DAYS}d ? {AGE_PENALTY_MULTIPLIER} : 1))
+              work = 1 − (1 − x)^{WORK.CURVE_POWER}, collaboration = c / (c + {COLLABORATION.HALF_POINT}), appreciation = (log10(stars) − 1) / {APPRECIATION.DECADES}
             </div>
             <div className="text-outline mt-3 text-[11px]">
-              activity_score = Σ daily min(cap, Σ base / log2(n+1)) over 30d, per type, UTC days
+              x = Σ recency weights of your working days / Σ recency weights of all {WINDOW_DAYS} days · c = accepted work, per project and per person
             </div>
           </div>
           <div className="mb-4 space-y-2">
@@ -370,16 +387,18 @@ export default function Evolution() {
             </span>
             <ul className="space-y-3">
               {BEHIND_THE_SCENES.map(({ text, commit }) => (
-                <li key={commit} className="font-body text-xs sm:text-sm text-outline leading-relaxed flex flex-wrap items-baseline gap-2">
+                <li key={text} className="font-body text-xs sm:text-sm text-outline leading-relaxed flex flex-wrap items-baseline gap-2">
                   <span>{text}</span>
-                  <a
-                    href={`${REPO_COMMIT_BASE}/${commit}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-[10px] text-primary hover:underline shrink-0"
-                  >
-                    {commit}
-                  </a>
+                  {commit && (
+                    <a
+                      href={`${REPO_COMMIT_BASE}/${commit}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-[10px] text-primary hover:underline shrink-0"
+                    >
+                      {commit}
+                    </a>
+                  )}
                 </li>
               ))}
             </ul>

@@ -72,14 +72,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify activity scoring invariants
-        run: npm run verify:activity
-
       - name: Use the committed sample board
         run: cp fixtures/data.sample.json public/data.json
 
-      # Recomputes every versioned row of the sample from its own published
-      # fields, and checks the board is in the model's order.
+      # Recomputes every row of the sample from its measurement, and checks the
+      # board is in the model's order with equal scores sharing a rank.
       - name: Verify the sample leaderboard against the scoring model
         run: npm run verify:published
 
@@ -87,3 +84,8 @@ jobs:
       # writing gitignored output.
       - name: Pipeline dry run (no GitHub calls)
         run: node scripts/run-all.js --incremental 0 --dry-run
+
+      # The board the dry run wrote, checked the same way the pipeline checks a
+      # board before saving it.
+      - name: Verify the dry run's board
+        run: node scripts/verify-published.js public/data.dry-run.json

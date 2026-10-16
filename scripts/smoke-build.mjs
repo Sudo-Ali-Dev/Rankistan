@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Window } from 'happy-dom';
 import { buildPublicPayload, hasPipelineOnlyFields } from '../src/utils/split-data.js';
+import { scoreEvidence } from '../src/model/score.js';
 
 const DIST = path.join(process.cwd(), 'dist');
 const failures = [];
@@ -72,6 +73,20 @@ for (const file of ['board.json', 'digest.json']) {
 const devDir = path.join(DIST, 'dev');
 const devFiles = fs.existsSync(devDir) ? fs.readdirSync(devDir).length : 0;
 if (devFiles === 0) fail('dist/dev/ has no developer files');
+
+// 2c. Every developer file's published evidence gives its published score, bit for bit: the
+//     evidence is what a reader checks a score against, so it must be the evidence it came from.
+let withEvidence = 0;
+for (const name of fs.existsSync(devDir) ? fs.readdirSync(devDir) : []) {
+  const { developer } = JSON.parse(fs.readFileSync(path.join(devDir, name), 'utf8'));
+  if (!developer?.score_evidence) continue;
+  withEvidence += 1;
+  const again = scoreEvidence(developer.score_evidence);
+  if (again.score_exact !== developer.score_exact || again.score !== developer.score) {
+    fail(`dist/dev/${name}: its evidence scores ${again.score_exact}, the file says ${developer.score_exact}`);
+  }
+}
+note(`${withEvidence} of ${devFiles} developer files carry evidence that recomputes their score exactly`);
 const source = path.join(process.cwd(), 'public', 'data.json');
 const published = path.join(DIST, 'data.json');
 if (!fs.existsSync(published)) {

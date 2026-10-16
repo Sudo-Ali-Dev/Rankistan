@@ -8,17 +8,13 @@ import {
   locationTokens
 } from '../../scripts/discovery/locations.js';
 import ScoreBreakdownPanel from '../components/ScoreBreakdownPanel';
-import { computeDeveloperScoreBreakdown } from '../utils/score-breakdown.js';
+import { fetchScorePreview } from '../utils/score-preview.js';
+import { SCORE_CONFIG } from '../model/config.js';
 
-const MEANINGFUL_EVENTS = new Set(['PushEvent', 'PullRequestEvent', 'IssuesEvent', 'ReleaseEvent']);
-
-const CRITERIA = {
-  MIN_REPOS: 4,
-  MIN_FOLLOWERS: 2,
-  MIN_ACCOUNT_AGE_DAYS: 30,
-  MIN_CONTRIBUTIONS_60D: 30,
-  MAX_INACTIVITY_GAP_DAYS: 30,
-};
+// The gate, from the model's config: the same numbers the pipeline applies.
+const { MIN_ACCOUNT_AGE_DAYS } = SCORE_CONFIG;
+const { GATE_MIN_DAYS } = SCORE_CONFIG.WORK;
+const { WINDOW_DAYS } = SCORE_CONFIG;
 
 // Registration and opt-out are GitHub issues, read by the pipeline on every run
 // (scripts/registry.js). The issue's author is the account: nothing typed into
@@ -43,32 +39,6 @@ function daysSince(dateStr) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function computeActivity(events) {
-  const now = Date.now();
-  const cutoff = 60 * 24 * 60 * 60 * 1000;
-  const meaningful = (events || []).filter((e) => MEANINGFUL_EVENTS.has(e.type));
-  const timestamps = meaningful
-    .map((e) => new Date(e.created_at).getTime())
-    .filter((t) => t >= now - cutoff)
-    .sort((a, b) => a - b);
-
-  const count = timestamps.length;
-  let longestGap = 60;
-
-  if (timestamps.length > 0) {
-    longestGap = 0;
-
-    for (let i = 1; i < timestamps.length; i++) {
-      const gap = Math.floor((timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60 * 24));
-      if (gap > longestGap) longestGap = gap;
-    }
-    const gapToNow = Math.floor((now - timestamps[timestamps.length - 1]) / (1000 * 60 * 60 * 24));
-    if (gapToNow > longestGap) longestGap = gapToNow;
-  }
-
-  return { count, longestGap };
-}
-
 export default function Register({ onChangeTab }) {
   const [username, setUsername] = useState('');
   const [status, setStatus] = useState('idle');
@@ -76,14 +46,11 @@ export default function Register({ onChangeTab }) {
   const [checks, setChecks] = useState({
     exists: null,
     location: null,
-    repos: null,
-    followers: null,
     accountAge: null,
-    contributions: null,
-    noLongGaps: null,
+    workingDays: null,
   });
   const [profileData, setProfileData] = useState(null);
-  const [scoreBreakdown, setScoreBreakdown] = useState(null);
+  const [scorePreview, setScorePreview] = useState(null);
   const [gatesPassed, setGatesPassed] = useState(false);
   const requestIdRef = useRef(0);
   const [recentDevs, setRecentDevs] = useState([]);
@@ -170,18 +137,10 @@ export default function Register({ onChangeTab }) {
     setStatus('idle');
     setErrorMsg('');
 
-    setChecks({
-      exists: null,
-      location: null,
-      repos: null,
-      followers: null,
-      accountAge: null,
-      contributions: null,
-      noLongGaps: null,
-    });
+    setChecks({ exists: null, location: null, accountAge: null, workingDays: null });
 
     setProfileData(null);
-    setScoreBreakdown(null);
+    setScorePreview(null);
     setGatesPassed(false);
     // Editing the field invalidates any submission still in flight, so a
     // late response cannot repopulate the panel for a handle the input no
@@ -201,9 +160,9 @@ export default function Register({ onChangeTab }) {
 
     setStatus('loading');
     setErrorMsg('');
-    setChecks({ exists: null, location: null, repos: null, followers: null, accountAge: null, contributions: null, noLongGaps: null });
+    setChecks({ exists: null, location: null, accountAge: null, workingDays: null });
     setProfileData(null);
-    setScoreBreakdown(null);
+    setScorePreview(null);
     setGatesPassed(false);
 
     try {
@@ -226,21 +185,9 @@ export default function Register({ onChangeTab }) {
       setProfileData(data);
 
       const isValidLocation = foundByLocationSearch(data.location);
-      const hasEnoughRepos = (data.public_repos || 0) > 3;
-      const hasEnoughFollowers = (data.followers || 0) > 1;
       const ageDays = daysSince(data.created_at);
-      const isOldEnough = ageDays >= CRITERIA.MIN_ACCOUNT_AGE_DAYS;
-
-      const partialChecks = {
-        exists: true,
-        location: isValidLocation,
-        repos: hasEnoughRepos,
-        followers: hasEnoughFollowers,
-        accountAge: isOldEnough,
-        contributions: null,
-        noLongGaps: null,
-      };
-      setChecks(partialChecks);
+      const isOldEnough = ageDays >= MIN_ACCOUNT_AGE_DAYS;
+      setChecks({ exists: true, location: isValidLocation, accountAge: isOldEnough, workingDays: null });
 
       // Location is the one gate a registration replaces, so failing it does
       // not end the check: the other gates still say whether registering would
@@ -248,111 +195,42 @@ export default function Register({ onChangeTab }) {
       const locationNote = isValidLocation
         ? null
         : `Location '${data.location || 'not set'}' says neither Pakistan nor a searched city. Registering by GitHub issue replaces this check`;
-      const profileFailed = !hasEnoughRepos || !hasEnoughFollowers || !isOldEnough;
-      if (profileFailed) {
-        const reasons = [];
+
+      // The working days and the score come from the Worker, which measures the account with the
+      // pipeline's own code (cloudflare/score-preview.js).
+      const measured = await fetchScorePreview(data.login);
+      if (stale()) return;
+      const preview = measured.ok ? measured.preview : null;
+      const days = preview ? preview.gate.working_days : null;
+      const hasDays = preview ? preview.gate.passes : null;
+      setScorePreview(preview);
+      setChecks((c) => ({ ...c, workingDays: hasDays }));
+      setProfileData({ ...data, _score: preview ? preview.score : null });
+
+      const reasons = [];
+      if (!isOldEnough) reasons.push(`Account is ${ageDays}d old (need >=${MIN_ACCOUNT_AGE_DAYS}d)`);
+      if (preview && !hasDays) reasons.push(`${days} working days in the last ${WINDOW_DAYS} (need >=${GATE_MIN_DAYS})`);
+      if (!preview) reasons.push(`Working days could not be measured just now (${measured.reason}). The pipeline measures them within 24 hours`);
+
+      const passes = isOldEnough && hasDays === true;
+      setGatesPassed(passes);
+      if (!passes) {
         if (locationNote) reasons.push(locationNote);
-        if (!hasEnoughRepos) reasons.push(`Only ${data.public_repos} public repos (need >3)`);
-        if (!hasEnoughFollowers) reasons.push(`Only ${data.followers} followers (need >1)`);
-        if (!isOldEnough) reasons.push(`Account is ${ageDays}d old (need >=${CRITERIA.MIN_ACCOUNT_AGE_DAYS}d)`);
-        setChecks((c) => ({ ...c, contributions: false, noLongGaps: false }));
-        setScoreBreakdown(null);
-        setGatesPassed(false);
         setStatus('error');
         setErrorMsg(`SYSTEM_ERR: ${reasons.join('. ')}.`);
         return;
       }
 
-      let allEvents = [];
-      try {
-        for (let page = 1; page <= 2; page++) {
-          const evRes = await fetch(`https://api.github.com/users/${data.login}/events?per_page=100&page=${page}`);
-          if (stale()) return;
-          if (!evRes.ok) break;
-          const pageEvents = await evRes.json();
-          if (!Array.isArray(pageEvents)) break;
-          allEvents.push(...pageEvents);
-          if (pageEvents.length < 100) break;
-        }
-      } catch { /* ignored */ }
-
-      let totalStars = 0;
-      try {
-        for (let page = 1; ; page++) {
-          const repoRes = await fetch(`https://api.github.com/users/${data.login}/repos?per_page=100&page=${page}`);
-          if (stale()) return;
-          if (!repoRes.ok) break;
-          const repos = await repoRes.json();
-          if (!Array.isArray(repos) || repos.length === 0) break;
-          repos.forEach(r => { totalStars += r.stargazers_count || 0; });
-          if (repos.length < 100) break;
-        }
-      } catch { /* ignored */ }
-
-      const { count, longestGap } = computeActivity(allEvents);
-      const hasContributions = count >= CRITERIA.MIN_CONTRIBUTIONS_60D;
-      const hasNoLongGaps = longestGap <= CRITERIA.MAX_INACTIVITY_GAP_DAYS;
-
-      const breakdown = computeDeveloperScoreBreakdown({
-        events: allEvents,
-        totalStars,
-        followers: data.followers,
-        publicRepos: data.public_repos,
-        createdAt: data.created_at,
-        now: Date.now()
-      });
-
-      const calculatedScore = breakdown.finalScore;
-      const activityPassed = hasContributions && hasNoLongGaps;
-
-      setScoreBreakdown(breakdown);
-      setChecks((c) => ({
-        ...c,
-        contributions: hasContributions,
-        noLongGaps: hasNoLongGaps,
-      }));
-
-      if (!activityPassed) {
-        const reasons = [];
-        if (!hasContributions) reasons.push(`${count} meaningful contributions in 60d (need >=${CRITERIA.MIN_CONTRIBUTIONS_60D})`);
-        if (!hasNoLongGaps) reasons.push(`Longest inactivity gap: ${longestGap}d (max ${CRITERIA.MAX_INACTIVITY_GAP_DAYS}d)`);
-        if (locationNote) reasons.push(locationNote);
-        setGatesPassed(false);
-        setStatus('error');
-        setErrorMsg(`SYSTEM_ERR: Activity check failed. ${reasons.join('. ')}.`);
-        setProfileData({
-          ...data,
-          _calculatedScore: calculatedScore,
-          _agePenaltyApplied: breakdown.agePenalty.applied
-        });
-        return;
-      }
-
-      setGatesPassed(true);
-
       // Every gate a registration keeps has passed; only location has not.
       if (locationNote) {
         setStatus('error');
         setErrorMsg(`SYSTEM_WARN: Every other gate passes. ${locationNote}.`);
-        setProfileData({
-          ...data,
-          _calculatedScore: calculatedScore,
-          _agePenaltyApplied: breakdown.agePenalty.applied
-        });
         return;
       }
 
+      // A passing check is an eligibility result, not a registration. Registering is a GitHub
+      // issue, linked below.
       setStatus('complete');
-
-      // A passing check is an eligibility result, not a registration. This
-      // used to save the profile to this browser's localStorage and show
-      // NODE_ACCEPTED, which nobody downstream ever read. Registering is a
-      // GitHub issue, linked below.
-      setProfileData({
-        ...data,
-        _calculatedScore: calculatedScore,
-        _agePenaltyApplied: breakdown.agePenalty.applied
-      });
     } catch (e) {
       setStatus('error');
       setErrorMsg(e.message);
@@ -445,23 +323,14 @@ export default function Register({ onChangeTab }) {
                     {renderCheckIcon(checks.location)} <span>Location says Pakistan or a listed city, or registered by issue</span>
                   </li>
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.repos)} <span>More than 3 public repositories</span>
+                    {renderCheckIcon(checks.accountAge)} <span>Account at least {MIN_ACCOUNT_AGE_DAYS} days old</span>
                   </li>
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.followers)} <span>More than 1 follower</span>
-                  </li>
-                  <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.accountAge)} <span>Account at least 30 days old</span>
-                  </li>
-                  <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.contributions)} <span>30 meaningful contributions in last 60 days</span>
-                  </li>
-                  <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.noLongGaps)} <span>No inactivity gap longer than 30 days</span>
+                    {renderCheckIcon(checks.workingDays)} <span>At least {GATE_MIN_DAYS} working days in the last {WINDOW_DAYS}</span>
                   </li>
                 </ul>
                 <p className="mt-4 font-mono text-[9px] text-outline/60 uppercase leading-relaxed">
-                  Meaningful contributions: pushes, pull requests, issues, and releases. Checked live against the GitHub API; the pipeline's own check is the one that counts.
+                  A working day has a public commit, a pull request or issue in someone else's project, or a review of someone else's pull request. Measured live with the pipeline's own code, and the pipeline's daily measurement is the one that counts.
                 </p>
               </div>
             </div>
@@ -470,10 +339,10 @@ export default function Register({ onChangeTab }) {
               <div ref={statusPanelRef} className="mt-6 sm:mt-8 font-mono text-[11px] sm:text-xs text-tertiary border border-tertiary/30 bg-tertiary/10 p-3 sm:p-4 animate-pulse leading-relaxed">
                 &gt; Profile Validated.<br />
                 &gt; All criteria passed.<br />
-                &gt; Estimated Score: {profileData?._calculatedScore} {profileData?._agePenaltyApplied && <span className="text-error">(0.5x New Account Penalty Applied)</span>}<br />
+                &gt; Score today: {profileData?._score ?? 'measured by the pipeline within 24 hours'}<br />
                 <br />
                 <span className="text-tertiary/80">
-                  * Nothing has been submitted. The pipeline finds developers by their GitHub location; if yours does not say Pakistan or a listed city, register by GitHub issue below. The board shows the top 1,000 who pass every gate.
+                  * Nothing has been submitted. The pipeline finds developers by their GitHub location. If yours does not say Pakistan or a listed city, register by GitHub issue below. The board shows the top 1,000 who pass every gate.
                 </span>
               </div>
             )}
@@ -527,7 +396,7 @@ export default function Register({ onChangeTab }) {
           </div>
         </div>
 
-        <ScoreBreakdownPanel breakdown={scoreBreakdown} gatesPassed={gatesPassed} />
+        <ScoreBreakdownPanel preview={scorePreview} gatesPassed={gatesPassed} />
 
         <section
           aria-labelledby="register-by-issue"
