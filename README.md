@@ -1,6 +1,6 @@
 # Rankistan
 
-**Current release [v3.0.0](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/v3.0.0)**, Scoring v3. Developers are ranked by days of public work and by work other people accepted. Followers and repository counts no longer count.
+**Current release [v3.0.0](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/v3.0.0)**, Scoring v3. Developers are ranked by their active days on GitHub and by the open source contributions other developers accepted. Followers and repository counts earn nothing.
 
 An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by normalized profile locations on an interactive map of Pakistan, a **Badge Generator** for README rank badges, **Register** for eligibility checks with a live score measured by the Worker and the links to register or opt out by GitHub issue, **Evolution** for how the scoring formula changed over time, and **About** documentation for pipeline logic, filters, and scheduling.
 
@@ -26,15 +26,15 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 | **Leaderboard** | Ranked list from `board.json` (built at deploy from the pipeline's state) with search, filters, sort, CSV export, and pagination |
 | **Map** | Pakistan outline with per-place counts; place breakdown; hover a node to sync-highlight and auto-scroll that place in the list; click a place to list developers for that bucket |
 | **Badge** | Generate a dynamic Shields.io rank badge for your GitHub README (Markdown, HTML, or reST snippets) |
-| **Register** | Checks a GitHub profile against the gate and shows its score measured live by the Worker with the pipeline's own code (work, collaboration, appreciation), with the links to the Register and Remove me issue forms |
+| **Register** | Checks a GitHub profile against the gate and shows its score measured live by the Worker with the pipeline's own code (active days, open source contributions, stars), and how each number came out, with the links to the Register and Remove me issue forms |
 | **Evolution** | Plain-language history of scoring changes (oldest to newest), current formula, and why rules were tightened |
-| **About** | How the index works: scoring summary, activity filters, hourly batches, and FAQs |
+| **About** | How the index works, how your score is calculated in plain words with a worked example, activity filters, hourly batches, and FAQs |
 
 The map assigns each developer to a canonical place key using a deterministic normalization strategy in `src/utils/location.js`. It does token-aware country detection, alias-based city matching (including common spellings and local variants), and safe fallback handling for unresolved locations.
 
 ## How It Works
 
-The pipeline discovers developers from GitHub's location search (profiles that say Pakistan, or name one of 15 Pakistani cities without it) and from registrations, measures their public contributions over the last 30 days, and ranks them by scoring v3, days of public work and work other people accepted ([docs/scoring.md](docs/scoring.md)). The leaderboard is updated incrementally: each hourly batch refreshes its slice of the board, and the whole board is redeployed after every batch.
+The pipeline discovers developers from GitHub's location search (profiles that say Pakistan, or name one of 15 Pakistani cities without it) and from registrations, measures their public contributions over the last 30 days, and ranks them by scoring v3, active days and open source contributions other developers accepted ([below](#scoring-formula), in full in [docs/scoring.md](docs/scoring.md)). The leaderboard is updated incrementally. Each hourly batch refreshes its slice of the board, and the whole board is redeployed after every batch.
 
 The design behind it, what it replaced and why, is recorded in [`docs/data-infrastructure-redesign.md`](docs/data-infrastructure-redesign.md).
 
@@ -53,8 +53,8 @@ The scanner is distributed across 24 hourly batches, so the full ecosystem is re
 | Stage | Script | Output |
 |---|---|---|
 | **Discover** | `scripts/fetch-devs.js`, [`scripts/discovery/`](scripts/discovery/), [`scripts/registry.js`](scripts/registry.js) | Searches GitHub for developers whose location says Pakistan or names one of 15 Pakistani cities, by account-creation date, each range cut into slices that list whole in one request; adds developers registered by GitHub issue and drops those who opted out |
-| **Screen** | [`scripts/measure/gate.js`](scripts/measure/gate.js) | Reads each candidate's contribution calendar, 25 to a request. Fewer than 2 active days in the 32 around the window cannot become the gate's 4 working days, so those candidates stop here. Developers already on the board and registered developers are always measured |
-| **Measure** | [`scripts/measure/contributions.js`](scripts/measure/contributions.js) | For those who pass, the contributions API and search over the last 30 days, every commit day per repository, every pull request, issue and review, every merge someone else made, a future-dated probe and a commit-date sample. Anyone short of 4 working days after the first phase is not searched |
+| **Screen** | [`scripts/measure/gate.js`](scripts/measure/gate.js) | Reads each candidate's contribution calendar, 25 to a request. Fewer than 2 active days in the 32 around the window cannot become the gate's 4 active days, so those candidates stop here. Developers already on the board and registered developers are always measured |
+| **Measure** | [`scripts/measure/contributions.js`](scripts/measure/contributions.js) | For those who pass, the contributions API and search over the last 30 days, every commit day per repository, every pull request, issue and review, every pull request another developer merged, a future-dated probe and a commit-date sample. Anyone short of 4 active days after the first phase is not searched |
 | **Fetch** | `scripts/fetch-devs.js` | For those who pass the gate, the profile, recent events (shown as context, never scored), repositories and linked social accounts (for LinkedIn) |
 | **Score** | [`score-config.json`](score-config.json), [`src/model/`](src/model/), [`scripts/score.js`](scripts/score.js) | Scoring v3 from the measurement ([below](#scoring-formula)). Every run scores the whole board again from its stored measurements |
 | **Merge and save** | [`scripts/run-all.js`](scripts/run-all.js), [`scripts/state-store.js`](scripts/state-store.js) | Merges the batch into the whole board by row owner, refuses an unexplained loss, and saves the board to the `pipeline-state` release |
@@ -66,7 +66,7 @@ During **Fetch**, each developer is assigned category tags (AI/ML, Web, DevOps, 
 
 | Criteria | Threshold |
 |---|---|
-| Working days in the last 30 (a public commit, a pull request or issue in someone else's project, or a review of someone else's pull request) | **>=4** |
+| Active days in the last 30 (a commit to a public repository, a pull request or issue on a repository you do not own, or a review of another developer's pull request) | **>=4** |
 | Account age | **>=30 days** |
 | Location says Pakistan or a searched city, or registered by issue | required |
 
@@ -106,7 +106,7 @@ Measured live on 13 October 2026, under the earlier table, the twin cost 9, 12 a
 
 Search finds developers whose GitHub location says Pakistan or names one of the 15 cities above, so it cannot find a Pakistani developer whose profile names somewhere else, an unsearched city, or nothing. They can register instead, and anyone can take themselves off the board. Both are GitHub issues, opened from the forms in [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/), and [`scripts/registry.js`](scripts/registry.js) reads them on every run:
 
-- **Register** (`register.yml`, label `registration`) registers the account that opened the issue. Nothing typed into the issue is read, so nobody can register anyone else. Registering replaces only the location search. The developer is evaluated in the batch whose `created:` range holds their account and passes the same account-age and working-day gate as everyone else. Search's `repos:>3 followers:>1` does not apply, since scoring v3 reads neither.
+- **Register** (`register.yml`, label `registration`) registers the account that opened the issue. Nothing typed into the issue is read, so nobody can register anyone else. Registering replaces only the location search. The developer is evaluated in the batch whose `created:` range holds their account and passes the same account-age and active-day gate as everyone else. Search's `repos:>3 followers:>1` does not apply, since scoring v3 reads neither.
 - **Remove me** (`remove-me.yml`, label `opt-out`) removes the account that opened the issue at the next run, whichever batch holds its row, and that account is not fetched again while the opt-out stands. The removal is recorded with the reason `opted_out`.
 - Each author's latest issue wins, so a later Register issue reverses an opt-out. A registration a maintainer closes as `not_planned` is rejected; an opt-out counts however it is closed. Pull requests and accounts that are not users are ignored.
 - Everything is keyed on the numeric account id, never the login, which can be renamed and then claimed by someone else. Rows record it as `github_id`; rows from before that are matched on the id in their `avatar_url`. Registered accounts are resolved to their current login and creation date with one GraphQL `nodes` query per 100 (1 point, measured on 2026-10-13), and their rows carry `discovery_source: "registered"`. One `location:pakistan` also found keeps `pakistan`; one only the city twin found is recorded as `registered`, so the twin's location re-check never rules out someone who registered.
@@ -185,21 +185,46 @@ The frontend location system is deterministic and does not use AI for location i
 
 ### Scoring Formula
 
-Scoring v3, in full in [docs/scoring.md](docs/scoring.md). Every constant lives in [`score-config.json`](score-config.json) with the reason for its value beside it, and [`src/model/config.js`](src/model/config.js) refuses a missing, unknown or unexplained one.
+Your score is a number out of 1,000. It adds up three parts, and each part has a maximum. In the code and in [docs/scoring.md](docs/scoring.md) the parts are called work, collaboration and appreciation.
+
+| Part | Up to | What earns points |
+|---|---|---|
+| **Active days** (work) | 500 | Days in the last 30 you made a commit to a public repository, opened a pull request or an issue on a repository you do not own, or reviewed another developer's pull request. A day counts once, one commit or a hundred |
+| **Open source contributions** (collaboration) | 400 | Your pull requests merged into open source projects you do not own, your reviews of other developers' pull requests, and other developers' pull requests you merged into your own repositories. The other developer's account must be at least a year old |
+| **Stars** (appreciation) | 100 | Stars on the repository you own with the most stars, if you committed to it in the last 30 days |
+
+**Active days.** Your first active day is worth about 33 points, and each extra day is worth a little less, so a developer who is active most days is not far behind one who is active every day. Recent days count a little more than older days, so a real score can be a few points off this table.
+
+| Active days | 1 | 5 | 10 | 15 | 20 | 30 |
+|---|---|---|---|---|---|---|
+| Points | 33 | 153 | 278 | 375 | 444 | 500 |
+
+**Open source contributions.** A merged pull request earns up to 1 credit. It earns the full credit in a project with 1,000 or more stars, about 0.7 with 100 stars, 0.4 with 10 stars and 0.1 with none. A review, a pull request you merged into your own repository, or a tiny change of one file and up to 5 lines earns half. More pull requests to the same project, or merged by the same person, earn a little less each. Recent merges count a little more, and if most of your pull requests are closed without being merged, your credits shrink.
+
+| Credits | 1 | 2 | 3 | 6 | 12 |
+|---|---|---|---|---|---|
+| Points | 100 | 160 | 200 | 267 | 320 |
+
+**Stars.** You get the full amount once you have committed to that repository on 4 different days this month, and a part with fewer, for example 3 days gives three quarters.
+
+| Stars | under 10 | 100 | 1,000 | 10,000 |
+|---|---|---|---|---|
+| Points | 0 | 33 | 67 | 100 |
+
+**An example.** A developer active on 15 of the last 30 days, with 2 pull requests merged yesterday into two open source projects of 5,000 stars, and an own repository of 100 stars worked on this month, scores 378 + 160 + 33 = 571. The About page shows the same example, scored by the model itself.
+
+**Never counted.** Followers, how many repositories you have, account age, activity in private repositories, and commits to forks, profile README repositories, repositories with impossible commit dates or a bot committing in your name, and repositories on [`public/moderation.json`](public/moderation.json).
+
+The tables are those of v3.0.0. The site reads every number from [`score-config.json`](score-config.json), where each constant has the reason for its value beside it, and [`src/model/config.js`](src/model/config.js) refuses a missing, unknown or unexplained one. The exact formula, for anyone recomputing a score, is below.
 
 ```
-score = 1000 × (0.5 × work + 0.4 × collaboration + 0.1 × appreciation)
-work          = 1 − (1 − x)², x = recency-weighted share of the last 30 Pakistan days with public work
-collaboration = c / (c + 3), c = work other people accepted, counted per project and per person
-appreciation  = (log10(stars) − 1) / 3 on your best project worked on this month, from 10 stars
+score         = 1000 × (0.5 × work + 0.4 × collaboration + 0.1 × appreciation)
+work          = 1 − (1 − x)², x = recency-weighted share of the last 30 Pakistan days that were active
+collaboration = c / (c + 3), c = credits, counted per project and per person
+appreciation  = (log10(stars) − 1) / 3 on your best repository worked on this month, from 10 stars
 ```
 
-- **Work.** A day counts once however much was done on it. Recent days weigh more, yesterday 1 and the oldest day 0.5.
-- **Collaboration.** Your pull requests merged into projects you do not own by a user whose account was a year old, reviews of other users' pull requests, and other users' pull requests merged into your projects. Weighted by the target's stars by digits, tiny changes count half, and a spray of rejected pull requests earns less.
-- **Appreciation.** Stars on a project you own and worked on this month, worth at most 100 points.
-- **Never counted.** Followers, repository counts, account age, private contributions, and commits from forks, profile README repositories, repositories with impossible commit dates or a bot committing in your name, and repositories on [`public/moderation.json`](public/moderation.json).
-
-The model lives once, in [`src/model/`](src/model/). [`src/model/evidence.js`](src/model/evidence.js) decides what counts and [`src/model/score.js`](src/model/score.js) does the arithmetic, and the pipeline, the board check and the Worker's preview all call it. The score is a pure function of the stored measurement and the moderation list, so every run scores the whole board again and a board never mixes models. Equal scores share a rank. Each developer's `dev/<login>.json` carries `score_evidence`, every working day and every pull request, review and merge that counted, and `npm run verify:published` recomputes every score on a board.
+The model lives once, in [`src/model/`](src/model/). [`src/model/evidence.js`](src/model/evidence.js) decides what counts and [`src/model/score.js`](src/model/score.js) does the arithmetic, and the pipeline, the board check and the Worker's preview all call it. [`src/utils/score-explainer.js`](src/utils/score-explainer.js) holds the plain-words explanation and the tables the site shows. The score is a pure function of the stored measurement and the moderation list, so every run scores the whole board again and a board never mixes models. Equal scores share a rank. Each developer's `dev/<login>.json` carries `score_evidence`, every active day and every pull request, review and merge that counted, and `npm run verify:published` recomputes every score on a board.
 
 `events_30d` on the leaderboard is a raw event count from the events feed, shown as context. It is not a score input.
 
