@@ -1,5 +1,12 @@
 import React from 'react';
 import { SCORE_CONFIG, MODEL_VERSION } from '../model/config.js';
+import ScoreExplainer from '../components/ScoreExplainer';
+import {
+  SCORE_ELIGIBILITY,
+  WORK_POINTS,
+  COLLABORATION_POINTS,
+  APPRECIATION_POINTS
+} from '../utils/score-explainer.js';
 
 const REPO_COMMIT_BASE = 'https://github.com/Sudo-Ali-Dev/Rankistan/commit';
 const CONFIG_URL = 'https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/score-config.json';
@@ -9,21 +16,20 @@ const DESIGN_URL = 'https://github.com/Sudo-Ali-Dev/Rankistan/blob/main/docs/sco
 // below are history and keep the numbers they had at the time. This page is
 // about how a score is calculated, so changes to who is searched for or how
 // the board is stored belong elsewhere.
-const { SCALE, WEIGHTS, WINDOW_DAYS, WORK, APPRECIATION, MIN_ACCOUNT_AGE_DAYS } = SCORE_CONFIG;
-const pts = (weight) => Math.round(SCALE * weight);
+const { SCALE, WINDOW_DAYS } = SCORE_CONFIG;
 
 const INTRO_BULLETS = [
   {
-    label: 'Only public work counts',
-    text: `Your score looks at what you did in public on GitHub in the last ${WINDOW_DAYS} days. Private work is shown on your card but earns nothing, because nobody can check it.`,
+    label: 'Only public repositories count',
+    text: `Your score looks at your activity in public repositories on GitHub in the last ${WINDOW_DAYS} days. Activity in private repositories is shown on your card but earns nothing, because nobody can check it.`,
   },
   {
     label: 'What earns nothing',
-    text: 'Followers, the number of repositories you have, the age of your account, and stars on projects you are not working on.',
+    text: 'Followers, the number of repositories you have, the age of your account, and stars on repositories you are not working on.',
   },
   {
     label: 'Why it is fair',
-    text: 'Doing a lot in one day still counts as one day, so spamming does not help. To reach the top, other people have to accept your work.',
+    text: 'Doing a lot in one day still counts as one day, so spamming does not help. To reach the top, other developers have to accept your open source contributions.',
   },
   {
     label: 'Check any score',
@@ -31,24 +37,9 @@ const INTRO_BULLETS = [
   },
 ];
 
-const FORMULA_PLAIN_ENGLISH = [
-  `Work, up to ${pts(WEIGHTS.work)} points. The more days you work in the last ${WINDOW_DAYS}, the more you earn. Recent days count a little more, and each extra day adds a little less than the one before.`,
-  `Collaboration, up to ${pts(WEIGHTS.collaboration)} points. Earned when another person merges your pull request, when you review someone else's pull request, or when you merge theirs into your project. One project or one person can only give you so much.`,
-  `Appreciation, up to ${pts(WEIGHTS.appreciation)} points. Stars on your best own project, if you worked on it this month, from ${APPRECIATION.FROM_STARS} stars up.`,
-  `To be on the board you need at least ${WORK.GATE_MIN_DAYS} days of work in the last ${WINDOW_DAYS} and an account at least ${MIN_ACCOUNT_AGE_DAYS} days old. Equal scores share a rank.`,
-];
-
 const CONSTANTS_ACROSS_ERAS = [
-  'Only public work counts.',
+  'Only activity in public repositories counts.',
   `Activity is measured over the last ${WINDOW_DAYS} days.`,
-  'Every published score can be checked and calculated again by anyone.',
-];
-
-const BEHIND_THE_SCENES = [
-  {
-    text: 'Every number the score uses is in one file, so the site and the board always agree.',
-    commit: 'a5ec558',
-  },
 ];
 
 const EVOLUTION_ENTRIES = [
@@ -121,39 +112,25 @@ const EVOLUTION_ENTRIES = [
     reasoning: 'Steady work across the month should beat a burst on one day.',
   },
   {
-    id: 'v8-one-model',
-    date: '2026-10-13',
-    title: 'Exact scores decide the order',
-    summary: 'No score changed. Fewer people were ordered by the alphabet.',
-    commit: null,
-    formula: 'order = exact score, highest first, then username',
-    changes: [
-      'The board used to sort on the rounded score, so people with the same rounded number were listed alphabetically.',
-      'It now sorted on the exact score, and only a true tie fell back to the username.',
-    ],
-    reasoning:
-      'On 13 October 2026 the 1,000 developers on the board shared only 340 different rounded scores, so the alphabet decided most positions.',
-  },
-  {
     id: 'v10-contributions',
     date: '2026-10-16',
     title: 'Scoring v3, ranked by real work',
-    summary: 'Every score changed. You now earn points for the days you work and for work other people accept.',
+    summary: 'Every score changed. You now earn points for the days you are active and for open source contributions other developers accept.',
     commit: '343de1b',
-    formula: 'score = work (up to 500) + collaboration (up to 400) + appreciation (up to 100)',
+    formula: 'score = active days (up to 500) + open source contributions (up to 400) + stars (up to 100)',
     changes: [
-      'Work, up to 500 points. Every day you do public work in the last 30 counts once. A hundred commits on one day count the same as one.',
-      'Collaboration, up to 400 points. You earn it when someone else merges your pull request, when you review someone else\'s pull request, or when you merge someone else\'s pull request into your project.',
-      'Appreciation, up to 100 points. Stars on your own project, but only one you worked on this month and only from 10 stars up.',
+      'Active days, up to 500 points. Every day you are active in public repositories in the last 30 counts once. A hundred commits on one day count the same as one.',
+      'Open source contributions, up to 400 points. You earn them when another developer merges your pull request into their open source project, when you review another developer\'s pull request, or when you merge another developer\'s pull request into your own repository.',
+      'Stars, up to 100 points. Stars on your own repository, but only one you worked on this month and only from 10 stars up.',
       'Followers, the number of repositories you have and the age of your account no longer earn points. New accounts are no longer cut in half.',
       'Work that can be faked does not count. That means commits a bot made in your name, commits with impossible dates, and repositories where a script commits for you.',
       'Your whole month is now read, not just your last 200 events, so busy developers are measured fairly.',
       'Equal scores share the same rank.',
     ],
     example:
-      'One account made over a million commits in a month, almost all of them on one day. Under version 3 each of those days counts once, like any other working day. Only 3 of the old top 50 are still in the top 50, because stars and followers no longer decide the order.',
+      'One account made over a million commits in a month, almost all of them on one day. Under version 3 each of those days counts once, like any other active day. Only 3 of the old top 50 are still in the top 50, because stars and followers no longer decide the order.',
     reasoning:
-      'Version 2 promised to rank active developers, but stars and followers decided who was on top. Version 3 ranks people by the work they do and the work other people accept.',
+      'Version 2 promised to rank active developers, but stars and followers decided who was on top. Version 3 ranks people by how active they are and by the open source contributions other developers accept.',
   },
 ];
 
@@ -172,7 +149,7 @@ export default function Evolution() {
           </h1>
           <p className="font-body text-sm sm:text-base text-outline max-w-2xl leading-relaxed">
             How your score is calculated today, and how the rules changed over time to reward steady
-            public work and work other people accept, not bursts or fame.
+            activity and open source contributions, not bursts or fame.
           </p>
         </div>
 
@@ -199,9 +176,9 @@ export default function Evolution() {
             <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest">Current_Formula</span>
           </div>
           <div className="overflow-x-auto bg-surface-container-low border border-outline-variant p-3 sm:p-5 mb-4 font-mono text-xs sm:text-sm leading-relaxed">
-            <div className="text-primary">score = work + collaboration + appreciation</div>
+            <div className="text-primary">score = active days + open source contributions + stars</div>
             <div className="text-tertiary mt-2">
-              up to {pts(WEIGHTS.work)} + up to {pts(WEIGHTS.collaboration)} + up to {pts(WEIGHTS.appreciation)} = {SCALE.toLocaleString('en-US')} points
+              up to {WORK_POINTS} + up to {COLLABORATION_POINTS} + up to {APPRECIATION_POINTS} = {SCALE.toLocaleString('en-US')} points
             </div>
             <div className="text-outline mt-3 text-[11px]">
               The exact formula, with every rule and the reason for it, is in{' '}
@@ -210,13 +187,10 @@ export default function Evolution() {
               </a>
             </div>
           </div>
-          <div className="mb-4 space-y-2">
-            {FORMULA_PLAIN_ENGLISH.map((line) => (
-              <p key={line} className="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed">
-                {line}
-              </p>
-            ))}
+          <div className="mb-4">
+            <ScoreExplainer />
           </div>
+          <p className="mb-4 font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed">{SCORE_ELIGIBILITY}</p>
           <ul className="space-y-2 border-t border-outline-variant/50 pt-4">
             {CONSTANTS_ACROSS_ERAS.map((line) => (
               <li key={line} className="font-body text-xs text-outline leading-relaxed flex gap-2">
@@ -330,29 +304,6 @@ export default function Evolution() {
         </ol>
 
         <footer className="mt-8 sm:mt-12 space-y-6">
-          <div className="p-4 sm:p-6 border border-outline-variant/50 bg-surface-container-low">
-            <span className="font-mono text-[10px] text-outline uppercase tracking-widest block mb-3">
-              Behind the scenes
-            </span>
-            <ul className="space-y-3">
-              {BEHIND_THE_SCENES.map(({ text, commit }) => (
-                <li key={text} className="font-body text-xs sm:text-sm text-outline leading-relaxed flex flex-wrap items-baseline gap-2">
-                  <span>{text}</span>
-                  {commit && (
-                    <a
-                      href={`${REPO_COMMIT_BASE}/${commit}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-[10px] text-primary hover:underline shrink-0"
-                    >
-                      {commit}
-                    </a>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-
           <div className="p-4 border border-outline-variant/50 bg-surface-container-low font-mono text-[10px] text-outline uppercase tracking-widest leading-relaxed">
             <p>
               Scoring version: {MODEL_VERSION} · Last documented: {LAST_DOCUMENTED}

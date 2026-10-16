@@ -209,8 +209,8 @@ export default function Register({ onChangeTab }) {
 
       const reasons = [];
       if (!isOldEnough) reasons.push(`Account is ${ageDays}d old (need >=${MIN_ACCOUNT_AGE_DAYS}d)`);
-      if (preview && !hasDays) reasons.push(`${days} working days in the last ${WINDOW_DAYS} (need >=${GATE_MIN_DAYS})`);
-      if (!preview) reasons.push(`Working days could not be measured just now (${measured.reason}). The pipeline measures them within 24 hours`);
+      if (preview && !hasDays) reasons.push(`${days} active days in the last ${WINDOW_DAYS} (need >=${GATE_MIN_DAYS})`);
+      if (!preview) reasons.push(`Active days could not be measured just now (${measured.reason}). The pipeline measures them within 24 hours`);
 
       const passes = isOldEnough && hasDays === true;
       setGatesPassed(passes);
@@ -326,11 +326,11 @@ export default function Register({ onChangeTab }) {
                     {renderCheckIcon(checks.accountAge)} <span>Account at least {MIN_ACCOUNT_AGE_DAYS} days old</span>
                   </li>
                   <li className="flex items-start gap-3 text-xs font-mono text-outline">
-                    {renderCheckIcon(checks.workingDays)} <span>At least {GATE_MIN_DAYS} working days in the last {WINDOW_DAYS}</span>
+                    {renderCheckIcon(checks.workingDays)} <span>At least {GATE_MIN_DAYS} active days in the last {WINDOW_DAYS}</span>
                   </li>
                 </ul>
                 <p className="mt-4 font-mono text-[9px] text-outline/60 uppercase leading-relaxed">
-                  A working day has a public commit, a pull request or issue in someone else's project, or a review of someone else's pull request. Measured live with the pipeline's own code, and the pipeline's daily measurement is the one that counts.
+                  An active day has a commit to a public repository, a pull request or issue on a repository you do not own, or a review of another developer's pull request. Measured live with the pipeline's own code, and the pipeline's daily measurement is the one that counts.
                 </p>
               </div>
             </div>

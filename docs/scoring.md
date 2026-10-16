@@ -15,6 +15,9 @@ Every figure below was measured, unless it says "about".
 
 ## In plain words, before and after
 
+On the site the three parts are called active days (work), open source contributions
+(collaboration) and stars (appreciation). This file uses the names the code uses.
+
 |                                     | Version 2                                                                 | Version 3                                                                                                     |
 | ----------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | What decides the order              | Stars and followers (rank correlation with the score 0.63 and 0.51)       | Days of public work, and work other people accepted                                                           |
