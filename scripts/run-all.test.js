@@ -158,6 +158,16 @@ describe('mergeBatch', () => {
     expect(board.leaderboard.find((d) => d.username === 'c').score).toBe(300);
   });
 
+  it('keeps one row per account when a developer is measured under a new login', () => {
+    // Account 42 was carried as "old" and is measured this run as "new".
+    const { board, removed } = merge([row('old', 0, 500, { github_id: 42 }), row('b', 7, 300)], {
+      newEntries: [row('new', 0, 600, { github_id: 42 })]
+    });
+    expect(names(board).sort()).toEqual(['b', 'new']);
+    expect(board.leaderboard.find((d) => d.username === 'new').missed_runs).toBeUndefined();
+    expect(removed).toEqual([]);
+  });
+
   it('reranks across the whole board, not within the batch', () => {
     const { board } = merge([row('a', 0, 100), row('b', 7, 800), row('c', 7, 700)], {
       newEntries: [row('a', 0, 900)]

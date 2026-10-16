@@ -58,6 +58,14 @@ describe('verifyPublished', () => {
     expect(verifyPublished(served).errors.join()).toMatch(/its parts give/);
   });
 
+  it('fails a board that lists one account twice, under two logins', () => {
+    const b = board(rows);
+    const twin = { ...b.leaderboard[1], github_id: b.leaderboard[0].github_id ?? 7 };
+    b.leaderboard[0] = { ...b.leaderboard[0], github_id: twin.github_id };
+    b.leaderboard[1] = twin;
+    expect(verifyPublished(b).errors.join()).toMatch(/account \d+ appears more than once/);
+  });
+
   it('fails a row scored by another model version', () => {
     const b = board(rows);
     b.leaderboard[0] = { ...b.leaderboard[0], model_version: '2.0.0' };

@@ -91,6 +91,7 @@ export function verifyPublished(payload, { config = SCORE_CONFIG, moderation = [
   });
 
   const seen = new Set();
+  const seenIds = new Set();
   rows.forEach((row, i) => {
     const expected =
       i > 0 && row?.score_exact === rows[i - 1]?.score_exact ? rows[i - 1]?.rank : i + 1;
@@ -99,6 +100,12 @@ export function verifyPublished(payload, { config = SCORE_CONFIG, moderation = [
     const key = String(row?.username).toLowerCase();
     if (seen.has(key)) errors.push(`${label(row, i)}: appears more than once`);
     seen.add(key);
+    // One account, one row, whatever logins it has had.
+    if (Number.isInteger(row?.github_id)) {
+      if (seenIds.has(row.github_id))
+        errors.push(`${label(row, i)}: account ${row.github_id} appears more than once`);
+      seenIds.add(row.github_id);
+    }
   });
 
   try {
