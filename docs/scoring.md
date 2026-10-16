@@ -236,7 +236,11 @@ to a developer in the top 50. Read one by one on 16 October, 13 went into `publi
 or a script updating health check logs up to eight times a day. 2 are repositories where GitHub counts
 commits on 20 or more days that are not in the repository's history, so nobody can check them. The
 other 5 read as a person's work, LeetCode solutions, a game and a portfolio, and still count. The
-13 entries lower 10 developers' scores and take 3 of them below the gate.
+13 entries lower 10 developers' scores and take 3 of them below the gate. A second pass the same evening read the
+developers the first v3 runs had admitted, after a review panel found scripts among them, and
+listed 8 more repositories of 6 developers. 6 are scripts or generated content, 1 is a daily
+one-character edit to a comment and 1 holds commits that are not in its history. The 21 entries are
+read on every run.
 
 **Collaboration.** 4,586 merges went into repositories the developer does not own, for 252
 developers. 3,525 of them the developer merged themselves, which counts for nothing. 1,046 were

@@ -2,9 +2,27 @@
   "about": "Repositories whose commits do not count toward a Rankistan score, each with the reason and the evidence. A listed repository loses only its own commits, and the developer's other work still counts. To appeal an entry, open an issue at https://github.com/Sudo-Ali-Dev/Rankistan/issues.",
   "repositories": [
     {
+      "repo": "Abdidev1/Apex-Realms-Studios",
+      "reason": "A commit almost every day that changes one character inside a meaningless comment in index.html, made in the web editor.",
+      "evidence": "https://github.com/Abdidev1/Apex-Realms-Studios/commits/main?author=Abdidev1&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
       "repo": "adisher/youtube-poop",
       "reason": "The gh-pages branch holds 91 commits titled \"remnant state update\" made by LLM Shorts Bot in the developer's name, around the clock.",
       "evidence": "https://github.com/adisher/youtube-poop/commits/gh-pages?author=adisher&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "AhmadBilalDSA/duck-diff",
+      "reason": "Two scheduled commits a day, \"snapshot upstream pr & ci health\" and \"append daily engineering metrics\", after a commit setting CI to attribute telemetry commits to the user.",
+      "evidence": "https://github.com/AhmadBilalDSA/duck-diff/commits/main?author=AhmadBilalDSA&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "AhmadBilalDSA/payout-delta",
+      "reason": "287 commits in the window, 245 of them titled \"calibrate route clearing threshold\", made about two minutes apart.",
+      "evidence": "https://github.com/AhmadBilalDSA/payout-delta/commits/main?author=AhmadBilalDSA&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
     },
     {
@@ -44,9 +62,33 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "Haris-Ahmed83/Ai-Projects-Bundle",
+      "reason": "Two commits a day titled \"chore(daily)\" with the date, each adding one generated project of exactly 144 lines from a series of 730.",
+      "evidence": "https://github.com/Haris-Ahmed83/Ai-Projects-Bundle/commits/main?author=Haris-Ahmed83&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
       "repo": "Mati54866/SaaS_template",
       "reason": "GitHub counts a commit here on each of 22 days of the window, and the repository's whole history is 2 commits, so the rest cannot be checked by anyone.",
       "evidence": "https://github.com/Mati54866/SaaS_template/commits/main",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mraliakber/My_WorkFlows-",
+      "reason": "Exactly 15 commits a day on all 30 days, titled \"chore, auto commit\" with a number and the time, each day's commits seconds apart.",
+      "evidence": "https://github.com/mraliakber/My_WorkFlows-/commits/main?author=mraliakber&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "Muhammad-Ramazanovich/fake-contribution-real",
+      "reason": "One commit a day on the gh-pages branch, all 30 titled with the same deploy hash, deploying the same source every day.",
+      "evidence": "https://github.com/Muhammad-Ramazanovich/fake-contribution-real/commits/gh-pages?author=Muhammad-Ramazanovich&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "Muhammad-Ramazanovich/git-contribution",
+      "reason": "One commit a day on the gh-pages branch, all 30 titled with the same deploy hash, deploying the same source every day.",
+      "evidence": "https://github.com/Muhammad-Ramazanovich/git-contribution/commits/gh-pages?author=Muhammad-Ramazanovich&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
     },
     {
@@ -65,6 +107,12 @@
       "repo": "salman-rafii/School-Calendar-Demo",
       "reason": "GitHub counts 96 commits here on 20 days of the window, and the repository's history holds one of them, so the rest cannot be checked by anyone.",
       "evidence": "https://github.com/salman-rafii/School-Calendar-Demo/commits/main",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "tayyabexe/skills",
+      "reason": "GitHub counts 95 commits here on 20 days of the window, and the repository's history holds one of them, so the rest cannot be checked by anyone.",
+      "evidence": "https://github.com/tayyabexe/skills/commits/main",
       "added": "2026-10-16"
     },
     {
