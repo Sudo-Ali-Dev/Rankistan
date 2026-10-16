@@ -145,6 +145,14 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
 
   useEffect(() => { setCurrentPage(1); }, [selectedTag, searchTerm, sortIndex]);
 
+  // How many developers share each rank, counted on the whole board so a search or a filter never
+  // changes it. Equal scores share a rank, and the board says so rather than imply an order.
+  const sharedByRank = useMemo(() => {
+    const counts = new Map();
+    for (const dev of leaderboard) counts.set(dev.rank, (counts.get(dev.rank) || 0) + 1);
+    return counts;
+  }, [leaderboard]);
+
   const indexOfLastDev = currentPage * devsPerPage;
   const indexOfFirstDev = Math.max(0, indexOfLastDev - devsPerPage);
   const currentDevs = filteredLeaderboard.slice(indexOfFirstDev, indexOfLastDev);
@@ -317,10 +325,25 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                       No developers match your search.
                     </div>
                   ) : (
-                    currentDevs.map(dev => (
+                    currentDevs.map((dev, i) => {
+                      const sharedBy = sharedByRank.get(dev.rank) || 1;
+                      // One line above a shared rank on each page it reaches, in board order only.
+                      const opensGroup =
+                        sharedBy > 1 &&
+                        SORT_OPTIONS[sortIndex].key === 'score_desc' &&
+                        (i === 0 || currentDevs[i - 1].rank !== dev.rank);
+                      return (
+                      <React.Fragment key={dev.username}>
+                      {opensGroup && (
+                        <div className="px-4 py-2 sm:px-6 border-b border-outline-variant/50 bg-surface-container-low font-body text-xs text-outline">
+                          {sharedBy} developers share rank {dev.rank} with exactly the same score.{' '}
+                          {sharedBy === 2 ? 'Neither is ahead of the other' : 'None of them is ahead of another'}, so their
+                          order on the page changes every day.
+                        </div>
+                      )}
                       <DevCard
-                        key={dev.username}
                         dev={dev}
+                        sharedBy={sharedBy}
                         onGenerateSummary={handleGenerateSummary}
                         onGenerateBadge={onNavigateToBadge}
                         summary={summaryByUser[dev.username]}
@@ -329,7 +352,9 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                         isCompareSelected={compareSelection.some(d => d.username === dev.username)}
                         onCompareSelect={handleCompareSelect}
                       />
-                    ))
+                      </React.Fragment>
+                      );
+                    })
                   )}
                 </div>
               </div>

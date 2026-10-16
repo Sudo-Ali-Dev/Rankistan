@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Contributors from '../components/Contributors';
 import ScoreExplainer from '../components/ScoreExplainer';
+import { FULL_CREDIT_STARS, SCORE_SAFEGUARDS, pointsForCredits } from '../utils/score-explainer.js';
 import { SCORE_CONFIG } from '../model/config.js';
 // The list discovery searches, read from the pipeline itself, so this page names exactly the
 // cities that are searched.
@@ -94,7 +95,10 @@ const FAQ = [
   { q: 'What counts as an active day?', a: "Any day you made a commit to a public repository, opened a pull request or issue on a repository you do not own, or reviewed another developer's pull request. A day counts once, so a thousand commits in a day count the same as one. Commits to forks and profile README repositories do not count, and neither do stars, forks, watches or comments." },
   { q: 'Why is my score lower than expected?', a: `Being active every day earns at most ${WORK_POINTS} points. The other ${(SCALE - WORK_POINTS).toLocaleString('en-US')} come from open source contributions other developers accepted and from stars on a repository you are working on. Followers and how many repositories you have earn nothing, and activity in private repositories is not counted because nobody outside can check it.` },
   { q: 'Does my account\'s age matter?', a: `Only to get on the board. Your account must be at least ${MIN_ACCOUNT_AGE_DAYS} days old, and after that its age changes nothing. The developer who merges your pull request, or whose pull request you review, must have an account at least ${COUNTERPARTY_AGE} old, so a brand new second account cannot boost you.` },
-  { q: 'Can my score be gamed?', a: 'Not easily. Doing a lot in one day still counts as one day. Commits with impossible dates or made by a bot in your name are dropped automatically. A script that commits for you every day is found by a person reading the commits and listed in public at rankistan.dev/moderation.json, with the evidence. Merges by yourself, by a bot or by a brand new account earn nothing.' },
+  { q: 'Can my score be gamed?', a: 'Not easily, and the section Keeping The Board Honest above lists every rule. Doing a lot in one day still counts as one day. Commits with impossible dates or made by a bot in your name are dropped automatically. A script that commits for you every day is found by a person reading the commits and listed in public at rankistan.dev/moderation.json, with the evidence. Merges by yourself, by a bot or by a brand new account earn nothing.' },
+  { q: 'Why do some developers share a rank?', a: `When developers have exactly the same score, nothing we measure puts one ahead of another, so they share the rank. Your rank is one more than the number of developers with a higher score, the way golf and the Olympics count it. If 3 developers share rank 10, twelve developers are ahead of the next one, so the next rank is 13. It happens most at ${WORK_POINTS} points, the score of someone active on all ${WINDOW_DAYS} days with no open source contributions or stars yet. Inside a shared rank the order on the page changes every day, so nobody is always shown first because of their name or the age of their account.` },
+  { q: 'Why do two developers with the same score have different ranks?', a: 'The board shows each score to two decimals, and ranks use the score before rounding. A developer with 500.04 is ahead of one with 500.00. In the few places where even the two decimals look the same, the scores differ by less than a hundredth of a point.' },
+  { q: 'I am active every day. Why am I not higher?', a: `Being active on all ${WINDOW_DAYS} days earns ${WORK_POINTS} points, the most active days can give, and many developers reach it. A day counts once, so more commits on the same days add nothing. What moves you past them is work other developers accept. One pull request merged into an open source project with ${FULL_CREDIT_STARS.toLocaleString('en-US')} or more stars adds up to ${Math.round(pointsForCredits(1))} points. A smaller one still adds a few points and moves you ahead of everyone at ${WORK_POINTS}. At work, a pull request you merge yourself counts once another developer with an account at least ${COUNTERPARTY_AGE} old has approved it.` },
   { q: 'Can I see exactly what my score was computed from?', a: 'Yes. Every developer\'s file on the site lists each day and each pull request, review and merge that counted, with a link to it on GitHub. The Register tab shows any account\'s score right now, with the same code the board uses.' },
   { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026). It reads every candidate\'s contribution calendar, measures in full only those who could qualify, then applies the eligibility gate before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
@@ -335,6 +339,26 @@ export default function About({ onChangeTab }) {
                 A day counts once, however much you did. Stars, forks, watches and comments do not count.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* How gaming is stopped */}
+        <div className="mb-8 sm:mb-12 border border-outline-variant bg-surface-container-lowest p-4 sm:p-6 lg:p-8">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+            <span className="material-symbols-outlined text-primary" aria-hidden="true">verified_user</span>
+            <h2 className="font-headline text-lg sm:text-xl font-bold tracking-tighter uppercase">Keeping The Board Honest</h2>
+          </div>
+          <p className="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed max-w-3xl mb-4 sm:mb-6">
+            A leaderboard is only worth something if nobody can script or buy their way up it. These are the rules that
+            stop it. Each one is checked automatically on every run, except the last, which a person does in public.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {SCORE_SAFEGUARDS.map((rule) => (
+              <div key={rule.what} className="border border-outline-variant/50 bg-surface p-3 sm:p-4">
+                <div className="font-headline text-sm font-bold text-on-surface mb-1">{rule.what}</div>
+                <p className="font-body text-xs text-outline leading-relaxed">{rule.how}</p>
+              </div>
+            ))}
           </div>
         </div>
 

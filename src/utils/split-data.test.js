@@ -17,6 +17,7 @@ import {
   isDigestPayload,
   summarizeDigest,
   toBoardRow,
+  DERIVED_BOARD_FIELDS,
   toDeveloperRow
 } from './split-data';
 import { ensureLeaderboardTags } from './tags';
@@ -77,7 +78,9 @@ describe('buildBoard', () => {
     expect(board.leaderboard).toHaveLength(REAL.leaderboard.length);
     board.leaderboard.forEach((row, i) => {
       expect(row.username).toBe(REAL.leaderboard[i].username);
-      for (const key of Object.keys(row)) expect(BOARD_FIELDS).toContain(key);
+      for (const key of Object.keys(row)) {
+        expect([...BOARD_FIELDS, ...DERIVED_BOARD_FIELDS]).toContain(key);
+      }
     });
   });
 
@@ -126,6 +129,14 @@ describe('buildBoard', () => {
 
   it('skips a list field a row does not have rather than inventing one', () => {
     expect(toBoardRow({ username: 'a', bio: 'x' })).toEqual({ username: 'a' });
+  });
+
+  it('carries the score to two decimals, the precision changes of rank show at', () => {
+    expect(toBoardRow({ username: 'a', score: 500, score_exact: 499.71986 }).score_shown).toBe(
+      499.72
+    );
+    expect(toBoardRow({ username: 'a', score: 500, score_exact: 500 }).score_shown).toBe(500);
+    expect(toBoardRow({ username: 'a', score: 3 })).not.toHaveProperty('score_shown');
   });
 });
 

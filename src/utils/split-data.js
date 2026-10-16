@@ -57,6 +57,9 @@ export const BOARD_FIELDS = Object.freeze([
   'tags'
 ]);
 
+// Fields a board row gains from its row rather than copies: the score to two decimals.
+export const DERIVED_BOARD_FIELDS = Object.freeze(['score_shown']);
+
 // Fields the pipeline keeps on a row for its own use and no page reads: the contributions
 // measurement the score is computed from (scripts/measure/contributions.js, the field it had
 // before the switch included), and the miss counter of a row a run did not see (mergeBatch in
@@ -133,6 +136,11 @@ export function toBoardRow(row) {
   for (const field of BOARD_FIELDS) {
     if (row && Object.hasOwn(row, field)) out[field] = row[field];
   }
+  // The score to two decimals, the precision at which almost every change of rank shows. The
+  // board shows it beside the rounded score, so two rows with different ranks do not both read
+  // 500 (measured 2026-10-16, 953 of 967 rank changes visible against 327 with whole numbers).
+  if (row && Number.isFinite(row.score_exact))
+    out.score_shown = Math.round(row.score_exact * 100) / 100;
   return out;
 }
 

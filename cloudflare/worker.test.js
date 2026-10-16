@@ -343,3 +343,30 @@ describe('parseHeatmapDays', () => {
     expect(parseHeatmapDays('Payment required')).toEqual([]);
   });
 });
+
+describe('the badge says when a rank is shared', () => {
+  it('adds (tied) for a developer who shares a rank, and nothing for one who does not', async () => {
+    const { default: worker } = await import('./worker.js');
+    const board = {
+      leaderboard: [
+        { username: 'ana', rank: 5 },
+        { username: 'bea', rank: 5 },
+        { username: 'cal', rank: 7 }
+      ]
+    };
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify(board), { status: 200 });
+    try {
+      const badge = async (login) =>
+        (
+          await (
+            await worker.fetch(new Request(`https://example.test/api/badge/${login}`), {})
+          ).json()
+        ).message;
+      expect(await badge('ana')).toBe('rank #5 (tied)');
+      expect(await badge('cal')).toBe('rank #7');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
