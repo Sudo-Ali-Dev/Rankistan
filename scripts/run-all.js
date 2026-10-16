@@ -55,7 +55,8 @@ import {
   applyOptOuts,
   withoutOptedOut,
   emptyRegistry,
-  batchForCreatedAt
+  batchForCreatedAt,
+  rowGithubId
 } from './registry.js';
 
 const PUBLIC_DIR = path.join(process.cwd(), 'public');
@@ -252,7 +253,15 @@ export function mergeBatch({
   const own = existing.filter((d) => d.batch_index === batchIndex);
 
   const key = (d) => String(d?.username || d || '').toLowerCase();
+  // One row per account. A login can change, the account id cannot, so a developer measured under
+  // a new login replaces the row carried under the old one instead of standing beside it (seen on
+  // 16 October 2026, account 132939791 listed under two logins for a day).
+  const rowKey = (d) => {
+    const id = rowGithubId(d);
+    return id !== null ? `id:${id}` : `login:${key(d)}`;
+  };
   const fresh = new Set(newEntries.map(key));
+  const freshIds = new Set(newEntries.map(rowGithubId).filter((id) => id !== null));
   // `null` means nobody can be shown to have been evaluated, so nobody is
   // removed as ineligible.
   const judged = Array.isArray(evaluated) ? new Set(evaluated.map(key)) : null;
@@ -266,6 +275,7 @@ export function mergeBatch({
   const freezeMisses = discoveryComplete === false;
   for (const row of own) {
     if (fresh.has(key(row))) continue;
+    if (rowGithubId(row) !== null && freshIds.has(rowGithubId(row))) continue; // renamed, measured
     if (judged?.has(key(row))) {
       reason(row, 'ineligible');
       continue;
@@ -306,12 +316,12 @@ export function mergeBatch({
   // Carried rows go in first so that nothing outranks a real measurement: a
   // developer another batch has just measured keeps that batch's row, and this
   // batch's fresh rows override everything.
-  const map = new Map(carried.map((d) => [key(d), d]));
+  const map = new Map(carried.map((d) => [rowKey(d), d]));
   for (const dev of kept) {
-    map.set(key(dev), dev);
+    map.set(rowKey(dev), dev);
   }
   for (const dev of newEntries) {
-    map.set(key(dev), dev);
+    map.set(rowKey(dev), dev);
   }
 
   const rescored = rescore([...map.values()], { moderation });
@@ -494,9 +504,13 @@ export function guardBoard({
   }
 
   const key = (d) => String(d?.username || '').toLowerCase();
+  // A developer still on the board under a new login has not left it.
+  const afterIds = new Set(board.leaderboard.map(rowGithubId).filter((id) => id !== null));
   const after = new Set(board.leaderboard.map(key));
   const explained = new Set(removed.map(key));
-  const lost = previous.filter((row) => !after.has(key(row)));
+  const lost = previous.filter(
+    (row) => !after.has(key(row)) && !(rowGithubId(row) !== null && afterIds.has(rowGithubId(row)))
+  );
   const unexplained = lost.filter((row) => !explained.has(key(row))).map((row) => row.username);
 
   if (unexplained.length > previous.length * MAX_UNEXPLAINED_LOSS) {
