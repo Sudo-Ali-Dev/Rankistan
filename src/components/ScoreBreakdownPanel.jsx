@@ -1,7 +1,57 @@
 import React from 'react';
 import { SCORE_CONFIG } from '../model/config.js';
+import {
+  PART_LABELS,
+  pointsForCredits,
+  pointsForStars,
+  workPointsForDays
+} from '../utils/score-explainer.js';
 
-const { SCALE, WEIGHTS, WINDOW_DAYS } = SCORE_CONFIG;
+const { SCALE, WEIGHTS, WINDOW_DAYS, APPRECIATION } = SCORE_CONFIG;
+
+const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+
+/** How the active-days points came out, in words, from the developer's own numbers. */
+function workHow(days, points) {
+  if (days === 0) return 'No active days in the window.';
+  const even = workPointsForDays(days);
+  const base = `Spread evenly across the month, ${plural(days, 'active day', 'active days')} would earn about ${Math.round(even)} points.`;
+  if (points > even + 0.5)
+    return `${base} More of yours were recent, and recent days count a little more, so you get ${formatPoints(points)}.`;
+  if (points < even - 0.5)
+    return `${base} More of yours were longer ago, and older days count a little less, so you get ${formatPoints(points)}.`;
+  return base;
+}
+
+/** What the open source contributions were, in words. */
+function collaborationWhat(evidence) {
+  const items = [];
+  if (evidence.accepted.length)
+    items.push(
+      `${plural(evidence.accepted.length, 'pull request', 'pull requests')} merged into open source projects you do not own`
+    );
+  if (evidence.reviews.length) items.push(plural(evidence.reviews.length, 'review', 'reviews'));
+  if (evidence.maintained.length)
+    items.push(
+      `${plural(evidence.maintained.length, 'pull request', 'pull requests')} from other developers merged into your repositories`
+    );
+  return items.length ? items.join(', ') : `None in the last ${WINDOW_DAYS} days`;
+}
+
+function collaborationHow(credits, points) {
+  if (!(credits > 0)) {
+    return `No credits yet. One pull request merged into a popular open source project would add about ${Math.round(pointsForCredits(1))} points.`;
+  }
+  return `Each pull request earns up to 1 credit, more in a project with more stars. A review, or a pull request merged into your own repository, earns half. Together yours earn ${credits.toFixed(2)} credits, which give ${formatPoints(points)} points. For comparison, 1 credit gives ${Math.round(pointsForCredits(1))} and 3 credits give ${Math.round(pointsForCredits(3))}.`;
+}
+
+function starsHow(repo, points) {
+  if (!repo) return `Under ${APPRECIATION.FROM_STARS} stars gives nothing.`;
+  const full = pointsForStars(repo.stars);
+  const base = `${repo.stars.toLocaleString('en-US')} stars give ${formatPoints(full)} points.`;
+  if (repo.days >= APPRECIATION.FULL_AFTER_DAYS) return base;
+  return `${base} The full amount needs commits on ${APPRECIATION.FULL_AFTER_DAYS} days, you have ${repo.days}, so you get ${repo.days}/${APPRECIATION.FULL_AFTER_DAYS} of ${formatPoints(full)}, which is ${formatPoints(points)}.`;
+}
 
 function formatNum(n) {
   const v = Number(n);
@@ -51,15 +101,18 @@ export default function ScoreBreakdownPanel({ preview, gatesPassed = true }) {
 
       <div className="p-4 sm:p-6 border-b border-outline-variant bg-tertiary/5">
         <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest block mb-2">
-          Public_Work_Only
+          Only_Public_Repositories
         </span>
         <ul className="space-y-1.5 font-body text-xs text-outline leading-relaxed">
           <li>
-            Measured from GitHub's contributions API over the last{' '}
-            <span className="text-on-surface">{WINDOW_DAYS} days</span>, with the code the pipeline
-            runs.
+            Your activity in public repositories on GitHub over the last{' '}
+            <span className="text-on-surface">{WINDOW_DAYS} days</span>, read with the same code the
+            leaderboard uses.
           </li>
-          <li>Followers, repository counts and private contributions do not count.</li>
+          <li>
+            Followers, how many repositories you have, and activity in private repositories give no
+            points.
+          </li>
         </ul>
       </div>
 
@@ -68,17 +121,17 @@ export default function ScoreBreakdownPanel({ preview, gatesPassed = true }) {
           <thead>
             <tr className="border-b border-outline-variant bg-surface-container-low text-[10px] uppercase tracking-widest text-outline">
               <th className="p-3 sm:p-4 font-normal">Part</th>
-              <th className="p-3 sm:p-4 font-normal">Measured</th>
+              <th className="p-3 sm:p-4 font-normal">What we found</th>
               <th className="p-3 sm:p-4 font-normal text-right">Points</th>
             </tr>
           </thead>
           <tbody className="text-on-surface-variant">
             <tr className="border-b border-outline-variant/50">
-              <td className="p-3 sm:p-4 text-on-surface">Work</td>
+              <td className="p-3 sm:p-4 text-on-surface">{PART_LABELS.work}</td>
               <td className="p-3 sm:p-4 text-outline">
-                {formatNum(evidence.working_days.length)} of {WINDOW_DAYS} days with public work
-                <span className="block text-[10px] text-outline/70 mt-0.5">
-                  Recent days weigh more. A day counts once.
+                {formatNum(evidence.working_days.length)} of {WINDOW_DAYS} days active
+                <span className="block text-[10px] text-outline/70 mt-0.5 font-body normal-case">
+                  {workHow(evidence.working_days.length, points('work'))}
                 </span>
               </td>
               <td className="p-3 sm:p-4 text-right text-primary font-bold tabular-nums">
@@ -87,13 +140,11 @@ export default function ScoreBreakdownPanel({ preview, gatesPassed = true }) {
             </tr>
 
             <tr className="border-b border-outline-variant/50">
-              <td className="p-3 sm:p-4 text-on-surface">Collaboration</td>
+              <td className="p-3 sm:p-4 text-on-surface">{PART_LABELS.collaboration}</td>
               <td className="p-3 sm:p-4 text-outline">
-                {formatNum(evidence.accepted.length)} merged by others,{' '}
-                {formatNum(evidence.reviews.length)} reviews,{' '}
-                {formatNum(evidence.maintained.length)} merged into your projects
-                <span className="block text-[10px] text-outline/70 mt-0.5">
-                  Counted per project and per person.
+                {collaborationWhat(evidence)}
+                <span className="block text-[10px] text-outline/70 mt-0.5 font-body normal-case">
+                  {collaborationHow(preview.details?.c, points('collaboration'))}
                 </span>
               </td>
               <td className="p-3 sm:p-4 text-right text-primary font-bold tabular-nums">
@@ -102,11 +153,14 @@ export default function ScoreBreakdownPanel({ preview, gatesPassed = true }) {
             </tr>
 
             <tr className="border-b border-outline-variant/50">
-              <td className="p-3 sm:p-4 text-on-surface">Appreciation</td>
+              <td className="p-3 sm:p-4 text-on-surface">{PART_LABELS.appreciation}</td>
               <td className="p-3 sm:p-4 text-outline">
                 {appreciated
-                  ? `${appreciated.repo}, ${formatNum(appreciated.stars)} stars, worked on ${appreciated.days} days`
-                  : `No project of yours with ${SCORE_CONFIG.APPRECIATION.FROM_STARS} or more stars worked on this month`}
+                  ? `${appreciated.repo}, ${formatNum(appreciated.stars)} stars, committed to on ${plural(appreciated.days, 'day', 'days')}`
+                  : `No repository of yours with ${APPRECIATION.FROM_STARS} or more stars that you committed to this month`}
+                <span className="block text-[10px] text-outline/70 mt-0.5 font-body normal-case">
+                  {starsHow(appreciated, points('appreciation'))}
+                </span>
               </td>
               <td className="p-3 sm:p-4 text-right text-primary font-bold tabular-nums">
                 +{formatPoints(points('appreciation'))}
@@ -116,17 +170,21 @@ export default function ScoreBreakdownPanel({ preview, gatesPassed = true }) {
             {evidence.excluded.length > 0 && (
               <tr className="border-b border-outline-variant/50">
                 <td className="p-3 sm:p-4 text-error" colSpan={3}>
-                  Not counted: {evidence.excluded.map((e) => `${e.repo} (${e.reason})`).join(', ')}
+                  These repositories were not counted.{' '}
+                  {evidence.excluded.map((e) => `${e.repo} (${e.reason})`).join(', ')}
                 </td>
               </tr>
             )}
 
             <tr className="bg-primary/10">
-              <td
-                className="p-3 sm:p-4 font-bold text-on-surface uppercase tracking-tight"
-                colSpan={2}
-              >
+              <td className="p-3 sm:p-4 font-bold text-on-surface uppercase tracking-tight">
                 Score
+              </td>
+              <td className="p-3 sm:p-4 text-outline">
+                {['work', 'collaboration', 'appreciation']
+                  .map((id) => formatPoints(points(id)))
+                  .join(' + ')}
+                , rounded to a whole number
               </td>
               <td className="p-3 sm:p-4 text-right font-bold text-primary text-base tabular-nums">
                 {formatNum(score)}
