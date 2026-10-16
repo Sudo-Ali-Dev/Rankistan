@@ -1,6 +1,6 @@
 # Rankistan
 
-**Current release: [v2.0.0](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/v2.0.0)** — Scoring v2 (diminishing returns, daily caps, Evolution tab, Register breakdown).
+**Current release [v3.0.0](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/v3.0.0)**, Scoring v3. Developers are ranked by days of public work and by work other people accepted. Followers and repository counts no longer count.
 
 An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. The site includes a searchable **Leaderboard**, a **Developer Map** that groups developers by normalized profile locations on an interactive map of Pakistan, a **Badge Generator** for README rank badges, **Register** for eligibility checks with a live score measured by the Worker and the links to register or opt out by GitHub issue, **Evolution** for how the scoring formula changed over time, and **About** documentation for pipeline logic, filters, and scheduling.
 
