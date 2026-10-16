@@ -177,12 +177,19 @@ describe('pipeline-only fields', () => {
     leaderboard: REAL.leaderboard.map((row) => ({
       ...row,
       shadow_contributions: { v: 1, at: '2026-10-14T00:00:00Z', cal60: [1, 2, 3] },
-      events_window: { fetched: 200, truncated: true, days: 6.1 }
+      events_window: { fetched: 200, truncated: true, days: 6.1 },
+      missed_runs: 1,
+      missed_since: '2026-10-14T00:00:00.000Z'
     }))
   };
 
   it('are named, and none is a board field', () => {
-    expect(PIPELINE_ONLY_FIELDS).toEqual(['shadow_contributions', 'events_window']);
+    expect(PIPELINE_ONLY_FIELDS).toEqual([
+      'shadow_contributions',
+      'events_window',
+      'missed_runs',
+      'missed_since'
+    ]);
     for (const field of PIPELINE_ONLY_FIELDS) expect(BOARD_FIELDS).not.toContain(field);
   });
 

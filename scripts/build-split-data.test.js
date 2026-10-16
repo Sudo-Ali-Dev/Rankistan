@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildSplitData } from './build-split-data.js';
-import { BOARD_FIELDS, SPLIT_SCHEMA } from '../src/utils/split-data.js';
+import { BOARD_FIELDS, SPLIT_SCHEMA, developerFileName } from '../src/utils/split-data.js';
 
 const PAYLOAD = {
   last_updated: '2026-10-13T12:30:32.193Z',
@@ -97,6 +97,25 @@ describe('buildSplitData', () => {
     expect(result.stripped).toBeGreaterThan(0);
     // The state itself is left alone.
     expect(fs.readFileSync(sourcePath, 'utf8')).toMatch(/shadow_contributions/);
+  });
+
+  it('serves a row a run missed without its miss counter', () => {
+    const missed = {
+      ...PAYLOAD,
+      leaderboard: PAYLOAD.leaderboard.map((row, i) =>
+        i === 0 ? { ...row, missed_runs: 1, missed_since: '2026-10-14T00:00:00.000Z' } : row
+      )
+    };
+    publish(missed);
+    const result = buildSplitData({ sourcePath, outDir, log: quiet });
+    const served = fs.readFileSync(path.join(outDir, 'data.json'), 'utf8');
+    expect(served).toBe(JSON.stringify(PAYLOAD));
+    expect(result.stripped).toBeGreaterThan(0);
+    const detail = fs.readFileSync(
+      path.join(outDir, 'dev', developerFileName(PAYLOAD.leaderboard[0].username)),
+      'utf8'
+    );
+    expect(detail).not.toMatch(/missed_runs|missed_since/);
   });
 
   it('writes nothing outside the output directory', () => {

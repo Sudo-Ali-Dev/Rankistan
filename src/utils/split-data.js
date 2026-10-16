@@ -58,12 +58,19 @@ export const BOARD_FIELDS = Object.freeze([
 ]);
 
 // Fields the pipeline keeps on a row for its own use and no page reads: the
-// shadow measurement of the next activity model's inputs, and how far back
-// the events read behind today's reached (scripts/measure/contributions.js).
-// They stay in data.json, which is the pipeline's state, and out of every
-// file derived for the browser, which therefore downloads what it did before
-// they existed. They would roughly double a detail file.
-export const PIPELINE_ONLY_FIELDS = Object.freeze(['shadow_contributions', 'events_window']);
+// shadow measurement of the next activity model's inputs, how far back the
+// events read behind today's reached (scripts/measure/contributions.js), and
+// the miss counter of a row a run did not see (mergeBatch in
+// scripts/run-all.js). They stay in data.json, which is the pipeline's state,
+// and out of every file derived for the browser, which therefore downloads
+// what it did before they existed. The measurement would roughly double a
+// detail file, and a miss counter is bookkeeping, not a fact about anyone.
+export const PIPELINE_ONLY_FIELDS = Object.freeze([
+  'shadow_contributions',
+  'events_window',
+  'missed_runs',
+  'missed_since'
+]);
 
 /** A row as the browser is given it: everything but PIPELINE_ONLY_FIELDS. */
 export function toDeveloperRow(row) {
