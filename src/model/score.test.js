@@ -315,6 +315,20 @@ describe('integrity', () => {
     ]);
     expect(e.working_days).toEqual([]);
   });
+
+  it('lists only the moderation entries for repositories the developer committed to', () => {
+    const m = measurement({ commits: [ownRepo([1, 2, 3, 4], { repo: 'ana/app' })] });
+    const e = deriveEvidence(m, {
+      moderation: [
+        { repo: 'someone/else', reason: 'a script' },
+        { repo: 'Ana/App', reason: 'a cron' }
+      ]
+    });
+    expect(e.excluded).toEqual([{ repo: 'Ana/App', reason: 'moderation: a cron' }]);
+    expect(
+      deriveEvidence(m, { moderation: [{ repo: 'someone/else', reason: 'a script' }] }).excluded
+    ).toEqual([]);
+  });
 });
 
 describe('collaboration', () => {
