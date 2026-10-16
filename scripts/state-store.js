@@ -13,7 +13,10 @@
 // for byte, gzipped. The state is the newest *uploaded* asset by `created_at`.
 // One that fails to download, match its digest or parse is skipped for the
 // next-newest, and the newest KEEP_ASSETS - three days of hourly runs - are
-// kept, so any of them can be restored by hand.
+// kept, so any of them can be restored by hand. So is the newest state of each
+// Pakistan date for KEEP_DAILY_DAYS: the board as it closed that day, the
+// record a history of the board is built from (pruning used to delete it after
+// three days, so nothing durable recorded the board at all).
 //
 // Writes are serialized by the pipeline's concurrency group in
 // update-digest.yml. This module takes no lock of its own.
@@ -42,6 +45,32 @@ import { fileURLToPath } from 'node:url';
 
 export const STATE_TAG = 'pipeline-state';
 export const KEEP_ASSETS = 72;
+/** Days the last state of each Pakistan date is kept. Well under 1,000 assets a release. */
+export const KEEP_DAILY_DAYS = 400;
+const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The Pakistan date (UTC+5) an asset was saved on. */
+export function pktDateOf(iso) {
+  return new Date(Date.parse(iso) + PKT_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * The newest uploaded state of each Pakistan date saved within the last `days`, newest first:
+ * each day's closing board.
+ */
+export function dailyCloses(assets, { now, days = KEEP_DAILY_DAYS }) {
+  const seen = new Set();
+  const out = [];
+  for (const asset of newestFirst(assets)) {
+    if (now - Date.parse(asset.created_at) > days * DAY_MS) continue;
+    const date = pktDateOf(asset.created_at);
+    if (seen.has(date)) continue;
+    seen.add(date);
+    out.push(asset);
+  }
+  return out;
+}
 export const DEFAULT_REPO = 'Sudo-Ali-Dev/Rankistan';
 
 // How many assets `load` tries, newest first. Past this many unreadable in a
@@ -392,7 +421,8 @@ export function createStateStore({
       justSaved?.id,
       ...newestFirst(assets)
         .slice(0, keep)
-        .map((a) => a.id)
+        .map((a) => a.id),
+      ...dailyCloses(assets, { now: now() }).map((a) => a.id)
     ]);
     const doomed = assets.filter(
       (asset) =>
