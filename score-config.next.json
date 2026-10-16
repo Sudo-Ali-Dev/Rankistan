@@ -1,0 +1,66 @@
+{
+  "MODEL_VERSION": "3.0.0",
+  "MODEL_VERSION_RULE": "Semver over published output. Major: any developer's score can change. Minor: published fields or the ordering change, with every score unchanged. Patch: no published output changes.",
+  "SCALE": 1000,
+  "WEIGHTS": {
+    "work": 0.5,
+    "collaboration": 0.4,
+    "appreciation": 0.1
+  },
+  "WINDOW_DAYS": 30,
+  "RECENCY_FLOOR": 0.5,
+  "WORK": {
+    "CURVE_POWER": 2,
+    "GATE_MIN_DAYS": 4
+  },
+  "COLLABORATION": {
+    "HALF_POINT": 3,
+    "CAP_PER_GROUP": 4,
+    "REVIEW_WEIGHT": 0.5,
+    "MAINTAINED_WEIGHT": 0.5,
+    "COUNTERPARTY_MIN_AGE_DAYS": 365,
+    "REJECTION_PRIOR": 2,
+    "STARS_FLOOR": 0.1,
+    "STARS_PER_DIGIT": 0.3,
+    "TINY_MAX_FILES": 1,
+    "TINY_MAX_LINES": 5,
+    "TINY_WEIGHT": 0.5
+  },
+  "APPRECIATION": {
+    "FROM_STARS": 10,
+    "DECADES": 3,
+    "FULL_AFTER_DAYS": 4
+  },
+  "INTEGRITY": {
+    "MAX_LEAD_HOURS": 6,
+    "MAX_AHEAD_HOURS": 6,
+    "BOT_SHARE": 0.5
+  },
+  "DERIVATIONS": {
+    "SCALE": "Scores read out of 1,000, so each part's weight is also its maximum in points.",
+    "WEIGHTS.work": "Half the score is showing up, because the board ranks active developers. Not more, because a script can show up every day (crons commit as the developer on the board today) and the part a script can max must not decide the top on its own.",
+    "WEIGHTS.collaboration": "Work another person accepted is the one signal a single account cannot produce alone, so it carries most of what separates the top. 40% and not 50%, because 85% of the board has no accepted work in a month and the board must still order them by their own work.",
+    "WEIGHTS.appreciation": "Stars are the only sign that people value what someone builds, and the site promises top developers. 10%, because stars can be given by friends or bought, and dormant fame must not outrank current work.",
+    "WINDOW_DAYS": "The board is a daily ranking of active developers: a month is long enough to cover a week off and short enough to mean now. Must equal the measurement's window (src/model/measurement.js).",
+    "RECENCY_FLOOR": "Yesterday counts 1 and the oldest day 0.5, falling evenly. A day leaving the window then costs half a day, not a whole one, and ties become rare. Not 0 (a triangle), because one week off would cost 41% of the work credit.",
+    "WORK.CURVE_POWER": "Work = 1 - (1 - x)^2. Each extra day is worth a little less, so 15 of 30 days earns 75%. A script that commits every day gains 56 points over an honest 20-day developer, not the 167 a straight line would give it.",
+    "WORK.GATE_MIN_DAYS": "Eligibility: about one working day a week. Below it a developer is not active in the sense the board claims.",
+    "COLLABORATION.HALF_POINT": "C = c / (c + 3): three pull requests merged into well-known projects (1,000 stars or more) by three different people this week earn about half of the collaboration points.",
+    "COLLABORATION.CAP_PER_GROUP": "Each owner, merger or author counts at most log2(1 + V) = 4, about fifteen full-value merges. One project or one person can vouch for a developer only so far.",
+    "COLLABORATION.REVIEW_WEIGHT": "A review of someone else's pull request is real collaboration but the reviewer decides it alone, so it is worth half a merge someone else decided.",
+    "COLLABORATION.MAINTAINED_WEIGHT": "Merging other people's pull requests into one's own project is maintainer work GitHub does not count as a contribution. Half weight, because the developer is the one who decides to merge.",
+    "COLLABORATION.COUNTERPARTY_MIN_AGE_DAYS": "The other person (the merger, the author of a reviewed pull request, the contributor to one's project) must have had their account a year at the time. A fresh second account is free; a year-old one is not.",
+    "COLLABORATION.REJECTION_PRIOR": "f = min(1, 2(M + 2) / (M + X + 4)) over pull requests opened in other people's repositories: a few rejections cost nothing, and a spray that is mostly closed unmerged shrinks its accepted credit in proportion.",
+    "COLLABORATION.STARS_FLOOR": "A merge into a project nobody has starred still counts 0.1: student teamwork is real, but it is the weakest evidence that anyone independent valued the work.",
+    "COLLABORATION.STARS_PER_DIGIT": "Each digit of the target's star count adds 0.3, so 9 stars weighs 0.4, 99 weighs 0.7 and 999 or more the full 1. Popularity weighs in by digits, never linearly.",
+    "COLLABORATION.TINY_MAX_FILES": "A tiny change touches one file.",
+    "COLLABORATION.TINY_MAX_LINES": "A tiny change also changes at most 5 lines: a typo fix, a listing entry, a version bump.",
+    "COLLABORATION.TINY_WEIGHT": "A tiny change counts half. It still needed someone else to accept it.",
+    "APPRECIATION.FROM_STARS": "Stars start to count at 10. Below that they are the developer, friends and classmates.",
+    "APPRECIATION.DECADES": "From 10 stars, each tenfold adds a third: 100 stars earns a third, 1,000 two thirds, 10,000 the full 100 points.",
+    "APPRECIATION.FULL_AFTER_DAYS": "Stars count only for a project the developer worked on this month, in full after 4 days of commits in it. Dormant projects earn nothing.",
+    "INTEGRITY.MAX_LEAD_HOURS": "No honest history has an author date hours after its commit date: amend, rebase and cherry-pick keep the author date and move the commit date later. 6 hours allows two machines' clocks to disagree, as a misset Pakistani clock (5 hours) would.",
+    "INTEGRITY.MAX_AHEAD_HOURS": "A commit dated more than 6 hours after the moment it was read was dated by hand. Its repository's commits do not count.",
+    "INTEGRITY.BOT_SHARE": "A repository where half or more of the sampled commits were committed by a bot in the developer's name is automation, not their work."
+  }
+}

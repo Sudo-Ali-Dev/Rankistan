@@ -17,16 +17,11 @@
  * working days they have.
  */
 import { screenCalendars, measureShadowContributions, decodeMeasurement } from './contributions.js';
-import {
-  FLAG_FORK,
-  FLAG_OWNED,
-  FLAG_PROFILE,
-  KIND_USER,
-  OUTCOME_CLOSED
-} from '../../src/model/measurement.js';
+import { deriveEvidence } from '../../src/model/next/evidence.js';
+import { SCORE_CONFIG as NEXT_CONFIG } from '../../src/model/next/config.js';
 
 export const SCREEN_MIN_DAYS = 2;
-export const GATE_MIN_DAYS = 4;
+export const GATE_MIN_DAYS = NEXT_CONFIG.WORK.GATE_MIN_DAYS;
 export const SAMPLE_SIZE = 15;
 /**
  * Calendars read per batch besides the board's own rows. A calendar request holds 25 and takes
@@ -35,33 +30,9 @@ export const SAMPLE_SIZE = 15;
  */
 export const CALENDAR_SAMPLE = 600;
 
-/**
- * Working days as the plan defines them, for this log only; the score model defines them for
- * real (src/model). A day with a commit outside forks and profile repositories, a pull request or
- * issue opened in someone else's repository (a pull request closed unmerged does not count), or a
- * review of another user's pull request.
- */
-export function provisionalWorkingDays(m) {
-  const me = m.login.toLowerCase();
-  const days = new Set();
-  for (const r of m.commits) {
-    if (r.flags & (FLAG_FORK | FLAG_PROFILE)) continue;
-    r.days.forEach((d) => days.add(d.day));
-  }
-  for (const r of m.pull_requests) {
-    if (r.flags & (FLAG_OWNED | FLAG_FORK)) continue;
-    r.items.filter((i) => i.outcome !== OUTCOME_CLOSED).forEach((i) => days.add(i.day));
-  }
-  for (const r of m.issues) {
-    if (r.flags & (FLAG_OWNED | FLAG_FORK)) continue;
-    r.items.forEach((i) => days.add(i.day));
-  }
-  for (const r of m.reviews) {
-    r.items
-      .filter((i) => i.author && i.author.kind === KIND_USER && i.author.login.toLowerCase() !== me)
-      .forEach((i) => days.add(i.day));
-  }
-  return days.size;
+/** Working days as scoring v3 counts them (src/model/next/evidence.js). */
+export function workingDays(m) {
+  return deriveEvidence(m).working_days.length;
 }
 
 /** FNV-1a, for an order that is fixed per day and owes nothing to the alphabet. */
@@ -152,7 +123,7 @@ export async function prescreenStep({
     const days = [...measured.blocks.values()]
       .map((block) => decodeMeasurement(block))
       .filter(Boolean)
-      .map(provisionalWorkingDays)
+      .map(workingDays)
       .sort((a, b) => a - b);
     const admitted = days.filter((d) => d >= GATE_MIN_DAYS).length;
 

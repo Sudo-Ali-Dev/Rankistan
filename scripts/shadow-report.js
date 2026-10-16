@@ -18,7 +18,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHADOW_FIELD, decodeMeasurement } from './measure/contributions.js';
-import { provisionalWorkingDays, GATE_MIN_DAYS } from './measure/prescreen-log.js';
+import { workingDays, GATE_MIN_DAYS } from './measure/prescreen-log.js';
+import { deriveEvidence } from '../src/model/next/evidence.js';
+import { scoreEvidence } from '../src/model/next/score.js';
+import { SCORE_CONFIG as NEXT_CONFIG } from '../src/model/next/config.js';
 import {
   CUT_ACCEPTED,
   CUT_COMMIT_REPOS,
@@ -144,7 +147,7 @@ export function inputsOf(m) {
       (s.sampled > 0 && s.bot * 2 >= s.sampled)
   );
   return {
-    working_days: provisionalWorkingDays(m),
+    working_days: workingDays(m),
     restricted: m.restricted,
     accepted: merges.length,
     accepted_by_user: merges.filter(
@@ -195,6 +198,140 @@ function describeStats(s, digits = 0) {
   if (!s.n) return 'none';
   const at = (value) => fmt(value, digits);
   return `p50 ${at(s.p50)}, p90 ${at(s.p90)}, p99 ${at(s.p99)}, max ${at(s.max)} (n=${s.n})`;
+}
+
+/** Coefficient of variation of a repository's commits per active day: near 0 is a metronome. */
+function cadence(days) {
+  const counts = days.map((d) => d.commits);
+  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+  const sd = Math.sqrt(counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length);
+  return mean > 0 ? sd / mean : null;
+}
+
+/**
+ * Scoring v3 run over every measured row, for calibration: the board it would publish, how its
+ * parts are distributed, how it relates to the current score and to popularity, and the
+ * repositories a moderator should look at. The suspect list is for a person to check against
+ * the commits themselves; it is never published as a label (a regular, honest developer can look
+ * like a metronome).
+ */
+export function nextModelPreview(measured, { config = NEXT_CONFIG } = {}) {
+  const out = ['## Scoring v3 preview', ''];
+  if (measured.length === 0) return out;
+  const scored = measured.map(({ row, m }) => ({
+    row,
+    m,
+    r: scoreEvidence(deriveEvidence(m, { config }), { config })
+  }));
+  const n = scored.length;
+  const passing = scored.filter(({ r }) => r.gate);
+  out.push(
+    `Over ${n} measured rows. Pass the ${config.WORK.GATE_MIN_DAYS}-day gate: ${passing.length}.`,
+    `Score: ${describeStats(summarize(scored.map(({ r }) => r.score_exact)), 1)}.`,
+    `Work: ${describeStats(summarize(scored.map(({ r }) => r.parts.work)), 3)}. ` +
+      `Collaboration: ${describeStats(summarize(scored.map(({ r }) => r.parts.collaboration)), 3)}; ` +
+      `above 0 for ${scored.filter(({ r }) => r.parts.collaboration > 0).length}. ` +
+      `Appreciation above 0 for ${scored.filter(({ r }) => r.parts.appreciation > 0).length}.`,
+    `Distinct exact scores: ${new Set(scored.map(({ r }) => r.score_exact)).size} of ${n}.`,
+    ''
+  );
+
+  const v3 = scored.map(({ r }) => r.score_exact);
+  const corr = (values) => fmt(spearman(v3, values), 3);
+  const known = (key) => scored.every(({ row }) => typeof row[key] === 'number');
+  out.push(
+    table(
+      ['compared with', 'Spearman'],
+      [
+        [
+          'current score_exact',
+          known('score_exact') ? corr(scored.map(({ row }) => row.score_exact)) : '-'
+        ],
+        ['followers', known('followers') ? corr(scored.map(({ row }) => row.followers)) : '-'],
+        [
+          'total stars',
+          known('total_stars') ? corr(scored.map(({ row }) => row.total_stars)) : '-'
+        ],
+        ['private contributions', corr(scored.map(({ m }) => m.restricted))]
+      ]
+    ),
+    ''
+  );
+
+  const order = [...scored].sort((a, b) => b.r.score_exact - a.r.score_exact);
+  out.push(
+    `### Top ${Math.min(TOP_K, n)}`,
+    '',
+    table(
+      [
+        '#',
+        'developer',
+        'score',
+        'work',
+        'collab.',
+        'appr.',
+        'days',
+        'accepted',
+        'reviews',
+        'now #'
+      ],
+      order
+        .slice(0, TOP_K)
+        .map(({ row, r }, i) => [
+          i + 1,
+          row.username,
+          fmt(r.score_exact, 1),
+          fmt(r.parts.work, 3),
+          fmt(r.parts.collaboration, 3),
+          fmt(r.parts.appreciation, 3),
+          r.details.working_days,
+          r.evidence.accepted.length,
+          r.evidence.reviews.length,
+          row.rank ?? '-'
+        ])
+    ),
+    ''
+  );
+
+  const excluded = scored.flatMap(({ m, r }) =>
+    r.evidence.excluded.map((e) => [m.login, e.repo, e.reason])
+  );
+  out.push(`### Excluded repositories: ${excluded.length}`, '');
+  if (excluded.length) out.push(table(['developer', 'repository', 'why'], excluded), '');
+
+  const suspects = scored
+    .flatMap(({ m, r }) =>
+      m.commits
+        .filter((c) => c.days.length >= 20 && !r.evidence.excluded.some((e) => e.repo === c.repo))
+        .map((c) => ({
+          login: m.login,
+          repo: c.repo,
+          days: c.days.length,
+          cv: cadence(c.days),
+          work: r.parts.work,
+          collab: r.parts.collaboration
+        }))
+    )
+    .filter((x) => x.cv !== null && x.cv <= 0.25)
+    .sort((a, b) => a.cv - b.cv);
+  out.push(
+    `### For a moderator to check: ${suspects.length} repositories with commits on 20+ days at a near-constant rate`,
+    '',
+    'Not a verdict. Open the commits before listing anything in public/moderation.json.',
+    ''
+  );
+  if (suspects.length) {
+    out.push(
+      table(
+        ['developer', 'repository', 'days', 'cadence cv', 'work', 'collab.'],
+        suspects
+          .slice(0, 60)
+          .map((x) => [x.login, x.repo, x.days, fmt(x.cv, 2), fmt(x.work, 3), fmt(x.collab, 3)])
+      ),
+      ''
+    );
+  }
+  return out;
 }
 
 /**
@@ -262,7 +399,7 @@ export function buildReport(payload, { source = 'board' } = {}) {
 
   out.push('## Working days', '');
   out.push(
-    `Provisional definition (scripts/measure/prescreen-log.js): ${describeStats(summarize(field('working_days')))}. ` +
+    `As scoring v3 counts them: ${describeStats(summarize(field('working_days')))}. ` +
       `Under ${GATE_MIN_DAYS}: ${measured.filter(({ inputs }) => inputs.working_days < GATE_MIN_DAYS).length} of ${n}.`,
     `Private contributions (context, never scored): ${describeStats(summarize(field('restricted')))}; ` +
       `rows sharing any: ${rowsWith('restricted')} of ${n}.`,
@@ -332,6 +469,7 @@ export function buildReport(payload, { source = 'board' } = {}) {
       ''
     );
   }
+  out.push(...nextModelPreview(measured));
   return out.join('\n');
 }
 
