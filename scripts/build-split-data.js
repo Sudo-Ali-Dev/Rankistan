@@ -12,7 +12,8 @@
 // dist/data.json is what the Worker and outside readers fetch from the site
 // root. It is public/data.json with the pipeline-only fields removed from every
 // row (PIPELINE_ONLY_FIELDS in split-data.js: the shadow measurement of the
-// next model's inputs), and byte-identical to it when no row carries one. This
+// next model's inputs and the miss counter), and byte-identical to it when no
+// row carries one. This
 // checks the copy Vite made rather than trusting it, then rewrites it.
 
 import fs from 'node:fs';
