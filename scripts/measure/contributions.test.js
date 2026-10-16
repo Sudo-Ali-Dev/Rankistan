@@ -6,26 +6,29 @@ import {
   MAX_PAGES,
   MAX_SINGLE_RETRIES,
   MAX_WAIT_MS,
-  SEARCH_BATCH_SIZE,
+  MERGES_BATCH_SIZE,
+  buildMergesQuery,
   buildQuery,
-  buildSearchQuery,
   calendarActiveDays,
   createMeasurementClient,
+  crossCheckMerges,
   decodeMeasurement,
   integrityTargets,
   judgeAliased,
   measureContributions,
   readIntegrity,
   isBotCommitter,
+  readAcceptedPage,
   readMain,
-  readSearchPage,
-  screenCalendars,
-  searchQueries
+  readRepositoriesPage,
+  screenCalendars
 } from './contributions.js';
 import {
+  CUT_ACCEPTED,
   CUT_DEGRADED,
   CUT_INTEGRITY,
   CUT_PULL_REQUESTS,
+  FLAG_FORK,
   FLAG_OWNED,
   OUTCOME_CLOSED,
   OUTCOME_MERGED,
@@ -38,6 +41,7 @@ import {
   at,
   fakeGitHub,
   mergedNode,
+  page,
   person,
   prNode,
   repo,
@@ -101,16 +105,20 @@ describe('documents', () => {
     expect(() => buildQuery(0)).toThrow(RangeError);
   });
 
-  it("searches merges by the instant they happened, excluding the developer's own repositories", () => {
-    expect(searchQueries('ana', W)).toEqual({
-      accepted:
-        'is:pr is:merged author:ana -user:ana merged:2026-09-13T19:00:00+00:00..2026-10-13T18:59:59+00:00',
-      maintained:
-        'is:pr is:merged user:ana -author:ana merged:2026-09-13T19:00:00+00:00..2026-10-13T18:59:59+00:00'
-    });
-    const query = buildSearchQuery(2);
-    expect(query).toContain('a1: search(type: ISSUE, query: $qa1');
-    expect(query).toContain('mergedBy { __typename login ... on User { createdAt } }');
+  it('lists merges newest first, never by search, which the Actions token cannot use', () => {
+    const accepted = buildMergesQuery('accepted', 2);
+    expect(accepted).toContain('u1: user(login: $l1) { login a: pullRequests(states: MERGED');
+    expect(accepted).toContain('first: 25, orderBy: { field: UPDATED_AT, direction: DESC }');
+    expect(accepted).toContain('mergedBy { __typename login ... on User { createdAt } }');
+    const repositories = buildMergesQuery('repositories', 1);
+    expect(repositories).toContain(
+      'repositories(ownerAffiliations: [OWNER], isFork: false, privacy: PUBLIC, first: 10'
+    );
+    expect(repositories).toContain('orderBy: { field: PUSHED_AT, direction: DESC }');
+    // A developer refused at the usual size is listed again from a shorter first page.
+    expect(buildMergesQuery('accepted', 1, { first: 5 })).toContain('first: 5,');
+    for (const query of [accepted, repositories]) expect(query).not.toContain('search(');
+    expect(() => buildMergesQuery('accepted', 0)).toThrow(RangeError);
   });
 });
 
@@ -213,10 +221,8 @@ describe('what v3.1 reads', () => {
 
   it('records who approved a pull request its author merged, the oldest account first', () => {
     const into = new Map();
-    readSearchPage(
-      'accepted',
+    readAcceptedPage(
       {
-        issueCount: 2,
         pageInfo: { hasNextPage: false },
         nodes: [
           mergedNode(3, 'acme/app', 'ana', {
@@ -242,19 +248,16 @@ describe('what v3.1 reads', () => {
   });
 });
 
-describe('readSearchPage', () => {
+describe('readAcceptedPage', () => {
   it('keeps merges into repositories the developer does not own, with merger and owner', () => {
     const into = new Map();
-    readSearchPage(
-      'accepted',
+    readAcceptedPage(
       {
-        issueCount: 3,
         pageInfo: { hasNextPage: false },
         nodes: [
           mergedNode(3, 'stdlib-js/stdlib', 'kgryte'),
           mergedNode(4, 'ana/own', 'kgryte'),
-          mergedNode(5, 'x/y', null),
-          {}
+          mergedNode(5, 'x/y', null)
         ]
       },
       { login: 'ana', window: W, into }
@@ -282,12 +285,110 @@ describe('readSearchPage', () => {
   it('drops merges outside the window', () => {
     const into = new Map();
     const node = { ...mergedNode(0, 'a/b', 'k'), mergedAt: '2026-09-13T18:00:00Z' };
-    readSearchPage(
-      'accepted',
-      { issueCount: 1, pageInfo: {}, nodes: [node] },
-      { login: 'ana', window: W, into }
-    );
+    readAcceptedPage({ pageInfo: {}, nodes: [node] }, { login: 'ana', window: W, into });
     expect(into.size).toBe(0);
+  });
+
+  it('reads on while a page can hold merges in the window, and stops at one updated before it', () => {
+    const read = (nodes) =>
+      readAcceptedPage(
+        { pageInfo: { hasNextPage: true, endCursor: 'c2' }, nodes },
+        { login: 'ana', window: W, into: new Map() }
+      );
+    expect(read([mergedNode(3, 'a/b', 'k')])).toBe('c2');
+    const old = { ...mergedNode(0, 'a/b', 'k', { number: 2 }), updatedAt: '2026-09-01T00:00:00Z' };
+    expect(read([mergedNode(3, 'a/b', 'k'), old])).toBeNull();
+  });
+});
+
+describe('readRepositoriesPage', () => {
+  const walkOf = () => ({ listed: new Set(), maintained: new Map(), more: [], exhausted: false });
+  const pull = (offset, author, number, updatedAt = at(offset)) => ({
+    ...mergedNode(offset, 'unused/x', null, { number }),
+    author: author && { __typename: 'User', login: author, createdAt: '2015-01-01T00:00:00Z' },
+    updatedAt
+  });
+  const repository = (name, pushedAt, pulls, next = null) => ({
+    ...repo(name, { stars: 40 }),
+    pushedAt,
+    pullRequests: page(pulls, next)
+  });
+
+  it("keeps other people's merges in repositories pushed in the window, and lists every repository", () => {
+    const walk = walkOf();
+    const next = readRepositoriesPage(
+      page(
+        [
+          repository('ana/app', at(9), [pull(9, 'carl', 3), pull(8, 'ana', 2)], 'r2'),
+          repository('ana/old', '2026-01-01T00:00:00Z', [pull(5, 'carl', 1)])
+        ],
+        'p2'
+      ),
+      { login: 'ana', window: W, walk }
+    );
+    expect(next).toBeNull(); // ana/old was last pushed before the window: nothing after it either
+    expect([...walk.listed]).toEqual(['ana/app', 'ana/old']);
+    const app = walk.maintained.get('ana/app');
+    expect(app).toMatchObject({ stars: 40 });
+    expect(app.items.map((i) => [i.number, i.author.login])).toEqual([[3, 'carl']]);
+    expect(walk.maintained.has('ana/old')).toBe(false);
+    // Its merges continue on another page, from the cursor its list ended on.
+    expect(walk.more).toEqual([{ name: 'ana/app', flags: FLAG_OWNED, stars: 40, cursor: 'r2' }]);
+    expect(walk.exhausted).toBe(false);
+  });
+
+  it('passes over a repository never pushed to', () => {
+    const walk = walkOf();
+    const next = readRepositoriesPage(
+      page([{ ...repository('ana/empty', null, []) }, repository('ana/app', at(2), [])], 'p2'),
+      { login: 'ana', window: W, walk }
+    );
+    expect(next).toBe('p2');
+    expect([...walk.listed]).toEqual(['ana/empty', 'ana/app']);
+  });
+
+  it('marks a list read to its end as exhausted', () => {
+    const walk = walkOf();
+    readRepositoriesPage(page([repository('ana/app', at(2), [])]), {
+      login: 'ana',
+      window: W,
+      walk
+    });
+    expect(walk.exhausted).toBe(true);
+  });
+});
+
+describe('crossCheckMerges', () => {
+  const main = (options) => ({
+    cut: 0,
+    merged: new Set(),
+    commits: [{ repo: 'ana/app', flags: FLAG_OWNED, days: [{ day: 1, commits: 1 }] }],
+    ...options
+  });
+  const lists = ({ accepted = [], listed = ['ana/app'], exhausted = true } = {}) => ({
+    accepted: new Map(accepted.map(([repo, number]) => [repo, { repo, items: [{ number }] }])),
+    walk: { listed: new Set(listed), exhausted }
+  });
+
+  it('accepts lists that hold what the contributions API reported', () => {
+    const m = main({ merged: new Set(['acme/lib#5']) });
+    expect(crossCheckMerges(m, lists({ accepted: [['acme/lib', 5]] }))).toBeNull();
+  });
+
+  it('refuses a merge list missing a pull request reported merged in the window', () => {
+    const m = main({ merged: new Set(['acme/lib#5']) });
+    expect(crossCheckMerges(m, lists())).toMatch(/1 merged pull request\(s\) missing.*acme\/lib#5/);
+    // A list cut at its page cap may lack it: that is already recorded, and nothing is invented.
+    expect(crossCheckMerges({ ...m, cut: CUT_ACCEPTED }, lists())).toBeNull();
+  });
+
+  it('refuses a repository list that lacks a repository they committed to', () => {
+    expect(crossCheckMerges(main(), lists({ listed: [] }))).toMatch(/list is empty/);
+    expect(crossCheckMerges(main(), lists({ listed: ['ana/other'] }))).toMatch(/lacks ana\/app/);
+    // Stopped at the window's start, the list need not reach a repository pushed before it.
+    expect(crossCheckMerges(main(), lists({ listed: ['ana/other'], exhausted: false }))).toBeNull();
+    const fork = main({ commits: [{ repo: 'ana/fork', flags: FLAG_OWNED | FLAG_FORK, days: [] }] });
+    expect(crossCheckMerges(fork, lists({ listed: [] }))).toBeNull();
   });
 });
 
@@ -462,13 +563,13 @@ describe('judgeAliased', () => {
 });
 
 describe('measureContributions', () => {
-  it(`measures ${BATCH_SIZE} developers per main request and ${SEARCH_BATCH_SIZE} per search`, async () => {
+  it(`measures ${BATCH_SIZE} developers per main request and ${MERGES_BATCH_SIZE} per merges request`, async () => {
     const rows = devs(7);
     const fake = fakeGitHub(peopleFor(rows));
     const { blocks, failed, stats } = await measure(rows, fake.fetchImpl);
     const count = (kind) => fake.calls.filter((c) => c.kind === kind).length;
     expect(count('main')).toBe(2);
-    expect(count('search')).toBe(3);
+    expect(count('merges')).toBe(6); // 3 requests for each of the two lists
     expect(blocks.size).toBe(7);
     expect(failed.size).toBe(0);
     expect(stats).toMatchObject({ rejected: 0, bisections: 0 });
@@ -580,7 +681,7 @@ describe('measureContributions', () => {
     expect(m.cut & CUT_PULL_REQUESTS).toBe(CUT_PULL_REQUESTS);
   });
 
-  it('follows a further search page', async () => {
+  it('follows a further page of merged pull requests', async () => {
     const rows = [{ username: 'ana', github_id: 7 }];
     const people = {
       ana: person('ana', {
@@ -605,14 +706,53 @@ describe('measureContributions', () => {
     expect(m.integrity).toEqual([]);
   });
 
-  it('fails a developer whose searches failed, never storing half a measurement', async () => {
+  it('fails a developer whose merge lists failed, never storing half a measurement', async () => {
     const rows = devs(1);
     const fake = fakeGitHub(peopleFor(rows), {
-      onRequest: ({ kind }) => (kind === 'search' ? respond(502, '<html>502</html>') : null)
+      onRequest: ({ kind }) => (kind === 'merges' ? respond(502, '<html>502</html>') : null)
     });
     const { blocks, failed } = await measure(rows, fake.fetchImpl);
     expect(blocks.size).toBe(0);
-    expect(failed.get('dev0')).toMatch(/^search: HTTP 502/);
+    expect(failed.get('dev0')).toMatch(/^merges: HTTP 502/);
+  });
+
+  it('lists a developer refused at the usual size again from a shorter first page', async () => {
+    const rows = [{ username: 'ana', github_id: 7 }];
+    const people = {
+      ana: person('ana', { id: 7, accepted: [mergedNode(4, 'stdlib-js/stdlib', 'kgryte')] })
+    };
+    const fake = fakeGitHub(people, {
+      onRequest: ({ kind, query }) =>
+        kind === 'merges' && query.includes('a: pullRequests(states: MERGED, first: 25')
+          ? respond(502, '<html>502</html>')
+          : null
+    });
+    const { decoded, failed } = await measure(rows, fake.fetchImpl);
+    expect(failed.size).toBe(0);
+    expect(decoded('ana').accepted[0].items[0].merger.login).toBe('kgryte');
+    expect(decoded('ana').cut).toBe(0); // nothing is lost: the rest of the list is paged
+  });
+
+  it('never stores empty merge lists a token could not see, as search once did', async () => {
+    // GitHub answers in full and without an error, but the lists hold nothing: the contributions
+    // API says ana's pull request was merged, and that she committed to her own repository.
+    const rows = [{ username: 'ana', github_id: 7 }];
+    const people = {
+      ana: person('ana', {
+        id: 7,
+        prs: [prNode(3, 'acme/lib', { merged: true, state: 'MERGED', number: 5 })],
+        repositories: page([])
+      })
+    };
+    const { blocks, failed, stats, lines } = await measure(rows, fakeGitHub(people).fetchImpl);
+    expect(blocks.size).toBe(0);
+    expect(failed.get('ana')).toMatch(/^merges: 1 merged pull request\(s\) missing/);
+    expect(stats.inconsistent).toBe(1);
+    expect(lines.some((line) => line.includes('merge lists disagree'))).toBe(true);
+
+    people.ana = person('ana', { id: 7, repositories: page([]) });
+    const empty = await measure(rows, fakeGitHub(people).fetchImpl);
+    expect(empty.failed.get('ana')).toMatch(/repository list is empty, though they committed/);
   });
 
   it('lists a login GitHub does not know as not found', async () => {
@@ -680,7 +820,7 @@ describe('screenCalendars', () => {
 });
 
 describe('the prefilter', () => {
-  it('skips the searches and samples for a developer who cannot pass the gate, and lists them', async () => {
+  it('skips the merge lists and samples for a developer who cannot pass the gate, and lists them', async () => {
     const rows = devs(3);
     const people = peopleFor(rows);
     people.dev1 = person('dev1', { id: 1001, commits: { 'dev1/app': { 0: 1 } } });
@@ -691,9 +831,9 @@ describe('the prefilter', () => {
     expect([...blocks.keys()].sort()).toEqual(['dev0', 'dev2']);
     expect([...ineligible.keys()]).toEqual(['dev1']);
     expect(decodeMeasurement(ineligible.get('dev1')).accepted).toEqual([]);
-    const searched = fake.calls
-      .filter((c) => c.kind === 'search')
+    const listed = fake.calls
+      .filter((c) => c.kind === 'merges')
       .flatMap((c) => Object.values(c.variables));
-    expect(searched.some((q) => q.includes('dev1'))).toBe(false);
+    expect(listed).not.toContain('dev1');
   });
 });

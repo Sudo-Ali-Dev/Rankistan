@@ -1,6 +1,6 @@
 /**
  * The contributions measurement: what each developer did in public over the last 30 days, read
- * from GitHub's contributions API and search, and stored on their row in the compact form
+ * from GitHub's contributions API and pull request lists, and stored on their row in the compact form
  * defined in src/model/measurement.js. It is what the score is computed from (src/model/), and
  * what the eligibility gate reads (scripts/measure/gate.js).
  *
@@ -18,12 +18,25 @@
  *              context, and a future probe for commits dated after the measurement.
  *   pages      a further page for a developer with more than 100 pull requests, issues or
  *              reviews, up to MAX_PAGES in all.
- *   search     two searches per developer, keyed on the merge instant: their pull requests
- *              someone merged into a repository they do not own, and other people's pull requests
- *              merged into their own repositories. `pullRequestContributions` is keyed on when a
- *              pull request was opened and cannot see a merge (a repo-proven trap), so merges
- *              come from search. Each result carries who merged or wrote it, with that account's
- *              kind and age, the target's stars and owner, and the size of the change.
+ *   merges     two lists per developer, keyed on the merge instant: their merged pull requests,
+ *              most recently updated first, kept when merged in the window into a repository they
+ *              do not own; and their own public repositories, most recently pushed first, with
+ *              each one's merged pull requests by other people. `pullRequestContributions` is
+ *              keyed on when a pull request was opened and cannot see a merge (a repo-proven
+ *              trap). A merge updates the pull request and pushes to its repository, so each list
+ *              is read until it passes the window's start. Each item carries who merged or wrote
+ *              it, with that account's kind and age, the target's stars and owner, and the size of
+ *              the change.
+ *
+ *              Not search: from scoring v3.0's launch on 2026-10-16 until the fix on 2026-10-17,
+ *              every merge search the pipeline sent came back empty with no error, so every
+ *              block it measured held no merges, while the same searches with a personal token
+ *              returned them. The Actions token appears to search only the repository it runs in.
+ *              The lists read the same pull requests with any token (measured on
+ *              56 developers, identical to search wherever neither was cut). They are also
+ *              checked against each other: a pull request the contributions API lists as merged
+ *              in the window must be in the first list, and a repository they committed to must
+ *              be in the second. A developer whose lists fail that check is not measured.
  *   integrity  for each repository with commits on INTEGRITY_MIN_DAYS or more days, up to 20 of
  *              the developer's commits there with their author date, commit date and committer.
  *              Two things never happen in an honest history: an author date hours after its
@@ -32,8 +45,8 @@
  *              committed in the developer's name is counted too.
  *
  * Measured on 2026-10-16: reviews on one's own pull requests are review contributions (state
- * COMMENTED), so each review records the pull request's author; the search `merged:` qualifier
- * takes instants to the second; the future probe is accepted for a range a year long.
+ * COMMENTED), so each review records the pull request's author; the future probe is accepted for
+ * a range a year long.
  *
  * ## Failure
  *
@@ -83,8 +96,7 @@ import {
   instantOffset,
   measurementWindow,
   pktDate,
-  repositoryFlags,
-  searchMergedRange
+  repositoryFlags
 } from '../../src/model/measurement.js';
 
 export { SHAPE_VERSION, decodeMeasurement, encodeMeasurement, measurementWindow };
@@ -101,8 +113,8 @@ export const LEGACY_FIELD = 'shadow_contributions';
  * bisection covers the rest.
  */
 export const BATCH_SIZE = 5;
-/** Developers per search request, two searches each: 10 and 5 came back as 502s on 2026-10-16. */
-export const SEARCH_BATCH_SIZE = 3;
+/** Developers per merges request, one list each. Searches of 10 and 5 came back as 502s. */
+export const MERGES_BATCH_SIZE = 3;
 /** Repositories per commit-date sample request: 40 timed out on 2026-10-16. */
 export const INTEGRITY_BATCH_SIZE = 15;
 /**
@@ -121,9 +133,28 @@ export const MAX_REPOSITORIES = 100;
 export const DEGRADED_MAX_REPOSITORIES = 25;
 /** Nodes per connection page. A window holds at most 31 commit days per repository. */
 export const PAGE_SIZE = 100;
-/** Pages read per kind of contribution, and per search, before the list is marked cut. */
+/** Pages read per kind of contribution before the list is marked cut. */
 export const MAX_PAGES = 5;
-export const MAX_SEARCH_PAGES = 3;
+/**
+ * The merge lists' pages, measured on 2026-10-17 on the slowest accounts on the board: 25 merged
+ * pull requests with their approvals took 2 to 3 s, and 10 repositories with 10 merged pull
+ * requests each 2 to 7 s, where 100, and 50 repositories with 25 each, took the gateway's 10 s and
+ * failed. A developer refused on their own is listed once more from a first page of
+ * DEGRADED_MERGES, then paged as usual, so a heavy account costs requests, never items.
+ */
+export const MERGED_PAGE_SIZE = 25;
+export const REPOSITORIES_PAGE_SIZE = 10;
+export const REPOSITORY_MERGES = 10;
+export const REPOSITORY_MERGES_PAGE_SIZE = 50;
+export const DEGRADED_MERGES = 5;
+/**
+ * Pages read before a merge list is marked cut: 400 of their merged pull requests updated since
+ * the window began, 200 of their repositories pushed since then, and 310 merged pull requests of
+ * each repository. Search read 400.
+ */
+export const MAX_MERGED_PAGES = 16;
+export const MAX_REPOSITORY_PAGES = 20;
+export const MAX_REPOSITORY_MERGE_PAGES = 7;
 
 export const INTEGRITY_MIN_DAYS = 3;
 export const INTEGRITY_MAX_REPOSITORIES = 30;
@@ -170,7 +201,8 @@ function requireList(value, what) {
 // ---------------------------------------------------------------------------------------------
 // Documents
 
-const PR_NODE = `occurredAt pullRequest { number state merged
+// `mergedAt` is not stored: it checks the merge list (crossCheckMerges).
+const PR_NODE = `occurredAt pullRequest { number state merged mergedAt
       repository { nameWithOwner isFork isPrivate owner { __typename login } } }`;
 const ISSUE_NODE = `occurredAt issue { number
       repository { nameWithOwner isFork isPrivate owner { __typename login } } }`;
@@ -257,52 +289,65 @@ export function buildPageQuery(kind) {
 
 // Approvals: a pull request its author merged after another user approved it was accepted by
 // that user, and is credited to them as if they had merged it (src/model/evidence.js).
-const ACCEPTED_NODE = `... on PullRequest { number mergedAt additions deletions changedFiles
+const ACCEPTED_NODE = `number mergedAt updatedAt additions deletions changedFiles
       mergedBy { __typename login ... on User { createdAt } }
       reviews(states: APPROVED, first: ${APPROVALS_READ}) {
         nodes { author { __typename login ... on User { createdAt } } } }
       repository { nameWithOwner isFork isPrivate stargazerCount
-        owner { __typename login ... on User { createdAt } ... on Organization { createdAt } } } }`;
-const MAINTAINED_NODE = `... on PullRequest { number mergedAt additions deletions changedFiles
-      author { __typename login ... on User { createdAt } }
-      repository { nameWithOwner isFork isPrivate stargazerCount owner { __typename login } } }`;
+        owner { __typename login ... on User { createdAt } ... on Organization { createdAt } } }`;
+const MAINTAINED_NODE = `number mergedAt updatedAt additions deletions changedFiles
+      author { __typename login ... on User { createdAt } }`;
 
-const searchField = (alias, variable, node, after = '') =>
-  `${alias}: search(type: ISSUE, query: $${variable}, first: ${PAGE_SIZE}${after}) {
-    issueCount pageInfo { hasNextPage endCursor } nodes { ${node} } }`;
+// Newest update first: a merge updates its pull request, so once a page reaches a pull request
+// last updated before the window, no later one can have been merged in it.
+const mergedPulls = (first, node, after = '') =>
+  `pullRequests(states: MERGED, first: ${first}${after}, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      pageInfo { hasNextPage endCursor } nodes { ${node} } }`;
+// Newest push first: a merge pushes to its repository, so the same holds for repositories.
+const ownRepositories = (first, merges, after = '') =>
+  `repositories(ownerAffiliations: [OWNER], isFork: false, privacy: PUBLIC, first: ${first}${after},
+      orderBy: { field: PUSHED_AT, direction: DESC }) {
+      pageInfo { hasNextPage endCursor }
+      nodes { nameWithOwner isFork isPrivate stargazerCount pushedAt owner { __typename login }
+        ${mergedPulls(merges, MAINTAINED_NODE)} } }`;
 
-/** The two searches for `count` developers, aliased a{i} (accepted) and m{i} (maintained). */
-export function buildSearchQuery(count) {
+const mergeList = (kind, first, after = '') =>
+  kind === 'accepted'
+    ? `a: ${mergedPulls(first ?? MERGED_PAGE_SIZE, ACCEPTED_NODE, after)}`
+    : `m: ${ownRepositories(first ?? REPOSITORIES_PAGE_SIZE, first ?? REPOSITORY_MERGES, after)}`;
+
+/**
+ * One merge list's first page for `count` developers, aliased u{i}: `accepted` (`a`), their
+ * merged pull requests, or `repositories` (`m`), their own repositories with each one's merged
+ * pull requests. `first` shortens the page for a developer refused at the usual size.
+ */
+export function buildMergesQuery(kind, count, { first } = {}) {
   if (!Number.isInteger(count) || count < 1)
-    throw new RangeError('buildSearchQuery needs count >= 1');
+    throw new RangeError('buildMergesQuery needs count >= 1');
   const params = [];
   const fields = [];
   for (let i = 0; i < count; i += 1) {
-    params.push(`$qa${i}: String!`, `$qm${i}: String!`);
-    fields.push(
-      searchField(`a${i}`, `qa${i}`, ACCEPTED_NODE),
-      searchField(`m${i}`, `qm${i}`, MAINTAINED_NODE)
-    );
+    params.push(`$l${i}: String!`);
+    fields.push(`u${i}: user(login: $l${i}) { login ${mergeList(kind, first)} }`);
   }
   return `query(${params.join(', ')}) {\n  rateLimit { cost remaining resetAt }\n  ${fields.join('\n  ')}\n}`;
 }
 
-/** A further page of one search. */
-export function buildSearchPageQuery(kind) {
-  const node = kind === 'accepted' ? ACCEPTED_NODE : MAINTAINED_NODE;
-  return `query($q: String!, $after: String!) {
+/** A further page of one developer's merge list. */
+export function buildMergesPageQuery(kind) {
+  return `query($login: String!, $after: String!) {
   rateLimit { cost remaining resetAt }
-  ${searchField('s', 'q', node, ', after: $after')}
+  u0: user(login: $login) { login ${mergeList(kind, undefined, ', after: $after')} }
 }`;
 }
 
-/** The search strings for one developer. */
-export function searchQueries(login, window) {
-  const merged = `merged:${searchMergedRange(window)}`;
-  return {
-    accepted: `is:pr is:merged author:${login} -user:${login} ${merged}`,
-    maintained: `is:pr is:merged user:${login} -author:${login} ${merged}`
-  };
+/** A further page of one repository's merged pull requests. */
+export function buildRepositoryMergesQuery() {
+  return `query($owner: String!, $name: String!, $after: String!) {
+  rateLimit { cost remaining resetAt }
+  r: repository(owner: $owner, name: $name) {
+    ${mergedPulls(REPOSITORY_MERGES_PAGE_SIZE, MAINTAINED_NODE, ', after: $after')} }
+}`;
 }
 
 const historyOf = (i) =>
@@ -378,8 +423,14 @@ function groupInto(map, name, flags, extra, item) {
   map.get(name).items.push(item);
 }
 
-/** Pull requests, issues or reviews from one page of a connection, into `into` (by repo). */
-function readContributionPage(kind, conn, { login, window, into }) {
+const pullKey = (name, number) => `${name.toLowerCase()}#${number}`;
+
+/**
+ * Pull requests, issues or reviews from one page of a connection, into `into` (by repo). A pull
+ * request of theirs merged in the window into a repository they do not own is also added to
+ * `merged`, the keys the merge list must hold.
+ */
+function readContributionPage(kind, conn, { login, window, into, merged }) {
   if (!conn || typeof conn !== 'object') throw new Malformed(`no ${kind}`);
   requireCount(conn.totalCount, `${kind} total`);
   for (const node of requireList(conn.nodes, `${kind} nodes`)) {
@@ -411,6 +462,13 @@ function readContributionPage(kind, conn, { login, window, into }) {
       const outcome =
         pr.merged === true ? OUTCOME_MERGED : pr.state === 'CLOSED' ? OUTCOME_CLOSED : OUTCOME_OPEN;
       groupInto(into, name, flags, {}, { day, number, outcome });
+      if (
+        outcome === OUTCOME_MERGED &&
+        !(flags & FLAG_OWNED) &&
+        instantOffset(pr.mergedAt, window) !== null
+      ) {
+        merged.add(pullKey(name, number));
+      }
     } else {
       const { name, flags, private: hidden } = repositoryOf(pr.repository, login, 'review');
       if (hidden) continue;
@@ -477,9 +535,15 @@ export function readMain(node, { target, window }) {
 
   const lists = {};
   const next = {};
+  const merged = new Set();
   for (const [kind, { field }] of Object.entries(PAGE_FIELDS)) {
     lists[kind] = new Map();
-    next[kind] = readContributionPage(kind, c[field], { login, window, into: lists[kind] }).next;
+    next[kind] = readContributionPage(kind, c[field], {
+      login,
+      window,
+      into: lists[kind],
+      merged
+    }).next;
   }
 
   const future = node.f?.commitContributionsByRepository;
@@ -497,6 +561,7 @@ export function readMain(node, { target, window }) {
     commits,
     lists,
     next,
+    merged,
     future_repos: futureRepos,
     cut
   };
@@ -523,46 +588,164 @@ export function approverOf(pr, login) {
   return candidates[0] ?? null;
 }
 
-/** One search page, into `into` (by repo). Returns the next cursor or null. */
-export function readSearchPage(kind, search, { login, window, into }) {
-  if (!search || typeof search !== 'object') throw new Malformed(`no ${kind} search`);
-  requireCount(search.issueCount, `${kind} count`);
-  for (const pr of requireList(search.nodes, `${kind} nodes`)) {
-    if (!pr || pr.number == null) continue; // search can return an issue's empty fragment
-    const number = requireCount(pr.number, `${kind} number`);
+/** A list read newest first: true once `at` is before the window, where it can stop. */
+function beforeWindow(at, window, what) {
+  const ms = Date.parse(at);
+  if (!Number.isFinite(ms)) throw new Malformed(`${what}: ${JSON.stringify(at)}`);
+  return ms < window.instants.from;
+}
+
+function changeSize(pr, name, number) {
+  return {
+    lines:
+      requireCount(pr.additions, `${name}#${number} additions`) +
+      requireCount(pr.deletions, `${name}#${number} deletions`),
+    files: requireCount(pr.changedFiles, `${name}#${number} files`)
+  };
+}
+
+/**
+ * One page of a developer's merged pull requests, newest update first, into `into` (by repo):
+ * those merged in the window into a repository they do not own. Returns the next cursor, or null
+ * once the list is done or has reached a pull request last updated before the window.
+ */
+export function readAcceptedPage(conn, { login, window, into }) {
+  if (!conn || typeof conn !== 'object') throw new Malformed('no merged pull requests');
+  let passed = false;
+  for (const pr of requireList(conn.nodes, 'merged pull requests')) {
+    const number = requireCount(pr?.number, 'merged pull request number');
+    if (beforeWindow(pr.updatedAt, window, `#${number} updatedAt`)) {
+      passed = true;
+      continue;
+    }
     const day = instantOffset(pr.mergedAt, window);
     if (day === null) continue;
-    const { name, flags, private: hidden } = repositoryOf(pr.repository, login, kind);
-    if (hidden) continue;
+    const { name, flags, private: hidden } = repositoryOf(pr.repository, login, 'merged');
+    if (hidden || flags & FLAG_OWNED) continue; // their own repository: nobody else accepted it
     const stars = requireCount(pr.repository.stargazerCount, `${name} stars`);
-    const lines =
-      requireCount(pr.additions, `${name}#${number} additions`) +
-      requireCount(pr.deletions, `${name}#${number} deletions`);
-    const files = requireCount(pr.changedFiles, `${name}#${number} files`);
-    if (kind === 'accepted') {
-      if (flags & FLAG_OWNED) continue; // their own repository: not someone else accepting it
-      const owner = person(pr.repository.owner);
-      const merger = person(pr.mergedBy);
-      const self = merger !== null && merger.login.toLowerCase() === login.toLowerCase();
-      groupInto(
-        into,
-        name,
-        flags,
-        { stars, owner },
-        { day, number, merger, lines, files, approver: self ? approverOf(pr, login) : null }
-      );
-    } else {
-      if (!(flags & FLAG_OWNED)) continue;
-      groupInto(
-        into,
-        name,
-        flags,
-        { stars },
-        { day, number, author: person(pr.author), lines, files }
-      );
+    const owner = person(pr.repository.owner);
+    const merger = person(pr.mergedBy);
+    const self = merger !== null && merger.login.toLowerCase() === login.toLowerCase();
+    groupInto(
+      into,
+      name,
+      flags,
+      { stars, owner },
+      {
+        day,
+        number,
+        merger,
+        ...changeSize(pr, name, number),
+        approver: self ? approverOf(pr, login) : null
+      }
+    );
+  }
+  return !passed && conn.pageInfo?.hasNextPage === true ? conn.pageInfo.endCursor : null;
+}
+
+/**
+ * One page of one of their repositories' merged pull requests, newest update first, into `into`:
+ * other people's, merged in the window. Returns the next cursor or null, as readAcceptedPage.
+ */
+export function readRepositoryMerges(conn, { repo, login, window, into }) {
+  if (!conn || typeof conn !== 'object')
+    throw new Malformed(`${repo.name}: no merged pull requests`);
+  const me = login.toLowerCase();
+  let passed = false;
+  for (const pr of requireList(conn.nodes, `${repo.name} merged pull requests`)) {
+    const number = requireCount(pr?.number, `${repo.name} merged pull request number`);
+    if (beforeWindow(pr.updatedAt, window, `${repo.name}#${number} updatedAt`)) {
+      passed = true;
+      continue;
+    }
+    const day = instantOffset(pr.mergedAt, window);
+    if (day === null) continue;
+    const author = person(pr.author);
+    if (author !== null && author.login.toLowerCase() === me) continue;
+    groupInto(
+      into,
+      repo.name,
+      repo.flags,
+      { stars: repo.stars },
+      { day, number, author, ...changeSize(pr, repo.name, number) }
+    );
+  }
+  return !passed && conn.pageInfo?.hasNextPage === true ? conn.pageInfo.endCursor : null;
+}
+
+/**
+ * One page of a developer's own public repositories, newest push first, into `walk`: every
+ * repository listed, the merges of each one pushed in the window, and the repositories whose
+ * merges continue past the page. Returns the next cursor or null, as readAcceptedPage.
+ */
+export function readRepositoriesPage(conn, { login, window, walk }) {
+  if (!conn || typeof conn !== 'object') throw new Malformed('no repositories');
+  let passed = false;
+  for (const node of requireList(conn.nodes, 'repositories')) {
+    const { name, flags, private: hidden } = repositoryOf(node, login, 'repositories');
+    walk.listed.add(name.toLowerCase());
+    if (node.pushedAt === null) continue; // created and never pushed to: nothing was merged there
+    if (beforeWindow(node.pushedAt, window, `${name} pushedAt`)) {
+      passed = true;
+      continue;
+    }
+    if (hidden || !(flags & FLAG_OWNED) || flags & FLAG_FORK) continue;
+    const repo = { name, flags, stars: requireCount(node.stargazerCount, `${name} stars`) };
+    const next = readRepositoryMerges(node.pullRequests, {
+      repo,
+      login,
+      window,
+      into: walk.maintained
+    });
+    if (next) walk.more.push({ ...repo, cursor: next });
+  }
+  walk.exhausted = conn.pageInfo?.hasNextPage !== true;
+  return !passed && !walk.exhausted ? conn.pageInfo.endCursor : null;
+}
+
+/** One merge list's first page from one developer's alias. */
+export function readMergesFirst(kind, node, { target, window }) {
+  if (!node || typeof node !== 'object') throw new Malformed('no user');
+  if (typeof node.login !== 'string' || node.login.toLowerCase() !== target.login.toLowerCase()) {
+    throw new Malformed(`login ${JSON.stringify(node.login)} for ${target.login}`);
+  }
+  const login = node.login;
+  if (kind === 'accepted') {
+    const accepted = new Map();
+    return { accepted, next: readAcceptedPage(node.a, { login, window, into: accepted }) };
+  }
+  const walk = { listed: new Set(), maintained: new Map(), more: [], exhausted: false };
+  return { walk, next: readRepositoriesPage(node.m, { login, window, walk }) };
+}
+
+/**
+ * Why a developer's merge lists cannot be trusted, or null. Two facts the main phase already
+ * established must hold in them: every pull request of theirs the contributions API lists as
+ * merged in the window into someone else's repository is in their merged pull requests, and the
+ * repositories they own and committed to are in their repository list. A token that cannot see
+ * the lists, or a list GitHub returned short, fails here instead of storing no merges.
+ */
+export function crossCheckMerges(m, s) {
+  if (!(m.cut & CUT_ACCEPTED)) {
+    const read = new Set();
+    for (const r of s.accepted.values())
+      for (const i of r.items) read.add(pullKey(r.repo, i.number));
+    const missing = [...m.merged].filter((key) => !read.has(key)).sort();
+    if (missing.length > 0) {
+      return `${missing.length} merged pull request(s) missing from their merge list, ${missing[0]} first`;
     }
   }
-  return search.pageInfo?.hasNextPage === true ? search.pageInfo.endCursor : null;
+  const own = m.commits
+    .filter((r) => r.flags & FLAG_OWNED && !(r.flags & FLAG_FORK))
+    .map((r) => r.repo.toLowerCase())
+    .sort();
+  if (own.length > 0 && s.walk.listed.size === 0) {
+    return `their repository list is empty, though they committed to ${own[0]}`;
+  }
+  // Read to its end, the list holds every repository they own, pushed in the window or not.
+  const absent = s.walk.exhausted ? own.filter((r) => !s.walk.listed.has(r)) : [];
+  if (absent.length > 0) return `their repository list lacks ${absent[0]}, which they committed to`;
+  return null;
 }
 
 /**
@@ -792,7 +975,7 @@ export function createMeasurementClient({ token, maxWaitMs = MAX_WAIT_MS, ...opt
   });
 }
 
-/** Further pages of one connection or search for one developer, until done or capped. */
+/** Further pages of one connection for one developer, until done or capped. */
 async function readMorePages({ client, document, variables, read, first, maxPages }) {
   let cursor = first;
   let pages = 1;
@@ -842,8 +1025,8 @@ export function integrityTargets(main) {
  * whatever cannot be measured is listed in `failed`.
  *
  * `prefilter(partial)`, when given, sees each developer's measurement after the main phase (no
- * searches or commit-date samples yet) and returns false for one who cannot pass the gate
- * whatever those add: the searches and samples are then skipped, and the developer is listed in
+ * merge lists or commit-date samples yet) and returns false for one who cannot pass the gate
+ * whatever those add: the merge lists and samples are then skipped, and the developer is listed in
  * `ineligible` with that partial measurement, encoded. Working days come from the main phase
  * alone, and the later phases can only remove days, so this never turns away anyone the gate
  * would admit.
@@ -869,6 +1052,7 @@ export async function measureContributions(
     retries: 0,
     notFound: 0,
     degraded: 0,
+    inconsistent: 0,
     stopped: null
   };
   const start = client.usage();
@@ -943,7 +1127,8 @@ export async function measureContributions(
               return readContributionPage(kind, data?.u0?.c?.[field], {
                 login: m.login,
                 window,
-                into: m.lists[kind]
+                into: m.lists[kind],
+                merged: m.merged
               }).next;
             } catch (error) {
               if (error instanceof Malformed) throw new PageFailed(error.message);
@@ -976,13 +1161,13 @@ export async function measureContributions(
     issues: [...m.lists.issues.values()],
     reviews: [...m.lists.reviews.values()],
     accepted: s ? [...s.accepted.values()] : [],
-    maintained: s ? [...s.maintained.values()] : [],
+    maintained: s ? [...s.walk.maintained.values()] : [],
     future_repos: m.future_repos,
     integrity: sampled,
     cut: m.cut
   });
 
-  // The gate's early answer: no searches or samples for someone who cannot pass it.
+  // The gate's early answer: no merge lists or samples for someone who cannot pass it.
   const ineligible = new Map();
   if (prefilter) {
     for (const target of targets) {
@@ -997,78 +1182,115 @@ export async function measureContributions(
     }
   }
 
-  // Search.
-  const searchable = targets.filter((t) => main.values.has(keyOf(t)));
-  const search = await runSlices(searchable, {
-    size: SEARCH_BATCH_SIZE,
-    document: buildSearchQuery,
-    variables: (part) =>
-      Object.fromEntries(
-        part.flatMap((t, i) => {
-          const q = searchQueries(t.login, window);
-          return [
-            [`qa${i}`, q.accepted],
-            [`qm${i}`, q.maintained]
-          ];
-        })
-      ),
-    aliases: (i) => [`a${i}`, `m${i}`],
-    read: ([accepted, maintained], target) => {
-      const login = main.values.get(keyOf(target)).login;
-      const out = { accepted: new Map(), maintained: new Map(), next: {} };
-      out.next.accepted = readSearchPage('accepted', accepted, {
-        login,
-        window,
-        into: out.accepted
+  // Merges: each list's first page in batches, then each developer's further pages.
+  let listable = targets.filter((t) => main.values.has(keyOf(t)));
+  const firstPages = {};
+  for (const kind of ['accepted', 'repositories']) {
+    const list = (items, size, first) =>
+      runSlices(items, {
+        size,
+        document: (n) => buildMergesQuery(kind, n, { first }),
+        variables: (part) => Object.fromEntries(part.map((t, i) => [`l${i}`, t.login])),
+        aliases: (i) => [`u${i}`],
+        read: ([node], target) => readMergesFirst(kind, node, { target, window }),
+        key: keyOf,
+        client,
+        stats,
+        label: `merges (${kind})`,
+        log
       });
-      out.next.maintained = readSearchPage('maintained', maintained, {
-        login,
-        window,
-        into: out.maintained
-      });
-      return out;
-    },
-    key: keyOf,
-    client,
-    stats,
-    label: 'search',
-    log
-  });
-  for (const [key, reason] of search.failed) {
-    if (main.values.has(key)) failed.set(key, `search: ${reason}`);
-    main.values.delete(key);
+    const result = await list(listable, MERGES_BATCH_SIZE);
+    const refused = listable.filter((t) => {
+      const reason = result.failed.get(keyOf(t));
+      return reason && reason !== 'not found' && !stats.stopped;
+    });
+    if (refused.length > 0) {
+      const retry = await list(refused, 1, DEGRADED_MERGES);
+      for (const [key, value] of retry.values) {
+        result.values.set(key, value);
+        result.failed.delete(key);
+      }
+    }
+    for (const [key, reason] of result.failed) {
+      if (main.values.has(key)) failed.set(key, `merges: ${reason}`);
+      main.values.delete(key);
+    }
+    listable = listable.filter((t) => main.values.has(keyOf(t)));
+    firstPages[kind] = result.values;
   }
+  const merges = new Map();
+  for (const target of listable) {
+    const key = keyOf(target);
+    const accepted = firstPages.accepted.get(key);
+    const repositories = firstPages.repositories.get(key);
+    merges.set(key, {
+      accepted: accepted.accepted,
+      walk: repositories.walk,
+      next: { accepted: accepted.next, repositories: repositories.next }
+    });
+  }
+  const pageRead = (read) => (data) => {
+    try {
+      return read(data);
+    } catch (error) {
+      if (error instanceof Malformed) throw new PageFailed(error.message);
+      throw error;
+    }
+  };
   for (const target of targets) {
     const key = keyOf(target);
-    const s = search.values.get(key);
+    const s = merges.get(key);
     const m = main.values.get(key);
     if (!s || !m) continue;
     if (stats.stopped) {
-      if (s.next.accepted || s.next.maintained) unfinished(target);
+      if (s.next.accepted || s.next.repositories || s.walk.more.length > 0) unfinished(target);
       continue;
     }
     try {
-      for (const [kind, cut] of [
-        ['accepted', CUT_ACCEPTED],
-        ['maintained', CUT_MAINTAINED]
-      ]) {
-        if (!s.next[kind]) continue;
+      if (s.next.accepted) {
         const { complete } = await readMorePages({
           client,
-          document: buildSearchPageQuery(kind),
-          variables: { q: searchQueries(target.login, window)[kind] },
-          first: s.next[kind],
-          maxPages: MAX_SEARCH_PAGES,
-          read: (data) => {
-            try {
-              return readSearchPage(kind, data?.s, { login: m.login, window, into: s[kind] });
-            } catch (error) {
-              if (error instanceof Malformed) throw new PageFailed(error.message);
-              throw error;
-            }
-          }
+          document: buildMergesPageQuery('accepted'),
+          variables: { login: target.login },
+          first: s.next.accepted,
+          maxPages: MAX_MERGED_PAGES,
+          read: pageRead((data) =>
+            readAcceptedPage(data?.u0?.a, { login: m.login, window, into: s.accepted })
+          )
         });
-        if (!complete) m.cut |= cut;
+        if (!complete) m.cut |= CUT_ACCEPTED;
+      }
+      if (s.next.repositories) {
+        const { complete } = await readMorePages({
+          client,
+          document: buildMergesPageQuery('repositories'),
+          variables: { login: target.login },
+          first: s.next.repositories,
+          maxPages: MAX_REPOSITORY_PAGES,
+          read: pageRead((data) =>
+            readRepositoriesPage(data?.u0?.m, { login: m.login, window, walk: s.walk })
+          )
+        });
+        if (!complete) m.cut |= CUT_MAINTAINED;
+      }
+      for (const repo of s.walk.more) {
+        const [owner, name] = repo.name.split('/');
+        const { complete } = await readMorePages({
+          client,
+          document: buildRepositoryMergesQuery(),
+          variables: { owner, name },
+          first: repo.cursor,
+          maxPages: MAX_REPOSITORY_MERGE_PAGES,
+          read: pageRead((data) =>
+            readRepositoryMerges(data?.r?.pullRequests, {
+              repo,
+              login: m.login,
+              window,
+              into: s.walk.maintained
+            })
+          )
+        });
+        if (!complete) m.cut |= CUT_MAINTAINED;
       }
     } catch (error) {
       if (!(error instanceof PageFailed)) {
@@ -1077,8 +1299,21 @@ export async function measureContributions(
         continue;
       }
       main.values.delete(key);
-      failed.set(key, `a further search page: ${error.message}`);
+      failed.set(key, `a further merges page: ${error.message}`);
+      continue;
     }
+    const problem = crossCheckMerges(m, s);
+    if (problem) {
+      stats.inconsistent += 1;
+      main.values.delete(key);
+      failed.set(key, `merges: ${problem}`);
+    }
+  }
+  if (stats.inconsistent > 0) {
+    log.warn(
+      `::warning title=CONTRIBUTIONS::${stats.inconsistent} developer(s) not measured: their ` +
+        'merge lists disagree with the contributions API. Rows keep their previous block.'
+    );
   }
 
   // Integrity.
@@ -1132,7 +1367,7 @@ export async function measureContributions(
     const key = keyOf(target);
     if (ineligible.has(key)) continue;
     const m = main.values.get(key);
-    const s = search.values.get(key);
+    const s = merges.get(key);
     if (!m || !s) {
       if (!failed.has(key)) failed.set(key, stats.stopped || 'not measured');
       continue;
@@ -1152,8 +1387,9 @@ export async function measureContributions(
   stats.points = end.points - start.points;
   log.log(
     `Contributions measured: ${blocks.size} of ${targets.length} in full, ` +
-      `${ineligible.size} short of the gate on their working days alone, ${failed.size} failed, ` +
-      `${stats.degraded} on a shorter repository list; ${stats.requests} requests, ` +
+      `${ineligible.size} short of the gate on their working days alone, ${failed.size} failed ` +
+      `(${stats.inconsistent} on the merge cross-check), ${stats.degraded} on a shorter ` +
+      `repository list; ${stats.requests} requests, ` +
       `${stats.points} points, ${stats.rejected} rejected, ${stats.bisections} bisections, ` +
       `${stats.retries} retries.`
   );

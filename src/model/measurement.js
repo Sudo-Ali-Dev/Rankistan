@@ -107,7 +107,6 @@ const PKT_OFFSET_MS = PKT_OFFSET_HOURS * HOUR_MS;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
-const isoSecond = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 const dateMs = (date) => Date.parse(`${date}T00:00:00Z`);
 export const addDays = (date, days) => isoDate(dateMs(date) + days * DAY_MS);
 
@@ -149,12 +148,6 @@ export function measurementWindow(now) {
     // contributionsCollection spans at most a year.
     future: { from: `${futureFrom}T00:00:00Z`, to: `${addDays(futureFrom, 364)}T23:59:59Z` }
   };
-}
-
-/** The `merged:` range for a search: the window's instants, to the second. */
-export function searchMergedRange(window) {
-  const at = (ms) => isoSecond(ms).replace(/Z$/, '+00:00');
-  return `${at(window.instants.from)}..${at(window.instants.to - 1000)}`;
 }
 
 /** A date's offset into the window, or null outside it. */
