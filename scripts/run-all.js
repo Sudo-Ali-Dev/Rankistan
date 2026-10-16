@@ -43,6 +43,7 @@ import {
 import { fetchPronouns, attachPronouns } from './fetch-pronouns.js';
 import { scoreDevelopers } from './score.js';
 import { createShadowClient, shadowContributionsStep } from './measure/contributions.js';
+import { prescreenStep } from './measure/prescreen-log.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
 import { verifyPublished } from './verify-published.js';
 import { makeGitHubClient, createStateStore, stateAssetName, DEFAULT_REPO } from './state-store.js';
@@ -649,9 +650,20 @@ export async function measureBatch({ batchIndex, registry, existing = [] }) {
   // on a row, so measuring the gate's rejects would buy nothing - and attached after scoring, so
   // nothing in it can reach a score (scripts/measure/contributions.js). Never fails the batch.
   const token = process.env.MY_GITHUB_PAT || process.env.GITHUB_TOKEN;
+  const shadowClient = token ? createShadowClient({ token }) : null;
   const shadow = await shadowContributionsStep(scored, {
     existing,
-    client: token ? createShadowClient({ token }) : null,
+    client: shadowClient,
+    now: Date.now()
+  });
+
+  // The next model's pre-screen, beside today's and logged only (scripts/measure/prescreen-log.js):
+  // it decides nothing, and never fails the batch.
+  await prescreenStep({
+    candidates: fetched.candidates,
+    fullyFetched: rawDevs.map((d) => d.username),
+    published: scored.map((d) => d.username),
+    client: shadowClient,
     now: Date.now()
   });
 

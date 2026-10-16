@@ -1,552 +1,781 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   BATCH_SIZE,
-  FLAG_FORK,
-  FLAG_OWNED,
+  DEGRADED_MAX_REPOSITORIES,
+  INTEGRITY_MAX_REPOSITORIES,
+  MAX_PAGES,
   MAX_SINGLE_RETRIES,
   MAX_WAIT_MS,
+  SEARCH_BATCH_SIZE,
   SHADOW_FIELD,
   attachShadow,
   buildQuery,
-  calendarSeries,
-  commitDayOffset,
+  buildSearchQuery,
+  calendarActiveDays,
   createShadowClient,
-  decodeShadow,
-  encodeShadow,
+  decodeMeasurement,
+  integrityTargets,
+  judgeAliased,
   measureShadowContributions,
-  measurementWindows,
-  medianGapSeconds,
+  measurementWindow,
   previousBlocks,
-  readMeasurement,
-  shadowContributionsStep,
-  truncation
+  readIntegrity,
+  readMain,
+  readSearchPage,
+  screenCalendars,
+  searchQueries,
+  shadowContributionsStep
 } from './contributions.js';
+import {
+  CUT_DEGRADED,
+  CUT_INTEGRITY,
+  CUT_PULL_REQUESTS,
+  FLAG_OWNED,
+  OUTCOME_CLOSED,
+  OUTCOME_MERGED,
+  OUTCOME_OPEN,
+  windowDate
+} from '../../src/model/measurement.js';
 import { RATE_LIMIT, respond } from '../discovery/fake-search.js';
 import { verifyPublished } from '../verify-published.js';
 import { scoreDevelopers } from '../score.js';
 import { scoreFromPublished, scoreModel } from '../../src/model/score.js';
 import { SCORE_CONFIG } from '../../src/model/config.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const NOW = Date.parse('2026-10-14T09:30:00Z');
-const WINDOWS = measurementWindows(NOW);
-const DAY_MS = 24 * 60 * 60 * 1000;
+const W = measurementWindow(NOW);
 const quiet = { log() {}, warn() {} };
 
-/** The date `offset` days into the scoring window. */
-const scoringDate = (offset) =>
-  new Date(Date.parse(`${WINDOWS.scoring.from}T00:00:00Z`) + offset * DAY_MS)
-    .toISOString()
-    .slice(0, 10);
+/** The instant of 10:00 Pakistan time on the window's day `offset`. */
+const at = (offset) => `${windowDate(W, offset)}T05:00:00Z`;
+const repo = (name, { fork = false, stars = 0, org = false } = {}) => ({
+  nameWithOwner: name,
+  isFork: fork,
+  stargazerCount: stars,
+  owner: { __typename: org ? 'Organization' : 'User', login: name.split('/')[0] }
+});
+const page = (nodes, next = null) => ({
+  totalCount: nodes.length + (next ? 1 : 0),
+  pageInfo: { hasNextPage: Boolean(next), endCursor: next },
+  nodes
+});
 
 /**
- * A user node as GitHub returns it for the shadow document. `commits` maps a repository to its
- * commits by scoring-window day; `prs` lists pull requests per repository.
+ * One developer as GitHub would answer every document of the measurement. `commits` maps a
+ * repository to commits by window day (day -1 is the date before the window, which the query
+ * range also returns).
  */
-function userNode(
-  login,
-  {
+function person(login, options = {}) {
+  const {
     id = 1,
     commits = { [`${login}/app`]: { 0: 3, 4: 2 } },
     stars = {},
-    forks = [],
-    prs = {},
-    issues = 0,
-    reviews = 0,
+    prs = [],
+    issues = [],
+    reviews = [],
+    accepted = [],
+    maintained = [],
+    future = [],
+    history = {},
     restricted = 0,
     commitRepositories,
-    gapExtra = {}
-  } = {}
-) {
+    prPages = [],
+    acceptedPages = []
+  } = options;
   const commitEntries = Object.entries(commits).map(([name, byDay]) => ({
-    repository: {
-      nameWithOwner: name,
-      owner: { login: name.split('/')[0] },
-      isFork: forks.includes(name),
-      stargazerCount: stars[name] ?? 0
-    },
+    repository: repo(name, { stars: stars[name] ?? 0 }),
     contributions: {
       totalCount: Object.values(byDay).reduce((a, b) => a + b, 0),
       nodes: Object.entries(byDay).map(([offset, commitCount]) => ({
-        occurredAt: `${scoringDate(Number(offset))}T07:00:00Z`,
+        occurredAt: `${windowDate(W, Number(offset))}T07:00:00Z`,
         commitCount
       }))
     }
   }));
-  const prEntries = Object.entries(prs).map(([name, list]) => ({
-    repository: { nameWithOwner: name, owner: { login: name.split('/')[0] }, isFork: false },
-    contributions: { totalCount: list.length, nodes: list.map((pullRequest) => ({ pullRequest })) }
-  }));
-  const totalCommits = commitEntries.reduce((s, e) => s + e.contributions.totalCount, 0);
-  const totalPrs = prEntries.reduce((s, e) => s + e.contributions.totalCount, 0);
-  const days = [];
-  for (let i = 0; i < 60; i += 1) {
-    const date = new Date(Date.parse(`${WINDOWS.gap.from}T00:00:00Z`) + i * DAY_MS)
-      .toISOString()
-      .slice(0, 10);
-    days.push({ date, contributionCount: i % 7 });
-  }
   return {
-    login,
-    databaseId: id,
-    gap: { contributionCalendar: { weeks: [{ contributionDays: days }] }, ...gapExtra },
-    w30: {
-      totalCommitContributions: totalCommits,
-      totalPullRequestContributions: totalPrs,
-      totalIssueContributions: issues,
-      totalPullRequestReviewContributions: reviews,
-      restrictedContributionsCount: restricted,
-      totalRepositoriesWithContributedCommits: commitRepositories ?? commitEntries.length,
-      totalRepositoriesWithContributedPullRequests: prEntries.length,
-      commitContributionsByRepository: commitEntries,
-      pullRequestContributionsByRepository: prEntries
-    }
+    main: {
+      login,
+      databaseId: id,
+      id: `U_${login}`,
+      c: {
+        restrictedContributionsCount: restricted,
+        totalRepositoriesWithContributedCommits: commitRepositories ?? commitEntries.length,
+        commitContributionsByRepository: commitEntries,
+        pullRequestContributions: page(prs, prPages.length ? 'p1' : null),
+        issueContributions: page(issues),
+        pullRequestReviewContributions: page(reviews)
+      },
+      f: {
+        commitContributionsByRepository: future.map((name) => ({
+          repository: { nameWithOwner: name }
+        }))
+      }
+    },
+    prPages,
+    accepted: {
+      issueCount: accepted.length,
+      pageInfo: { hasNextPage: acceptedPages.length > 0, endCursor: 'a1' },
+      nodes: accepted
+    },
+    acceptedPages,
+    maintained: {
+      issueCount: maintained.length,
+      pageInfo: { hasNextPage: false, endCursor: null },
+      nodes: maintained
+    },
+    history
   };
 }
 
-const target = (login, githubId = 1) => ({ login, githubId });
-const pr = (createdAt, merged = false, by = null) => ({
-  createdAt,
-  merged,
-  mergedBy: by ? { login: by } : null
+const prNode = (offset, name, { merged = false, state = 'OPEN', number = 1 } = {}) => ({
+  occurredAt: at(offset),
+  pullRequest: { number, state, merged, repository: repo(name) }
+});
+const reviewNode = (offset, name, author, number = 1) => ({
+  occurredAt: at(offset),
+  pullRequest: {
+    number,
+    author: author
+      ? { __typename: 'User', login: author, createdAt: '2015-01-01T00:00:00Z' }
+      : null,
+    repository: repo(name, { stars: 10 })
+  }
+});
+const mergedNode = (
+  offset,
+  name,
+  merger,
+  { number = 1, additions = 10, deletions = 2, files = 2, stars = 100 } = {}
+) => ({
+  number,
+  mergedAt: at(offset),
+  additions,
+  deletions,
+  changedFiles: files,
+  mergedBy: merger
+    ? { __typename: 'User', login: merger, createdAt: '2014-05-05T00:00:00Z' }
+    : null,
+  author: { __typename: 'User', login: merger || 'someone', createdAt: '2014-05-05T00:00:00Z' },
+  repository: {
+    ...repo(name, { stars }),
+    owner: {
+      __typename: 'Organization',
+      login: name.split('/')[0],
+      createdAt: '2016-01-01T00:00:00Z'
+    }
+  }
 });
 
-/** A fake GraphQL endpoint answering the shadow document from `nodes` (login -> node). */
-function fakeShadow(nodes, { onRequest } = {}) {
+/** A fake GraphQL endpoint answering every document of the measurement from `people`. */
+function fakeGitHub(people, { onRequest } = {}) {
   const calls = [];
+  const byLogin = (login) => people[String(login).toLowerCase()];
   async function fetchImpl(_url, init) {
-    const { variables } = JSON.parse(init.body);
-    const logins = Object.keys(variables)
-      .filter((key) => /^l\d+$/.test(key))
-      .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
-      .map((key) => variables[key]);
-    calls.push({ logins, variables });
-    const override = onRequest?.({ logins, call: calls.length, variables });
+    const { query, variables } = JSON.parse(init.body);
+    const kind = query.includes('fragment Measure')
+      ? 'main'
+      : query.includes('contributionCalendar')
+        ? 'calendar'
+        : query.includes('history(')
+          ? 'integrity'
+          : query.includes('$after') && query.includes('user(login: $login)')
+            ? 'page'
+            : query.includes('$after')
+              ? 'search-page'
+              : 'search';
+    const call = { kind, variables, query };
+    calls.push(call);
+    const override = onRequest?.({ ...call, n: calls.length });
     if (override) return override;
     const data = { rateLimit: RATE_LIMIT };
     const errors = [];
-    logins.forEach((login, i) => {
-      const node = nodes[login.toLowerCase()];
-      data[`u${i}`] = node ?? null;
-      if (!node) errors.push({ type: 'NOT_FOUND', path: [`u${i}`], message: 'Could not resolve' });
-    });
+    if (kind === 'main' || kind === 'calendar') {
+      Object.keys(variables)
+        .filter((k) => /^l\d+$/.test(k))
+        .forEach((k) => {
+          const alias = `u${k.slice(1)}`;
+          const p = byLogin(variables[k]);
+          if (!p) {
+            data[alias] = null;
+            errors.push({ type: 'NOT_FOUND', path: [alias] });
+          } else if (kind === 'main') {
+            data[alias] = p.main;
+          } else {
+            const days = (p.calendar || [1, 0, 2]).map((n, i) => ({
+              date: `d${i}`,
+              contributionCount: n
+            }));
+            data[alias] = {
+              login: p.main.login,
+              databaseId: p.main.databaseId,
+              c: { contributionCalendar: { weeks: [{ contributionDays: days }] } }
+            };
+          }
+        });
+    } else if (kind === 'page') {
+      const p = byLogin(variables.login);
+      const next = p.prPages.shift();
+      data.u0 = {
+        login: p.main.login,
+        c: {
+          pullRequestContributions: page(
+            next || [],
+            p.prPages.length ? `p${p.prPages.length}` : null
+          )
+        }
+      };
+    } else if (kind === 'search') {
+      Object.keys(variables).forEach((k) => {
+        const login = variables[k]
+          .match(/author:(\S+)|user:(\S+)/)
+          .slice(1)
+          .find(Boolean);
+        const p = byLogin(login);
+        data[k.slice(1)] = k.startsWith('qa') ? p.accepted : p.maintained;
+      });
+    } else if (kind === 'search-page') {
+      const login = variables.q.match(/author:(\S+)/)[1];
+      const p = byLogin(login);
+      data.s = {
+        issueCount: 0,
+        pageInfo: { hasNextPage: p.acceptedPages.length > 1, endCursor: 'a2' },
+        nodes: p.acceptedPages.shift() || []
+      };
+    } else {
+      Object.keys(variables)
+        .filter((k) => /^o\d+$/.test(k))
+        .forEach((k) => {
+          const i = k.slice(1);
+          const name = `${variables[`o${i}`]}/${variables[`n${i}`]}`;
+          const owner = Object.values(people).find((p) => p.main.id === variables[`a${i}`]);
+          const nodes = owner?.history[name] || [];
+          data[`r${i}`] = { defaultBranchRef: { target: { history: { nodes } } } };
+        });
+    }
     return respond(200, errors.length ? { data, errors } : { data });
   }
   return { fetchImpl, calls };
 }
 
-function shadowClient(fetchImpl, extra = {}) {
+function client(fetchImpl, extra = {}) {
   const waits = [];
-  const client = createShadowClient({
-    token: 't',
-    fetchImpl,
-    sleep: async (ms) => waits.push(ms),
-    minIntervalMs: 0,
-    log: quiet,
-    ...extra
-  });
-  return { client, waits };
+  return {
+    waits,
+    client: createShadowClient({
+      token: 't',
+      fetchImpl,
+      sleep: async (ms) => waits.push(ms),
+      minIntervalMs: 0,
+      log: quiet,
+      ...extra
+    })
+  };
 }
 
 const devs = (n, prefix = 'dev') =>
   Array.from({ length: n }, (_, i) => ({ username: `${prefix}${i}`, github_id: 1000 + i }));
-const nodesFor = (rows) =>
+const peopleFor = (rows, options = {}) =>
   Object.fromEntries(
-    rows.map((r) => [r.username.toLowerCase(), userNode(r.username, { id: r.github_id })])
+    rows.map((r) => [r.username.toLowerCase(), person(r.username, { id: r.github_id, ...options })])
   );
 
 async function measure(rows, fetchImpl, options = {}) {
-  const { client, waits } = shadowClient(fetchImpl, options.client);
+  const { client: c, waits } = client(fetchImpl, options.client);
   const lines = [];
   const log = { log: (line) => lines.push(line), warn: (line) => lines.push(line) };
-  const result = await measureShadowContributions(rows, { client, now: NOW, log, ...options.run });
-  return { ...result, waits, lines };
+  const result = await measureShadowContributions(rows, {
+    client: c,
+    now: NOW,
+    log,
+    ...options.run
+  });
+  return {
+    ...result,
+    waits,
+    lines,
+    decoded: (login) => decodeMeasurement(result.blocks.get(login))
+  };
 }
 
-describe('measurementWindows', () => {
-  it('ends both windows at the UTC midnight that began the day, half-open', () => {
-    expect(WINDOWS.gap).toEqual({ from: '2026-08-15', to: '2026-10-14' });
-    expect(WINDOWS.scoring).toEqual({ from: '2026-09-14', to: '2026-10-14' });
-    // Asked to the last second of the previous day: a `to` at midnight adds that day.
-    expect(WINDOWS.variables).toEqual({
-      gapFrom: '2026-08-15T00:00:00Z',
-      from: '2026-09-14T00:00:00Z',
-      to: '2026-10-13T23:59:59Z'
+describe('documents', () => {
+  it('aliases each developer and passes logins and ranges as variables', () => {
+    const query = buildQuery(2);
+    expect(query).toContain('u0: user(login: $l0) { ...Measure }');
+    expect(query).toContain('u1: user(login: $l1) { ...Measure }');
+    expect(query).toContain('commitContributionsByRepository(maxRepositories: 100)');
+    expect(query).toContain('pullRequestReviewContributions(first: 100)');
+    expect(query).toContain('author { __typename login ... on User { createdAt } }');
+    expect(query).not.toContain('contributionCalendar');
+    expect(buildQuery(1, { maxRepositories: DEGRADED_MAX_REPOSITORIES })).toContain(
+      'maxRepositories: 25'
+    );
+    expect(() => buildQuery(0)).toThrow(RangeError);
+  });
+
+  it("searches merges by the instant they happened, excluding the developer's own repositories", () => {
+    expect(searchQueries('ana', W)).toEqual({
+      accepted:
+        'is:pr is:merged author:ana -user:ana merged:2026-09-13T19:00:00+00:00..2026-10-13T18:59:59+00:00',
+      maintained:
+        'is:pr is:merged user:ana -author:ana merged:2026-09-13T19:00:00+00:00..2026-10-13T18:59:59+00:00'
     });
-  });
-
-  it('gives every run on one UTC day the same windows, and the next day the next ones', () => {
-    const first = measurementWindows(Date.parse('2026-10-14T00:00:00.000Z'));
-    const last = measurementWindows(Date.parse('2026-10-14T23:59:59.999Z'));
-    expect(first).toEqual(last);
-    expect(measurementWindows(Date.parse('2026-10-15T00:00:00Z')).scoring.from).toBe('2026-09-15');
-    expect(() => measurementWindows(undefined)).toThrow(TypeError);
+    const query = buildSearchQuery(2);
+    expect(query).toContain('a1: search(type: ISSUE, query: $qa1');
+    expect(query).toContain('mergedBy { __typename login ... on User { createdAt } }');
   });
 });
 
-describe('buildQuery', () => {
-  it('aliases each developer by position and passes logins and windows as variables', () => {
-    const document = buildQuery(3);
-    expect(document).toMatch(/\$l0: String!, \$l1: String!, \$l2: String!/);
-    expect(document).toMatch(/u2: user\(login: \$l2\)/);
-    expect(document).not.toMatch(/u3:/);
-    expect(document).toMatch(/rateLimit \{ cost/);
-  });
+describe('readMain', () => {
+  const read = (node, target = { login: 'ana', githubId: 7 }) =>
+    readMain(node, { target, window: W });
 
-  it('reads every per-repository figure from the 30-day collection, not the 60-day one', () => {
-    const document = buildQuery(1);
-    const gap = document.slice(document.indexOf('gap:'), document.indexOf('w30:'));
-    const w30 = document.slice(document.indexOf('w30:'));
-    expect(gap).toMatch(/contributionsCollection\(from: \$gapFrom, to: \$to\)/);
-    expect(gap).not.toMatch(/ByRepository|total/);
-    expect(w30).toMatch(/contributionsCollection\(from: \$from, to: \$to\)/);
-    expect(w30).toMatch(/commitContributionsByRepository/);
-    expect(w30).toMatch(/pullRequestContributionsByRepository/);
-    expect(w30).toMatch(/totalCommitContributions/);
-  });
-});
-
-describe('calendarSeries', () => {
-  const days = (dates) => ({
-    weeks: [{ contributionDays: dates.map((date) => ({ date, contributionCount: 1 })) }]
-  });
-  const windowDates = (window) => {
-    const out = [];
-    for (let t = Date.parse(window.from); t < Date.parse(window.to); t += DAY_MS) {
-      out.push(new Date(t).toISOString().slice(0, 10));
-    }
-    return out;
-  };
-
-  it('returns one count per day of the window, oldest first', () => {
-    const series = calendarSeries(days(windowDates(WINDOWS.gap)), WINDOWS.gap);
-    expect(series).toHaveLength(60);
-  });
-
-  it('rejects a calendar that covers any other set of days', () => {
-    const dates = windowDates(WINDOWS.gap);
-    expect(() => calendarSeries(days([...dates, '2026-10-14']), WINDOWS.gap)).toThrow(/61 days/);
-    expect(() => calendarSeries(days(dates.slice(1)), WINDOWS.gap)).toThrow(/no 2026-08-15/);
-    expect(() => calendarSeries(days([...dates, dates[3]]), WINDOWS.gap)).toThrow(/repeated/);
-  });
-});
-
-describe('commitDayOffset', () => {
-  it('reads the date a local midnight stands for, whatever the offset', () => {
-    for (const time of ['T07:00:00Z', 'T08:00:00Z', 'T00:00:00Z']) {
-      expect(commitDayOffset(`2026-09-20${time}`, WINDOWS.scoring)).toBe(6);
-    }
-    // Midnight in Pakistan is 19:00 UTC the day before.
-    expect(commitDayOffset('2026-09-19T19:00:00Z', WINDOWS.scoring)).toBe(6);
-  });
-
-  it('rejects a commit day outside the window', () => {
-    expect(() => commitDayOffset('2026-10-14T07:00:00Z', WINDOWS.scoring)).toThrow(/outside/);
-    expect(() => commitDayOffset('2026-09-13T07:00:00Z', WINDOWS.scoring)).toThrow(/outside/);
-  });
-});
-
-describe('readMeasurement', () => {
-  const read = (node, t = target(node.login, node.databaseId)) =>
-    readMeasurement(node, { target: t, windows: WINDOWS, measuredAt: '2026-10-14T09:30:00Z' });
-
-  it('takes the per-repository figures beside the totals they came with', () => {
-    const node = userNode('ana', {
-      commits: { 'ana/site': { 0: 4, 29: 1 }, 'org/lib': { 3: 2 } },
-      stars: { 'org/lib': 120 },
-      forks: ['org/lib'],
-      // Repository lists inside the 60-day collection are never read.
-      gapExtra: { commitContributionsByRepository: [{ repository: { nameWithOwner: 'x/y' } }] }
-    });
-    const m = read(node);
-    expect(m.totals_30d.commits).toBe(7);
-    expect(m.commit_repositories_30d).toEqual([
+  it('keeps commit days in the window and drops the day before it', () => {
+    const m = read(person('ana', { id: 7, commits: { 'ana/app': { '-1': 4, 0: 3, 29: 1 } } }).main);
+    expect(m.commits).toEqual([
       {
-        name: 'ana/site',
+        repo: 'ana/app',
         flags: FLAG_OWNED,
         stars: 0,
-        commits: 5,
         days: [
-          { day: 0, commits: 4 },
+          { day: 0, commits: 3 },
           { day: 29, commits: 1 }
         ]
-      },
-      { name: 'org/lib', flags: FLAG_FORK, stars: 120, commits: 2, days: [{ day: 3, commits: 2 }] }
+      }
     ]);
-    expect(m.gap_window).toEqual(WINDOWS.gap);
-    expect(m.scoring_window).toEqual(WINDOWS.scoring);
-    expect(m.calendar_60d).toHaveLength(60);
   });
 
   it('rejects commit days that do not add up to the repository total', () => {
-    const node = userNode('ana');
-    node.w30.commitContributionsByRepository[0].contributions.totalCount += 1;
+    const node = person('ana', { id: 7 }).main;
+    node.c.commitContributionsByRepository[0].contributions.totalCount = 99;
     expect(() => read(node)).toThrow(/commits by day/);
   });
 
   it('rejects an account that is not the row it was asked for', () => {
-    expect(() => read(userNode('ana', { id: 7 }), target('ana', 8))).toThrow(/account 7/);
+    expect(() => read(person('ana', { id: 8 }).main)).toThrow(/is account 8/);
+    expect(() => read(person('bob', { id: 7 }).main)).toThrow(/login/);
   });
 
-  it('counts merges by someone else, not self-merges or merges by a deleted account', () => {
-    const node = userNode('ana', {
-      prs: {
-        'org/lib': [
-          pr('2026-09-15T10:00:00Z', true, 'maintainer'),
-          pr('2026-09-15T10:03:00Z', true, 'ANA'),
-          pr('2026-09-15T10:06:00Z', true, null),
-          pr('2026-09-15T10:09:00Z', false)
+  it('reads pull requests, issues and reviews by the Pakistan date of their instant', () => {
+    const m = read(
+      person('ana', {
+        id: 7,
+        prs: [
+          prNode(2, 'acme/lib', { merged: true, state: 'MERGED', number: 5 }),
+          prNode(3, 'acme/lib', { state: 'CLOSED', number: 6 }),
+          prNode(4, 'acme/lib', { number: 7 }),
+          { ...prNode(0, 'acme/lib', { number: 8 }), occurredAt: '2026-09-13T18:00:00Z' }
         ],
-        'ana/site': [pr('2026-09-15T10:12:00Z', true, 'ana')]
-      }
-    });
-    const m = read(node);
-    expect(m.pull_request_repositories_30d).toEqual([
-      { name: 'org/lib', flags: 0, opened: 4, read: 4, merged: 3, merged_by_other: 1 },
-      { name: 'ana/site', flags: FLAG_OWNED, opened: 1, read: 1, merged: 1, merged_by_other: 0 }
+        issues: [{ occurredAt: at(5), issue: { number: 2, repository: repo('bob/x') } }],
+        reviews: [reviewNode(6, 'ana/app', 'ana', 3), reviewNode(6, 'ana/app', 'carl', 4)]
+      }).main
+    );
+    expect([...m.lists.pull_requests.values()][0].items).toEqual([
+      { day: 2, number: 5, outcome: OUTCOME_MERGED },
+      { day: 3, number: 6, outcome: OUTCOME_CLOSED },
+      { day: 4, number: 7, outcome: OUTCOME_OPEN }
     ]);
-    expect(m.pull_request_gap_30d).toEqual({ median_seconds: 180, from_pull_requests: 5 });
+    expect([...m.lists.issues.values()][0].items).toEqual([{ day: 5, number: 2 }]);
+    const reviews = [...m.lists.reviews.values()][0];
+    expect(reviews.stars).toBe(10);
+    // The author is recorded, so a review of one's own pull request can be told apart.
+    expect(reviews.items.map((i) => i.author.login)).toEqual(['ana', 'carl']);
   });
 
-  it('publishes no timing signal under five pull requests', () => {
-    const node = userNode('ana', { prs: { 'org/lib': [pr('2026-09-15T10:00:00Z')] } });
-    expect(read(node).pull_request_gap_30d).toBeNull();
-  });
-});
-
-describe('medianGapSeconds', () => {
-  it('sorts the instants first, and takes the middle gap', () => {
-    const t = (s) => Date.parse('2026-09-20T00:00:00Z') + s * 1000;
-    expect(medianGapSeconds([t(300), t(0), t(61), t(122)])).toBe(61);
-    expect(medianGapSeconds([t(0), t(10), t(30)])).toBe(15);
-    expect(medianGapSeconds([t(0)])).toBeNull();
+  it('marks a cut repository list and lists future-dated repositories', () => {
+    const m = read(person('ana', { id: 7, commitRepositories: 3, future: ['ana/paint'] }).main);
+    expect(m.cut).toBeGreaterThan(0);
+    expect(m.future_repos).toEqual(['ana/paint']);
   });
 });
 
-describe('the stored block', () => {
-  const m = readMeasurement(
-    userNode('ana', {
-      commits: { 'ana/site': { 0: 4, 29: 1 }, 'org/lib': { 3: 2 } },
-      prs: {
-        'org/lib': Array.from({ length: 6 }, (_, i) => pr(`2026-09-20T0${i}:00:00Z`, true, 'x'))
+describe('readSearchPage', () => {
+  it('keeps merges into repositories the developer does not own, with merger and owner', () => {
+    const into = new Map();
+    readSearchPage(
+      'accepted',
+      {
+        issueCount: 3,
+        pageInfo: { hasNextPage: false },
+        nodes: [
+          mergedNode(3, 'stdlib-js/stdlib', 'kgryte'),
+          mergedNode(4, 'ana/own', 'kgryte'),
+          mergedNode(5, 'x/y', null),
+          {}
+        ]
       },
-      issues: 2,
-      reviews: 3,
-      restricted: 40
-    }),
-    { target: target('ana'), windows: WINDOWS, measuredAt: '2026-10-14T09:30:00Z' }
-  );
-
-  it('round-trips through its compact form and through JSON', () => {
-    const block = JSON.parse(JSON.stringify(encodeShadow(m)));
-    expect(decodeShadow(block)).toEqual(m);
-  });
-
-  it('is compact: positional totals and day/commit pairs', () => {
-    const block = encodeShadow(m);
-    expect(block.t30).toEqual([7, 6, 2, 3, 40, 2, 1]);
-    expect(block.cr30[0]).toEqual(['ana/site', FLAG_OWNED, 0, [0, 4, 29, 1]]);
-    expect(block.w30).toEqual(['2026-09-14', '2026-10-14']);
-    expect(block.cal60).toHaveLength(60);
-  });
-
-  it('decodes anything else to null rather than guessing', () => {
-    expect(decodeShadow(null)).toBeNull();
-    expect(decodeShadow({ ...encodeShadow(m), v: 99 })).toBeNull();
-    expect(decodeShadow({ v: 1 })).toBeNull();
-  });
-
-  it('reports a cut repository list as cut, without extrapolating it', () => {
-    const cut = readMeasurement(userNode('ana', { commitRepositories: 3 }), {
-      target: target('ana'),
-      windows: WINDOWS,
-      measuredAt: 'x'
+      { login: 'ana', window: W, into }
+    );
+    const [stdlib, xy] = [...into.values()];
+    expect(stdlib).toMatchObject({
+      repo: 'stdlib-js/stdlib',
+      stars: 100,
+      owner: { login: 'stdlib-js', kind: 'O', created: '2016-01-01' }
     });
-    expect(truncation(cut).commit_repositories).toBe(true);
-    expect(truncation(m).commit_repositories).toBe(false);
+    expect(stdlib.items).toEqual([
+      {
+        day: 3,
+        number: 1,
+        merger: { login: 'kgryte', kind: 'U', created: '2014-05-05' },
+        lines: 12,
+        files: 2
+      }
+    ]);
+    expect(xy.items[0].merger).toBeNull();
+    expect([...into.keys()]).not.toContain('ana/own');
+  });
+
+  it('drops merges outside the window', () => {
+    const into = new Map();
+    const node = { ...mergedNode(0, 'a/b', 'k'), mergedAt: '2026-09-13T18:00:00Z' };
+    readSearchPage(
+      'accepted',
+      { issueCount: 1, pageInfo: {}, nodes: [node] },
+      { login: 'ana', window: W, into }
+    );
+    expect(into.size).toBe(0);
+  });
+});
+
+describe('readIntegrity', () => {
+  const measuredAtMs = NOW;
+  const commit = (authored, committed, committer = 'Ana') => ({
+    authoredDate: authored,
+    committedDate: committed,
+    committer: { name: committer, user: null }
+  });
+
+  it('records how far author dates run ahead and how far any date runs past the measurement', () => {
+    const r = readIntegrity(
+      {
+        defaultBranchRef: {
+          target: {
+            history: {
+              nodes: [
+                commit('2026-10-14T13:00:07Z', '2026-10-14T01:01:18Z', 'www-data'),
+                commit('2026-10-13T08:00:00Z', '2026-10-13T08:00:00Z')
+              ]
+            }
+          }
+        }
+      },
+      { repo: 'z/paint', measuredAtMs }
+    );
+    expect(r).toEqual({
+      repo: 'z/paint',
+      sampled: 2,
+      bot: 0,
+      max_lead_hours: 12,
+      max_ahead_hours: 3.5
+    });
+  });
+
+  it("counts commits a bot committed in the developer's name", () => {
+    const r = readIntegrity(
+      {
+        defaultBranchRef: {
+          target: {
+            history: {
+              nodes: [commit('2026-10-13T07:00:00Z', '2026-10-13T07:00:00Z', 'github-actions[bot]')]
+            }
+          }
+        }
+      },
+      { repo: 'h/x', measuredAtMs }
+    );
+    expect(r.bot).toBe(1);
+  });
+
+  it('reports an empty repository as not sampled', () => {
+    expect(readIntegrity({ defaultBranchRef: null }, { repo: 'a/b', measuredAtMs })).toEqual({
+      repo: 'a/b',
+      sampled: 0,
+      bot: 0,
+      max_lead_hours: null,
+      max_ahead_hours: null
+    });
+  });
+
+  it('samples the repositories with commits on enough days, most days first', () => {
+    const commits = Array.from({ length: INTEGRITY_MAX_REPOSITORIES + 2 }, (_, i) => ({
+      repo: `ana/r${String(i).padStart(2, '0')}`,
+      flags: FLAG_OWNED,
+      days: Array.from({ length: 3 + (i % 5) }, (__, d) => ({ day: d, commits: 1 }))
+    }));
+    commits.push({ repo: 'ana/thin', flags: FLAG_OWNED, days: [{ day: 1, commits: 1 }] });
+    const t = integrityTargets({ commits });
+    expect(t.repos).toHaveLength(INTEGRITY_MAX_REPOSITORIES);
+    expect(t.repos).not.toContain('ana/thin');
+    expect(t.cut).toBe(true);
+  });
+});
+
+describe('judgeAliased', () => {
+  const slice = [{ login: 'a' }, { login: 'b' }];
+  const read = ([n]) => n.v;
+  const aliases = (i) => [`u${i}`];
+
+  it('keeps the rest of a response when NOT_FOUND names exactly one alias', () => {
+    const v = judgeAliased(
+      {
+        kind: 'partial',
+        data: { u0: null, u1: { v: 2 } },
+        errors: [{ type: 'NOT_FOUND', path: ['u0'] }]
+      },
+      slice,
+      { aliases, read }
+    );
+    expect(v.ok).toBe(true);
+    expect(v.missing).toEqual([slice[0]]);
+    expect(v.values).toEqual([{ item: slice[1], value: 2 }]);
+  });
+
+  it('discards a response whole for any other error, or for an alias null with no error', () => {
+    expect(
+      judgeAliased(
+        {
+          kind: 'partial',
+          data: { u0: { v: 1 }, u1: { v: 2 } },
+          errors: [{ type: 'RESOURCE_LIMITS_EXCEEDED', path: ['u1', 'c'] }]
+        },
+        slice,
+        { aliases, read }
+      ).ok
+    ).toBe(false);
+    expect(
+      judgeAliased({ kind: 'ok', data: { u0: { v: 1 }, u1: null } }, slice, { aliases, read }).ok
+    ).toBe(false);
+    expect(judgeAliased({ kind: 'ok', data: {} }, slice, { aliases, read }).reason).toMatch(
+      /over-large/
+    );
+    expect(judgeAliased({ kind: 'gateway', reason: 'HTTP 502' }, slice, { aliases, read }).ok).toBe(
+      false
+    );
   });
 });
 
 describe('measureShadowContributions', () => {
-  it(`batches ${BATCH_SIZE} developers per request, sequentially`, async () => {
-    const rows = devs(32);
-    const fake = fakeShadow(nodesFor(rows));
+  it(`measures ${BATCH_SIZE} developers per main request and ${SEARCH_BATCH_SIZE} per search`, async () => {
+    const rows = devs(7);
+    const fake = fakeGitHub(peopleFor(rows));
     const { blocks, failed, stats } = await measure(rows, fake.fetchImpl);
-    expect(fake.calls.map((c) => c.logins.length)).toEqual([15, 15, 2]);
-    expect(blocks.size).toBe(32);
+    const count = (kind) => fake.calls.filter((c) => c.kind === kind).length;
+    expect(count('main')).toBe(2);
+    expect(count('search')).toBe(3);
+    expect(blocks.size).toBe(7);
     expect(failed.size).toBe(0);
-    expect(stats).toMatchObject({ requests: 3, points: 3, rejected: 0, bisections: 0 });
+    expect(stats).toMatchObject({ rejected: 0, bisections: 0 });
   });
 
-  it('prints one aggregate line per batch, for comparing a production run', async () => {
-    const rows = devs(17);
-    const { lines } = await measure(rows, fakeShadow(nodesFor(rows)).fetchImpl);
-    expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe(
-      'Shadow contributions batch 1/2: 15 developers, 15 measured, 0 failed, 1 points, ' +
-        '1 requests, 75 commits_30d, 0 restricted_30d.'
-    );
+  it('assembles one whole block from every phase', async () => {
+    const rows = [{ username: 'ana', github_id: 7 }];
+    const people = {
+      ana: person('ana', {
+        id: 7,
+        commits: { 'ana/app': { 0: 1, 1: 1, 2: 1 } },
+        accepted: [mergedNode(4, 'stdlib-js/stdlib', 'kgryte')],
+        maintained: [
+          {
+            ...mergedNode(5, 'ana/app', null),
+            author: { __typename: 'User', login: 'carl', createdAt: '2019-01-01T00:00:00Z' },
+            repository: repo('ana/app', { stars: 40 })
+          }
+        ],
+        future: ['ana/paint'],
+        history: {
+          'ana/app': [
+            { authoredDate: at(1), committedDate: at(1), committer: { name: 'Ana', user: null } }
+          ]
+        }
+      })
+    };
+    const { decoded } = await measure(rows, fakeGitHub(people).fetchImpl);
+    const m = decoded('ana');
+    expect(m).toMatchObject({
+      login: 'ana',
+      github_id: 7,
+      window: { from: W.from, to: W.to },
+      cut: 0
+    });
+    expect(m.accepted[0].items[0].merger.login).toBe('kgryte');
+    expect(m.maintained[0].items[0].author.login).toBe('carl');
+    expect(m.future_repos).toEqual(['ana/paint']);
+    expect(m.integrity).toEqual([
+      {
+        repo: 'ana/app',
+        sampled: 1,
+        bot: 0,
+        max_lead_hours: 0,
+        max_ahead_hours: expect.any(Number)
+      }
+    ]);
   });
 
   it('discards a partial response whole, even the aliases that look fine, and bisects', async () => {
-    const rows = devs(6);
-    const good = nodesFor(rows);
-    const fake = fakeShadow(good, {
-      onRequest: ({ logins, call }) => {
-        if (call !== 1) return null;
-        // Plausible-looking data for everyone, plus one resource-limit error.
-        const data = { rateLimit: RATE_LIMIT };
-        logins.forEach((login, i) => {
-          data[`u${i}`] = userNode(login, {
-            id: 1000 + i,
-            commits: { [`${login}/app`]: { 0: 999 } }
-          });
-        });
-        const errors = [
-          {
-            type: 'RESOURCE_LIMITS_EXCEEDED',
-            path: ['u5', 'w30', 'commitContributionsByRepository']
-          }
-        ];
-        return respond(200, { data, errors });
-      }
-    });
-    const { blocks, stats } = await measure(rows, fake.fetchImpl);
-    expect(fake.calls.map((c) => c.logins.length)).toEqual([6, 3, 3]);
-    expect(stats).toMatchObject({ rejected: 1, bisections: 1 });
-    // Nothing from the discarded response survived.
-    expect(decodeShadow(blocks.get('dev0')).totals_30d.commits).toBe(5);
-  });
-
-  it('keeps the rest of a response when NOT_FOUND names exactly one user', async () => {
     const rows = devs(4);
-    const nodes = nodesFor(rows);
-    delete nodes.dev2;
-    const fake = fakeShadow(nodes);
-    const { blocks, failed, stats } = await measure(rows, fake.fetchImpl);
-    expect(fake.calls).toHaveLength(1);
-    expect([...blocks.keys()]).toEqual(['dev0', 'dev1', 'dev3']);
-    expect(failed.get('dev2')).toBe('not found');
-    expect(stats.notFound).toBe(1);
-  });
-
-  it('treats NOT_FOUND anywhere below a user as a reason to discard', async () => {
-    const rows = devs(2);
-    const fake = fakeShadow(nodesFor(rows), {
-      onRequest: ({ call }) =>
-        call === 1
+    const fake = fakeGitHub(peopleFor(rows), {
+      onRequest: ({ kind, n }) =>
+        kind === 'main' && n === 1
           ? respond(200, {
-              data: { rateLimit: RATE_LIMIT, u0: null, u1: null },
+              data: {
+                rateLimit: RATE_LIMIT,
+                u0: person('dev0', { id: 1000, commits: { 'dev0/app': { 0: 999 } } }).main
+              },
               errors: [
-                { type: 'NOT_FOUND', path: ['u0', 'w30', 'commitContributionsByRepository'] }
+                {
+                  type: 'RESOURCE_LIMITS_EXCEEDED',
+                  path: ['u3', 'c', 'commitContributionsByRepository']
+                }
               ]
             })
           : null
     });
-    const { blocks, stats } = await measure(rows, fake.fetchImpl);
-    expect(fake.calls.map((c) => c.logins.length)).toEqual([2, 1, 1]);
-    expect(blocks.size).toBe(2);
-    expect(stats.bisections).toBe(1);
-  });
-
-  it('splits an HTTP 200 whose aliases are all null: an over-large query, not absent users', async () => {
-    const rows = devs(4);
-    const fake = fakeShadow(nodesFor(rows), {
-      onRequest: ({ logins }) =>
-        logins.length > 2 ? respond(200, { data: { rateLimit: RATE_LIMIT } }) : null
-    });
-    const { blocks } = await measure(rows, fake.fetchImpl);
-    expect(fake.calls.map((c) => c.logins.length)).toEqual([4, 2, 2]);
+    const { blocks, stats, decoded } = await measure(rows, fake.fetchImpl);
+    expect(
+      fake.calls
+        .filter((c) => c.kind === 'main')
+        .map((c) => Object.keys(c.variables).filter((k) => /^l/.test(k)).length)
+    ).toEqual([4, 2, 2]);
+    expect(stats).toMatchObject({ rejected: 1, bisections: 1 });
     expect(blocks.size).toBe(4);
-  });
-
-  it('reads a 502 as text, splits the batch, and retries a single developer', async () => {
-    const rows = devs(2);
-    const fake = fakeShadow(nodesFor(rows), {
-      onRequest: ({ call }) =>
-        call <= 2 ? respond(502, '<html><body>502 Bad Gateway</body></html>') : null
-    });
-    const { blocks, failed, stats, waits } = await measure(rows, fake.fetchImpl);
-    // [both] 502 -> [dev0] 502 -> [dev0] retried -> [dev1]
-    expect(fake.calls.map((c) => c.logins)).toEqual([
-      ['dev0', 'dev1'],
-      ['dev0'],
-      ['dev0'],
-      ['dev1']
+    expect(decoded('dev0').commits[0].days).toEqual([
+      { day: 0, commits: 3 },
+      { day: 4, commits: 2 }
     ]);
-    expect(blocks.size).toBe(2);
-    expect(failed.size).toBe(0);
-    expect(stats.retries).toBe(1);
-    expect(waits).toContain(5000);
   });
 
-  it('gives up on one developer after its retries, and measures the rest', async () => {
-    const rows = devs(3);
-    const fake = fakeShadow(nodesFor(rows), {
-      onRequest: ({ logins }) => (logins.includes('dev1') ? respond(502, '<html>502</html>') : null)
-    });
-    const { blocks, failed } = await measure(rows, fake.fetchImpl);
-    expect([...blocks.keys()].sort()).toEqual(['dev0', 'dev2']);
-    expect(failed.get('dev1')).toBe('HTTP 502');
-    expect(fake.calls.filter((c) => c.logins.join() === 'dev1')).toHaveLength(
-      MAX_SINGLE_RETRIES + 1
-    );
-  });
-
-  it('backs off on a secondary limit at the same size, never bisecting', async () => {
-    const rows = devs(3);
-    const fake = fakeShadow(nodesFor(rows), {
-      onRequest: ({ call }) =>
-        call === 1
-          ? respond(403, '{"message":"You have exceeded a secondary rate limit."}', {
-              'retry-after': '30'
-            })
+  it('measures a developer refused on their own once more with a shorter repository list', async () => {
+    const rows = devs(1);
+    const fake = fakeGitHub(peopleFor(rows), {
+      onRequest: ({ kind, query }) =>
+        kind === 'main' && query.includes('maxRepositories: 100')
+          ? respond(502, '<html>502</html>')
           : null
     });
-    const { blocks, stats, waits } = await measure(rows, fake.fetchImpl);
-    expect(fake.calls.map((c) => c.logins.length)).toEqual([3, 3]);
-    expect(waits).toContain(31000);
-    expect(stats).toMatchObject({ rejected: 0, bisections: 0 });
-    expect(blocks.size).toBe(3);
+    const { decoded, stats } = await measure(rows, fake.fetchImpl);
+    expect(fake.calls.filter((c) => c.kind === 'main')).toHaveLength(MAX_SINGLE_RETRIES + 2);
+    expect(decoded('dev0').cut & CUT_DEGRADED).toBe(CUT_DEGRADED);
+    expect(stats.degraded).toBe(1);
+  });
+
+  it('follows further pages, and marks a list cut at the page cap', async () => {
+    const rows = [{ username: 'ana', github_id: 7 }];
+    const pages = Array.from({ length: MAX_PAGES + 1 }, (_, i) => [
+      prNode(i, 'acme/lib', { number: 100 + i })
+    ]);
+    const people = { ana: person('ana', { id: 7, prs: [prNode(0, 'acme/lib')], prPages: pages }) };
+    const fake = fakeGitHub(people);
+    const { decoded } = await measure(rows, fake.fetchImpl);
+    expect(fake.calls.filter((c) => c.kind === 'page')).toHaveLength(MAX_PAGES - 1);
+    const m = decoded('ana');
+    expect(m.pull_requests[0].items).toHaveLength(MAX_PAGES);
+    expect(m.cut & CUT_PULL_REQUESTS).toBe(CUT_PULL_REQUESTS);
+  });
+
+  it('follows a further search page', async () => {
+    const rows = [{ username: 'ana', github_id: 7 }];
+    const people = {
+      ana: person('ana', {
+        id: 7,
+        accepted: [mergedNode(1, 'a/b', 'k', { number: 1 })],
+        acceptedPages: [[mergedNode(2, 'a/b', 'k', { number: 2 })]]
+      })
+    };
+    const { decoded } = await measure(rows, fakeGitHub(people).fetchImpl);
+    expect(decoded('ana').accepted[0].items.map((i) => i.number)).toEqual([1, 2]);
+  });
+
+  it('keeps a developer whose commit-date sample failed, marked CUT_INTEGRITY', async () => {
+    const rows = [{ username: 'ana', github_id: 7 }];
+    const people = { ana: person('ana', { id: 7, commits: { 'ana/app': { 0: 1, 1: 1, 2: 1 } } }) };
+    const fake = fakeGitHub(people, {
+      onRequest: ({ kind }) => (kind === 'integrity' ? respond(502, '<html>502</html>') : null)
+    });
+    const { decoded } = await measure(rows, fake.fetchImpl);
+    const m = decoded('ana');
+    expect(m.cut & CUT_INTEGRITY).toBe(CUT_INTEGRITY);
+    expect(m.integrity).toEqual([]);
+  });
+
+  it('fails a developer whose searches failed, never storing half a measurement', async () => {
+    const rows = devs(1);
+    const fake = fakeGitHub(peopleFor(rows), {
+      onRequest: ({ kind }) => (kind === 'search' ? respond(502, '<html>502</html>') : null)
+    });
+    const { blocks, failed } = await measure(rows, fake.fetchImpl);
+    expect(blocks.size).toBe(0);
+    expect(failed.get('dev0')).toMatch(/^search: HTTP 502/);
+  });
+
+  it('lists a login GitHub does not know as not found', async () => {
+    const rows = devs(3);
+    const people = peopleFor(rows);
+    delete people.dev1;
+    const { blocks, failed } = await measure(rows, fakeGitHub(people).fetchImpl);
+    expect([...blocks.keys()]).toEqual(['dev0', 'dev2']);
+    expect(failed.get('dev1')).toBe('not found');
   });
 
   it('stops, without throwing, when a wait would outlast MAX_WAIT_MS', async () => {
-    const rows = devs(20);
-    const fake = fakeShadow(nodesFor(rows), {
-      onRequest: ({ call }) =>
-        call === 2 ? respond(429, '{}', { 'retry-after': String(MAX_WAIT_MS / 1000 + 60) }) : null
+    const rows = devs(8);
+    const fake = fakeGitHub(peopleFor(rows), {
+      onRequest: ({ kind, n }) =>
+        kind === 'main' && n === 2
+          ? respond(429, '{}', { 'retry-after': String(MAX_WAIT_MS / 1000 + 60) })
+          : null
     });
     const { blocks, failed, stats, lines } = await measure(rows, fake.fetchImpl);
-    expect(blocks.size).toBe(15);
-    expect(failed.size).toBe(5);
     expect(stats.stopped).toMatch(/longer than this measurement waits/);
+    // Nothing after the stop is sent, and nothing measured before it is stored half-done.
+    expect(blocks.size).toBe(0);
+    expect(failed.size).toBe(8);
     expect(lines.some((line) => line.startsWith('::warning title=SHADOW_CONTRIBUTIONS::'))).toBe(
       true
     );
   });
 
   it('is fail-soft on a rejected credential: every developer listed as failed', async () => {
-    const rows = devs(4);
-    const fake = fakeShadow(nodesFor(rows), {
+    const rows = devs(3);
+    const fake = fakeGitHub(peopleFor(rows), {
       onRequest: () => respond(401, '{"message":"Bad credentials"}')
     });
     const { blocks, failed } = await measure(rows, fake.fetchImpl);
     expect(blocks.size).toBe(0);
-    expect(failed.size).toBe(4);
-    expect(fake.calls).toHaveLength(1);
+    expect(failed.size).toBe(3);
   });
 
   it('measures each login once', async () => {
     const rows = [...devs(2), { username: 'DEV0', github_id: 1000 }];
-    const fake = fakeShadow(nodesFor(rows));
+    const fake = fakeGitHub(peopleFor(rows));
     await measure(rows, fake.fetchImpl);
-    expect(fake.calls[0].logins).toEqual(['dev0', 'dev1']);
+    expect(fake.calls[0].variables).toMatchObject({ l0: 'dev0', l1: 'dev1' });
+    expect(fake.calls[0].variables.l2).toBeUndefined();
+  });
+});
+
+describe('screenCalendars', () => {
+  it('counts active calendar days per developer', async () => {
+    const rows = devs(2);
+    const people = peopleFor(rows);
+    people.dev1.calendar = [0, 0, 5, 1];
+    const { client: c } = client(fakeGitHub(people).fetchImpl);
+    const { days, failed } = await screenCalendars(rows, { client: c, now: NOW, log: quiet });
+    expect(Object.fromEntries(days)).toEqual({ dev0: 2, dev1: 2 });
+    expect(failed.size).toBe(0);
+  });
+
+  it('counts a calendar day only when it holds a contribution', () => {
+    expect(
+      calendarActiveDays({
+        weeks: [{ contributionDays: [{ contributionCount: 0 }, { contributionCount: 3 }] }]
+      })
+    ).toBe(1);
   });
 });
 
 describe('attachShadow', () => {
-  const block = (at) => ({ v: 1, at });
+  const block = (at) => ({ v: 2, at });
   const previous = previousBlocks([
     { username: 'ana', github_id: 1, [SHADOW_FIELD]: block('2026-10-13T09:00:00Z') },
     { username: 'old-name', github_id: 2, [SHADOW_FIELD]: block('2026-10-12T09:00:00Z') },
@@ -559,114 +788,95 @@ describe('attachShadow', () => {
       [
         { username: 'ana', github_id: 1 },
         { username: 'new-name', github_id: 2 },
-        { username: 'bo', github_id: 4 }
+        { username: 'nobody', github_id: 9 }
       ],
-      { blocks: new Map([['bo', fresh]]), previous }
+      { blocks: new Map([['ana', fresh]]), previous }
     );
-    expect(developers[0][SHADOW_FIELD]).toEqual(block('2026-10-13T09:00:00Z'));
-    // Matched by account id across a rename.
-    expect(developers[1][SHADOW_FIELD]).toEqual(block('2026-10-12T09:00:00Z'));
-    expect(developers[2][SHADOW_FIELD]).toBe(fresh);
-    expect(counts).toEqual({ fresh: 1, kept: 2, none: 0 });
+    expect(developers[0][SHADOW_FIELD]).toBe(fresh);
+    expect(developers[1][SHADOW_FIELD].at).toBe('2026-10-12T09:00:00Z');
+    expect(developers[2]).not.toHaveProperty(SHADOW_FIELD);
+    expect(counts).toEqual({ fresh: 1, kept: 1, none: 1 });
   });
 
   it('never hands one account the block of another that held its login', () => {
-    const { developers, none } = attachShadow([{ username: 'taken', github_id: 9 }], {
+    const { developers } = attachShadow([{ username: 'taken', github_id: 4 }], {
       blocks: new Map(),
       previous
     });
-    expect(Object.hasOwn(developers[0], SHADOW_FIELD)).toBe(false);
-    expect(none).toBe(1);
+    expect(developers[0]).not.toHaveProperty(SHADOW_FIELD);
   });
 });
 
 describe('shadowContributionsStep', () => {
-  const lines = [];
-  const log = { log: (line) => lines.push(line), warn: (line) => lines.push(line) };
-  const earlier = { v: 1, at: '2026-10-13T09:00:00Z' };
-
   it('attaches fresh blocks, keeps the previous one for a failure, and summarises', async () => {
-    const rows = devs(3);
-    const nodes = nodesFor(rows);
-    delete nodes.dev1;
-    const { client } = shadowClient(fakeShadow(nodes).fetchImpl);
-    lines.length = 0;
+    const rows = devs(2);
+    const people = peopleFor(rows);
+    delete people.dev1;
+    const { client: c } = client(fakeGitHub(people).fetchImpl);
+    const lines = [];
+    const log = { log: (l) => lines.push(l), warn: (l) => lines.push(l) };
+    const existing = [
+      { username: 'dev1', github_id: 1001, [SHADOW_FIELD]: { v: 2, at: 'earlier' } }
+    ];
     const { developers, fresh, kept } = await shadowContributionsStep(rows, {
-      existing: [{ username: 'dev1', github_id: 1001, [SHADOW_FIELD]: earlier }],
-      client,
+      existing,
+      client: c,
       now: NOW,
       log
     });
-    expect(developers[1][SHADOW_FIELD]).toBe(earlier);
-    expect(decodeShadow(developers[0][SHADOW_FIELD]).measured_at).toBe('2026-10-14T09:30:00Z');
-    expect({ fresh, kept }).toEqual({ fresh: 2, kept: 1 });
-    expect(lines).toContain(
-      'Shadow contributions: 2 of 3 measured, 1 failed (dev1: not found); 1 requests, ' +
-        '1 points, 0 rejected, 0 bisections, 0 retries.'
+    expect(fresh).toBe(1);
+    expect(kept).toBe(1);
+    expect(developers[1][SHADOW_FIELD].at).toBe('earlier');
+    expect(lines.at(-1)).toBe(
+      "Contributions on this batch's rows: 1 measured this run, 1 kept from an earlier run, 0 without one."
     );
   });
 
   it('never throws, whatever the measurement does', async () => {
-    const client = {
-      usage: () => {
-        throw new Error('boom');
-      }
+    const broken = {
+      query: async () => {
+        throw new TypeError('boom');
+      },
+      usage: () => ({ requests: 0, points: 0 }),
+      sleep: async () => {}
     };
-    const rows = [{ username: 'dev0', github_id: 1000 }];
-    const { developers } = await shadowContributionsStep(rows, {
-      existing: [{ username: 'dev0', github_id: 1000, [SHADOW_FIELD]: earlier }],
-      client,
-      now: NOW,
-      log
-    });
-    expect(developers[0][SHADOW_FIELD]).toBe(earlier);
-    const none = await shadowContributionsStep(rows, { client: null, now: NOW, log });
-    expect(Object.hasOwn(none.developers[0], SHADOW_FIELD)).toBe(false);
+    const result = await shadowContributionsStep(devs(1), { client: broken, now: NOW, log: quiet });
+    expect(result.none).toBe(1);
   });
 });
 
 describe('the score does not see the block', () => {
-  const SAMPLE = JSON.parse(
+  const sample = JSON.parse(
     fs.readFileSync(path.join(process.cwd(), 'fixtures', 'data.sample.json'), 'utf8')
   );
-  const block = encodeShadow(
-    readMeasurement(
-      userNode('ana', { commits: { 'ana/app': { 0: 1_031_007 } }, restricted: 500 }),
-      { target: target('ana'), windows: WINDOWS, measuredAt: '2026-10-14T09:30:00Z' }
-    )
-  );
-  const withBlock = (row) => ({
-    ...row,
-    [SHADOW_FIELD]: block,
-    events_window: { fetched: 200, truncated: true, days: 2.2 }
-  });
+  const withBlocks = {
+    ...sample,
+    leaderboard: sample.leaderboard.map((row) => ({
+      ...row,
+      [SHADOW_FIELD]: { v: 2, at: 'x', cr: [['a/b', 1, 1, [0, 999999]]] }
+    }))
+  };
 
   it('recomputes every published score identically with and without one', () => {
-    const stamped = SAMPLE.leaderboard.filter((row) => typeof row.model_version === 'string');
-    expect(stamped.length).toBeGreaterThan(0);
-    for (const row of stamped) {
-      expect(scoreFromPublished(withBlock(row))).toBe(scoreFromPublished(row));
-    }
-    const plain = verifyPublished(SAMPLE);
-    const measured = verifyPublished({ ...SAMPLE, leaderboard: SAMPLE.leaderboard.map(withBlock) });
-    expect(measured).toEqual(plain);
-    expect(measured.errors).toEqual([]);
+    const stamped = withBlocks.leaderboard.filter((row) => row.model_version);
+    for (const row of stamped)
+      expect(scoreFromPublished(row)).toBe(
+        scoreFromPublished({ ...row, [SHADOW_FIELD]: undefined })
+      );
+    expect(verifyPublished(withBlocks, { allowMixedVersions: true }).errors).toEqual([]);
   });
 
   it('scores a developer identically with and without one', () => {
     const dev = {
-      username: 'ana',
-      total_stars: 40,
-      followers: 12,
-      public_repos: 9,
+      total_stars: 3,
+      followers: 4,
+      public_repos: 5,
       created_at: '2020-01-01T00:00:00Z',
-      raw_events_60d: [{ type: 'PushEvent', created_at: '2026-10-10T10:00:00Z' }]
+      raw_events_60d: []
     };
-    const options = { config: SCORE_CONFIG, now: NOW };
-    expect(scoreModel(withBlock(dev), options)).toEqual(scoreModel(dev, options));
-    const [plain] = scoreDevelopers([dev], { now: NOW });
-    const [measured] = scoreDevelopers([withBlock(dev)], { now: NOW });
-    expect(measured.score_exact).toBe(plain.score_exact);
-    expect(measured.activity_score).toBe(plain.activity_score);
+    const a = scoreModel(dev, { config: SCORE_CONFIG, now: NOW });
+    const b = scoreModel({ ...dev, [SHADOW_FIELD]: { v: 2 } }, { config: SCORE_CONFIG, now: NOW });
+    expect(b).toEqual(a);
+    expect(scoreDevelopers([{ username: 'x', ...dev }], { now: NOW })[0].score).toBe(a.score);
   });
 });

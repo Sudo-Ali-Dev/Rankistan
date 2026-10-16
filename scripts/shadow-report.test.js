@@ -2,47 +2,53 @@ import { describe, it, expect } from 'vitest';
 import {
   averageRanks,
   buildReport,
-  candidateMeasures,
-  longestCalendarGap,
+  inputsOf,
   spearman,
   summarize,
   topOverlap
 } from './shadow-report.js';
-import { FLAG_OWNED, SHAPE_VERSION, SHADOW_FIELD } from './measure/contributions.js';
+import { SHADOW_FIELD } from './measure/contributions.js';
+import {
+  FLAG_ORG,
+  FLAG_OWNED,
+  KIND_BOT,
+  KIND_ORG,
+  KIND_USER,
+  OUTCOME_CLOSED,
+  OUTCOME_MERGED,
+  SHAPE_VERSION,
+  encodeMeasurement,
+  measurementWindow
+} from '../src/model/measurement.js';
 
-/** A stored block: `repos` as [name, flags, stars, {day: commits}]. */
-function block({ repos = [], calendar = new Array(60).fill(1), restricted = 0, cut = false } = {}) {
-  const commits = repos.reduce(
-    (s, [, , , days]) => s + Object.values(days).reduce((a, b) => a + b, 0),
-    0
-  );
+const W = measurementWindow(Date.parse('2026-10-14T09:30:00Z'));
+const kgryte = { login: 'kgryte', kind: KIND_USER, created: '2012-01-01' };
+const young = { login: 'young', kind: KIND_USER, created: '2026-09-01' };
+
+function measurement(login, overrides = {}) {
   return {
-    v: SHAPE_VERSION,
-    at: '2026-10-14T00:30:00Z',
-    w60: ['2026-08-15', '2026-10-14'],
-    w30: ['2026-09-14', '2026-10-14'],
-    cal60: calendar,
-    t30: [commits + (cut ? 50 : 0), 0, 0, 0, restricted, repos.length + (cut ? 1 : 0), 0],
-    cr30: repos.map(([name, flags, stars, days]) => [
-      name,
-      flags,
-      stars,
-      Object.entries(days).flatMap(([d, n]) => [Number(d), n])
-    ]),
-    pr30: [],
-    gap30: null
+    version: SHAPE_VERSION,
+    measured_at: '2026-10-14T09:30:00Z',
+    login,
+    github_id: 1,
+    window: { from: W.from, to: W.to },
+    restricted: 0,
+    commits: [
+      { repo: `${login}/app`, flags: FLAG_OWNED, stars: 0, days: [{ day: 1, commits: 2 }] }
+    ],
+    pull_requests: [],
+    issues: [],
+    reviews: [],
+    accepted: [],
+    maintained: [],
+    future_repos: [],
+    integrity: [],
+    cut: 0,
+    ...overrides
   };
 }
 
-const row = (username, rank, activity, shadow, extra = {}) => ({
-  username,
-  rank,
-  batch_index: rank % 2,
-  activity_score: activity,
-  events_30d: activity,
-  ...(shadow ? { [SHADOW_FIELD]: shadow } : {}),
-  ...extra
-});
+const row = (username, m) => ({ username, ...(m ? { [SHADOW_FIELD]: encodeMeasurement(m) } : {}) });
 
 describe('statistics', () => {
   it('ranks ties at their average', () => {
@@ -64,103 +70,120 @@ describe('statistics', () => {
   it('counts the overlap of two top-k sets', () => {
     expect(topOverlap([9, 8, 1, 0], [9, 1, 8, 0], 2)).toBe(1);
   });
-
-  it('finds the longest run of empty calendar days', () => {
-    expect(longestCalendarGap([1, 0, 0, 2, 0, 0, 0])).toBe(3);
-  });
 });
 
-describe('candidateMeasures', () => {
-  it('caps each repository-day, and discounts owned zero-star repositories', () => {
-    const m = {
-      calendar_60d: [...new Array(30).fill(0), 3, 0, ...new Array(28).fill(1)],
-      commit_repositories_30d: [
+describe('inputsOf', () => {
+  it('tells apart who accepted a merge', () => {
+    const m = measurement('ana', {
+      accepted: [
         {
-          name: 'me/farm',
+          repo: 'acme/lib',
+          flags: FLAG_ORG,
+          stars: 10,
+          owner: { login: 'acme', kind: KIND_ORG, created: '2020-01-01' },
+          items: [
+            { day: 1, number: 1, merger: kgryte, lines: 50, files: 3 },
+            { day: 2, number: 2, merger: young, lines: 2, files: 1 },
+            {
+              day: 3,
+              number: 3,
+              merger: { login: 'ana', kind: KIND_USER, created: '2015-01-01' },
+              lines: 9,
+              files: 2
+            },
+            {
+              day: 4,
+              number: 4,
+              merger: { login: 'mergify', kind: KIND_BOT, created: null },
+              lines: 9,
+              files: 2
+            },
+            { day: 5, number: 5, merger: null, lines: 9, files: 2 }
+          ]
+        }
+      ],
+      pull_requests: [
+        {
+          repo: 'acme/lib',
+          flags: FLAG_ORG,
+          items: [
+            { day: 1, number: 1, outcome: OUTCOME_MERGED },
+            { day: 6, number: 6, outcome: OUTCOME_CLOSED }
+          ]
+        }
+      ],
+      reviews: [
+        {
+          repo: 'ana/app',
           flags: FLAG_OWNED,
           stars: 0,
-          commits: 1000,
-          days: [{ day: 0, commits: 1000 }]
-        },
-        {
-          name: 'org/lib',
-          flags: 0,
-          stars: 0,
-          commits: 6,
-          days: [
-            { day: 0, commits: 3 },
-            { day: 2, commits: 3 }
+          items: [
+            { day: 1, number: 7, author: { login: 'ANA', kind: KIND_USER, created: null } },
+            { day: 1, number: 8, author: { login: 'dependabot', kind: KIND_BOT, created: null } }
           ]
         }
       ]
-    };
-    const c = candidateMeasures(m, { discount: 0.5 });
-    expect(c).toMatchObject({
-      calendar_days: 29,
-      commit_days: 2,
-      commits: 1006,
-      cap5: 11,
-      cap5_z: 8.5,
-      cap10: 16,
-      cap10_z: 11
     });
+    expect(inputsOf(m)).toMatchObject({
+      accepted: 5,
+      accepted_by_user: 2,
+      accepted_young_merger: 1,
+      accepted_by_self: 1,
+      accepted_by_bot: 1,
+      accepted_by_nobody: 1,
+      accepted_owners: 1,
+      accepted_tiny: 1,
+      others_merged: 1,
+      others_closed: 1,
+      reviews: 2,
+      reviews_self: 1,
+      reviews_bot: 1
+    });
+  });
+
+  it('flags commit-date evidence: dates ahead of their commits, past the measurement, or a bot', () => {
+    const m = measurement('z', {
+      integrity: [
+        { repo: 'z/paint', sampled: 20, bot: 0, max_lead_hours: 21.8, max_ahead_hours: 8 },
+        { repo: 'z/cron', sampled: 20, bot: 20, max_lead_hours: 0, max_ahead_hours: -7 },
+        { repo: 'z/fine', sampled: 20, bot: 1, max_lead_hours: 0, max_ahead_hours: -3 },
+        { repo: 'z/none', sampled: 0, bot: 0, max_lead_hours: null, max_ahead_hours: null }
+      ]
+    });
+    expect(inputsOf(m).flagged.map((s) => s.repo)).toEqual(['z/paint', 'z/cron']);
   });
 });
 
 describe('buildReport', () => {
-  const owned = (login, stars, days) => [`${login}/app`, FLAG_OWNED, stars, days];
   const payload = {
-    last_updated: '2026-10-14T01:00:00Z',
+    last_updated: '2026-10-14T10:30:00Z',
     leaderboard: [
-      row('farm', 1, 300, block({ repos: [owned('farm', 0, { 0: 100000 })] })),
-      row(
-        'steady',
-        2,
-        200,
-        block({ repos: [owned('steady', 4, { 0: 2, 1: 2, 2: 2 })], restricted: 9 })
-      ),
-      row('cut', 3, 100, block({ repos: [owned('cut', 1, { 3: 1 })], cut: true })),
-      row('quiet', 4, 50, block({ repos: [['org/x', 0, 10, { 5: 1 }]] })),
-      row('old', 5, 10, null),
-      row('legacy', 6, undefined, block({ repos: [owned('legacy', 0, { 1: 3 })] }))
+      row('ana', measurement('ana', { restricted: 5 })),
+      row('zed', measurement('zed', { future_repos: ['zed/paint'], cut: 1 })),
+      { username: 'legacy', [SHADOW_FIELD]: { v: 1, at: '2026-10-13T00:00:00Z' } },
+      row('none', null)
     ]
   };
   const report = buildReport(payload, { source: 'test' });
 
-  it('states its sample sizes', () => {
-    expect(report).toContain('5 rows carry a decodable block');
-    expect(report).toContain('Rows with a block: 5 of 6 (83.3%)');
-    // Compared with activity_score only where a row carries one.
-    expect(report).toContain('over the 4 rows that carry both');
-    expect(report).toContain('Rows sharing private counts (restricted > 0): 1 of 5');
-  });
-
-  it('never counts a row without a pull request median as a fast one', () => {
-    expect(report).toContain('median under 61 s: 0; under 300 s: 0 (of 0 with a median)');
-  });
-
-  it('prints no rank correlation over too few rows', () => {
-    expect(report).toContain('Only 4 rows carry both, under the 10 this report compares on');
-    expect(report).toMatch(/\| cap10 \| - \| - \| /);
-  });
-
-  it('labels a cut repository list instead of filling it in', () => {
+  it('states what it covers', () => {
     expect(report).toContain(
-      'Commit repository list cut by GitHub: 1 of 5 rows, 50 commits unlisted'
+      'Rows: 4. Measured in shape 2: 2 (50.0%). In the previous shape, waiting for their batch: 1. Undecodable: 0. Without a block: 1.'
     );
-    expect(report).toMatch(/\| cut \| 3 \| 51 \(1 listed\) \|/);
+    expect(report).toContain("Block age at the board's last update, hours: p50 1.0");
   });
 
-  it('caps the farm and says where it lands', () => {
-    expect(report).toMatch(/\| farm \| 1 \| 100000 \| 100000 \| 1\.00 \|/);
-    expect(report).toContain(
-      'Rows whose every listed commit is in an owned zero-star repository: 2 of 5'
-    );
+  it('labels cut lists instead of filling them in', () => {
+    expect(report).toContain('| commit repository list | 1 of 2 |');
   });
 
-  it('says so when no row carries a block', () => {
-    expect(buildReport({ leaderboard: [row('a', 1, 1, null)] })).toContain(
-      'No row carries a block yet'
+  it('lists commit-date evidence by developer and repository', () => {
+    expect(report).toContain('| zed | zed/paint | future-dated commits |');
+  });
+
+  it('says so when no row carries a measurement of this shape', () => {
+    expect(buildReport({ leaderboard: [row('a', null)] })).toContain(
+      'No row carries a measurement of this shape yet'
     );
   });
 });
