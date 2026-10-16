@@ -1,8 +1,8 @@
 # Rank History, a design for review
 
-**Status.** A proposal, written on 16 October 2026 from three design studies (the data, the look and
-place, and every edge case). Nothing below is built yet except two safeguards that could not wait,
-noted where they appear. The questions at the end are for the owner to decide before building.
+**Status.** Decided, and being built in the order at the end. Written on 16 October 2026 from three
+design studies (the data, the look and place, and every edge case). The owner's decisions are in their
+own section. Recording started on 17 October 2026 (#155, #156).
 
 ## In plain words
 
@@ -85,8 +85,10 @@ their own label.
 ## Where it is stored
 
 A separate release, `board-history`, a prerelease never marked latest, one asset per month,
-`history-YYYY-MM-dDD.ndjson.gz` (DD the last day included). The newest two versions of each month are
-kept, and a read takes the newest that parses, the same pattern the state store already uses.
+`history-YYYY-MM-dDD-<run>-<attempt>.ndjson.gz` (DD the last day included, then the run that wrote
+it). The newest two versions of each month are kept, and a read takes the newest that parses, the
+same pattern the state store already uses. After an opt-out every older version of a changed month
+is deleted, so no copy keeps that history.
 
 - **Size.** About 24 KB a day gzipped, about 9 MB a year. The board, not the number of people who
   ever appeared, sets the size.
@@ -149,8 +151,9 @@ away and where they were last.
   `board.json` or a CSV.
 - **The Remove me form should say so honestly**, including that the old boards in the repository's
   git history before 13 October are outside the promise.
-- **Retention.** Daily points kept a year, and the history of someone off the board for 180 days is
-  deleted. The owner sets both numbers.
+- **Retention.** Daily points are kept a year, and the history of someone off the board for 180 days
+  is deleted. The owner left both numbers to the build on 17 October 2026, and neither can apply
+  before April 2027, so their deletion is built before then.
 
 ## Moderation added or removed later
 
@@ -263,10 +266,10 @@ would mostly report other developers.
 
 - Done. The last board of each Pakistan date is kept for 400 days (#151).
 - Done. One row per account when a developer renames (#152).
-- To do. Give removals from scoring the board again their own reason, so `rescored` and `moderated`
-  can be told apart from `below_gate`.
-- To do. Keep `history_through` and the departures out of `board.json` and `data.json`, which copy
-  every top-level field of the state today.
+- Done. Removals from scoring the board again have their own reasons, `rescored` and `moderated`,
+  and every run logs who it removed and why in the state (#155).
+- Done. `history_through`, the opt-outs already removed from the history and the departures stay out
+  of `board.json` and `data.json` (#155, #156).
 
 ## Not doing
 
@@ -292,7 +295,7 @@ would mostly report other developers.
 ## Build order
 
 1. Recording. Write the daily close to `board-history` from the pipeline, with the departure reasons
-   and the opt-out rewrite, and backfill 14 to 16 October from the kept states.
+   and the opt-out rewrite (#156). No backfill, since history starts on 17 October.
 2. The per-developer files at deploy.
 3. The card panel and the row markers.
 4. The developer page at `/#login`, and Register.
