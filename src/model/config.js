@@ -41,6 +41,8 @@ const NUMBERS = [
   ['MIN_ACCOUNT_AGE_DAYS', (v) => Number.isInteger(v) && v >= 0, 'an integer number of days >= 0'],
   ['COLLABORATION.HALF_POINT', positive, 'a number > 0'],
   ['COLLABORATION.CAP_PER_GROUP', positive, 'a number > 0'],
+  ['COLLABORATION.CAP_STAR_FLOOR', unit, 'a number in [0, 1]'],
+  ['COLLABORATION.BREADTH_POWER', (v) => isFiniteNumber(v) && v >= 0, 'a number >= 0'],
   ['COLLABORATION.REVIEW_WEIGHT', unit, 'a number in [0, 1]'],
   ['COLLABORATION.MAINTAINED_WEIGHT', unit, 'a number in [0, 1]'],
   [
@@ -59,7 +61,9 @@ const NUMBERS = [
   ['APPRECIATION.FULL_AFTER_DAYS', positiveInteger, 'an integer number of days > 0'],
   ['INTEGRITY.MAX_LEAD_HOURS', (v) => isFiniteNumber(v) && v >= 0, 'a number of hours >= 0'],
   ['INTEGRITY.MAX_AHEAD_HOURS', (v) => isFiniteNumber(v) && v >= 0, 'a number of hours >= 0'],
-  ['INTEGRITY.BOT_SHARE', openUnit, 'a number in (0, 1]']
+  ['INTEGRITY.BOT_SHARE', openUnit, 'a number in (0, 1]'],
+  ['INTEGRITY.MIN_BOT_SAMPLE', positiveInteger, 'an integer > 0'],
+  ['INTEGRITY.MISSING_MIN_DAYS', positiveInteger, 'an integer number of days > 0']
 ];
 
 const RULES = [

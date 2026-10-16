@@ -45,6 +45,7 @@ import {
 } from './measure/contributions.js';
 import { contributionsGate } from './measure/gate.js';
 import { loadModerationFile, MODERATION_PATH } from './moderation.js';
+import { formatSuspects, moderationSuspects } from './moderation-suspects.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
 import { verifyPublished } from './verify-published.js';
 import { makeGitHubClient, createStateStore, stateAssetName, DEFAULT_REPO } from './state-store.js';
@@ -82,7 +83,7 @@ export function readBoardFile(targetPath) {
   if (!Array.isArray(data.leaderboard)) {
     throw new Error(
       `Existing leaderboard at ${targetPath} is missing its "leaderboard" array. ` +
-      `Refusing to treat this as empty.`
+        `Refusing to treat this as empty.`
     );
   }
 
@@ -178,8 +179,8 @@ export function assertReplacementIsSafe({
   if (replacementCount === 0) {
     throw new Error(
       `Data Integrity Exception: Refusing to update batch ${batchIndex} (${batchLabel}). ` +
-      `This operation would permanently purge ${removedCount} existing records without ` +
-      `replacing them with new data. Aborting write sequence to maintain fallback data.`
+        `This operation would permanently purge ${removedCount} existing records without ` +
+        `replacing them with new data. Aborting write sequence to maintain fallback data.`
     );
   }
 
@@ -191,10 +192,10 @@ export function assertReplacementIsSafe({
   if (replacementCount < floor) {
     throw new Error(
       `Data Integrity Exception: Refusing to update batch ${batchIndex} (${batchLabel}). ` +
-      `Only ${replacementCount} developers came back to replace ${removedCount} existing ` +
-      `records, below the ${MIN_REPLACEMENT_RATIO * 100}% floor. This usually means the ` +
-      `fetch was throttled mid-batch rather than that the cohort really shrank. ` +
-      `Set ALLOW_LEADERBOARD_SHRINK=1 to publish anyway.`
+        `Only ${replacementCount} developers came back to replace ${removedCount} existing ` +
+        `records, below the ${MIN_REPLACEMENT_RATIO * 100}% floor. This usually means the ` +
+        `fetch was throttled mid-batch rather than that the cohort really shrank. ` +
+        `Set ALLOW_LEADERBOARD_SHRINK=1 to publish anyway.`
     );
   }
 }
@@ -338,18 +339,18 @@ export function mergeBatch({
   const board = {
     last_updated: lastUpdated,
     total_devs: leaderboard.length,
-    leaderboard,
+    leaderboard
   };
 
   const named = (why) => removed.filter((r) => r.reason === why);
   log.log(
     `Existing leaderboard: ${existing.length} total, ${kept.length} from other batches, ` +
-      `${own.length} from batch ${batchIndex}.`,
+      `${own.length} from batch ${batchIndex}.`
   );
   log.log(
     `Batch ${batchIndex}: ${newEntries.length} measured, ${carried.length} carried forward ` +
       `(not seen this run), ${named('ineligible').length} removed as ineligible, ` +
-      `${named('missed').length} removed after ${MAX_MISSED_RUNS} consecutive misses.`,
+      `${named('missed').length} removed after ${MAX_MISSED_RUNS} consecutive misses.`
   );
   // Named, so a disappearance can be traced to a reason rather than inferred
   // from a diff of two states.
@@ -371,7 +372,7 @@ export function mergeBatch({
   log.log(
     `Leaderboard: ${leaderboard.length} developers (capped at ${MAX_DEVELOPERS}): ` +
       `${newEntries.length} from batch ${batchIndex}, ${carried.length} carried, ` +
-      `${kept.length} kept from other batches.`,
+      `${kept.length} kept from other batches.`
   );
 
   return { board, removed, carried: carried.length, rescored: rescored.counts };
@@ -397,7 +398,8 @@ export function rescoreRows(rows, { moderation = [] } = {}) {
       removed.push({ row, why: 'ineligible' });
       continue;
     }
-    if (rest.score_exact !== row.score_exact || rest.model_version !== row.model_version) changed += 1;
+    if (rest.score_exact !== row.score_exact || rest.model_version !== row.model_version)
+      changed += 1;
     keep.push(rest);
   }
   return {
@@ -619,7 +621,17 @@ export async function runBatch({
       `${merged.rescored.unscorable} unscorable, ${merged.rescored.ineligible} no longer eligible.`
   );
   if (versionChange) {
-    assertRescoreIsSafe({ previousCount: previous.length, counts: merged.rescored, allowRescoreLoss });
+    assertRescoreIsSafe({
+      previousCount: previous.length,
+      counts: merged.rescored,
+      allowRescoreLoss
+    });
+  }
+  // What this batch measured that a moderator should read. Listed, never applied.
+  const suspects = formatSuspects(moderationSuspects(newEntries, { moderation }), { batchIndex });
+  log.log(suspects.log);
+  if (suspects.markdown && process.env.GITHUB_STEP_SUMMARY) {
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, suspects.markdown);
   }
   // When each batch last ran, carried from run to run. The watchdog dates a batch by this rather
   // than by its rows, which a batch can lose to the 1,000 cap however recently it ran.
@@ -753,7 +765,10 @@ export async function measureBatch({ batchIndex, registry, existing = [], modera
 
   // Use each developer's own declared pronouns in the AI summaries rather than inferring gender
   // from a name (#73). Failure is non-fatal: a developer with none simply carries none.
-  const pronounsByLogin = await fetchPronouns(developers.map((d) => d.username), token);
+  const pronounsByLogin = await fetchPronouns(
+    developers.map((d) => d.username),
+    token
+  );
   const withPronouns = attachPronouns(developers, pronounsByLogin);
 
   const scored = scoreDevelopers(withPronouns, { moderation });
@@ -809,9 +824,7 @@ async function runCli(args, env = process.env) {
     moderation: loadModerationFile(path.join(process.cwd(), MODERATION_PATH))
   };
 
-  console.log(
-    `\n=== Incremental batch ${batchIndex}: ${SEARCH_BATCHES[batchIndex].label} ===\n`,
-  );
+  console.log(`\n=== Incremental batch ${batchIndex}: ${SEARCH_BATCHES[batchIndex].label} ===\n`);
 
   if (dryRun) {
     if (state === 'release') throw new Error('--dry-run makes no GitHub calls; give it a file.');
@@ -899,7 +912,7 @@ if (isEntryPoint()) {
 } else if (process.argv[1] && /run-all\.js$/i.test(process.argv[1])) {
   console.error(
     `run-all.js was invoked directly but the entry-point check did not match ` +
-    `(argv[1]=${process.argv[1]}). Refusing to exit 0 without doing work.`
+      `(argv[1]=${process.argv[1]}). Refusing to exit 0 without doing work.`
   );
   process.exit(1);
 }

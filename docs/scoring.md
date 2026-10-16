@@ -10,8 +10,8 @@ The model was designed from the live board's own measurements. An adversarial re
 first draft against the real board before anything was built, and its findings are folded in.
 Every figure below was measured, unless it says "about".
 
-**Status.** Shipped as release v3.0.0. Measurement (#136), model (#137), Worker preview (#138,
-#139) and the switch are merged.
+**Status.** Shipped as release v3.0.0 on 16 October 2026, and revised the same evening as v3.1.0
+after a six-member review panel (section 09). Section 03 describes the model as it runs now.
 
 ## In plain words, before and after
 
@@ -67,8 +67,8 @@ score = 1000 × (0.5 × work + 0.4 × collaboration + 0.1 × appreciation)
 
 The window is the 30 Pakistan dates (UTC+5) before the measurement. Commits keep GitHub's own date,
 which is the commit's own time zone. Pull requests, issues, reviews and merges take the Pakistan
-date of their instant. Recent days weigh more, yesterday 1 falling evenly to 0.5 for the oldest
-day.
+date of their instant. Recent days weigh more, yesterday 1 and the oldest day 0.5, each day about
+2.4% less than the day after it.
 
 ### Work, up to 500 points
 
@@ -90,26 +90,45 @@ developer working 20 of 30 days, where a straight line would give it 167.
 ### Collaboration, up to 400 points
 
 ```
-collaboration = c / (c + 3)
-c = f × accepted + reviews + maintained
+collaboration = f × c / (c + 3)
+c = the smaller of two breadth sums, over people and over places
 ```
 
-- **Accepted.** Your pull requests merged into a repository you do not own, by a user who is not
-  you and whose account was a year old on the day of the merge. Found by search on the merge
-  time, so a pull request opened before the window still counts. Each is worth
-  `starWeight × size × recency`, where `starWeight = min(1, 0.1 + 0.3 × log10(1 + stars))` and a
-  change of one file and at most 5 lines counts half. The merges are grouped per owner and per
-  merger, each group earns `min(4, log2(1 + its total))`, and the smaller of the two sums is taken.
-- **f**, the rejection factor, is `min(1, 2(M + 2) / (M + X + 4))` over your pull requests to other
-  people's repositories in the window, M merged and X closed unmerged.
-- **Reviews.** Reviews of pull requests by another user a year old, one per pull request, at half a
-  merge, grouped per owner and per author the same way.
-- **Maintained.** Other users' pull requests, by accounts a year old and never bots, merged into
-  your own repositories, at half a merge, grouped per author. Merging is not a contribution type
-  on GitHub, and this is how maintainers are credited.
+What counts, each item worth `starWeight × size × recency`, where
+`starWeight = min(1, 0.1 + 0.3 × log10(1 + stars))` and a change of one file and at most 5 lines
+counts half.
 
-Three merges into well-known projects by three different people this week earn half the
-collaboration points.
+- **Accepted.** Your pull requests merged into a repository you do not own, by a user who is not
+  you and whose account was a year old on the day of the merge, or merged by you after such a user
+  approved it. Found by search on the merge time, so a pull request opened before the window still
+  counts.
+- **Reviews.** Reviews of pull requests by another user a year old, one per pull request, at half a
+  merge. A review by someone GitHub reports as having no role in the project (association `NONE`)
+  is weighed as if the project had no stars. A pull request also counted as maintained is not a
+  review too.
+- **Maintained.** Other users' pull requests, by accounts a year old and never bots, merged into
+  your own repositories, at half a merge. Merging is not a contribution type on GitHub, and this is
+  how maintainers are credited.
+
+How it adds up.
+
+- **People.** One group per counterparty across all three kinds, the merger or approver, the
+  author of the reviewed pull request, the contributor. A friend who merges your work, whose work
+  you review and who sends you pull requests is one group.
+- **Places.** One group per repository owner for accepted and reviews, and per contributor for
+  maintained.
+- Each group earns `min(cap, log2(1 + its total))`, the cap `4 × max(0.5, starWeight of the
+group's best target)`, so one person or project vouching through repositories nobody starred
+  gives at most 2.
+- Groups count largest first, the k-th at `1 / √k`. Breadth still counts, but each further person
+  or project counts a little less.
+- **f**, the rejection factor, is `min(1, 2(M + 2) / (M + X + 4))` over your pull requests to other
+  people's repositories in the window, M merged and X closed unmerged, leaving out repositories
+  where you merge your own. It multiplies the whole part, so a spray that is mostly rejected loses
+  points in proportion.
+
+Three merges into well-known projects by three different people yesterday are
+`1 + 1/√2 + 1/√3 = 2.3` credits, 172 of the 400 points.
 
 ### Appreciation, up to 100 points
 
@@ -121,10 +140,11 @@ counts in full once worked on for 4 days this month.
 
 Commits from forks, from profile README repositories, from repositories holding commits dated two
 or more days after the measurement, from repositories whose sampled author dates run more than 6
-hours past their commit dates or past the moment they were read, from repositories where half the
-sampled commits were committed by a bot in the developer's name, and from repositories on the
-moderation list (`public/moderation.json`). Private contributions are recorded as context and
-never scored.
+hours past their commit dates or past the moment they were read, from repositories where half of
+5 or more sampled commits were committed by a bot in the developer's name (an App or a committer named as a bot, not the Actions user alone, which companies use to sync their engineers' own commits), from repositories with commits credited on 10 or more days
+where a complete sample of the default branch and gh-pages finds none of them, and from repositories on the moderation list (`public/moderation.json`). Private
+repositories are skipped wherever they appear, and private contributions are recorded as context
+and never scored.
 
 ### Eligibility and ranks
 
@@ -264,6 +284,56 @@ measurements, and is measured after the first week.
 | The review rule was order-independent              | The test suite caught a deduplication that depended on input order before it shipped                                                                                            |
 | The future probe could start tomorrow              | A developer's own date can be a day ahead of UTC, so it starts two days after the measurement                                                                                   |
 | The preview could refuse any wait                  | A heavy account's measurement needs one retry after a gateway timeout, so it waits up to 6 seconds                                                                              |
+
+## 09. Version 3.1, after a review panel
+
+The same evening v3.0 shipped, six reviewers checked it independently, each from one side. The
+code against this record, fairness across kinds of developers, 32 of the biggest movers against
+their real GitHub activity, a red team trying to cheat into the top 10, the sensitivity of every
+constant, and a devil's advocate with outside rankings. Their reports are summarised here.
+
+**What they agreed on.** v3 is the right foundation and much fairer than v2. Every live score
+recomputed bit for bit, and no single constant decided the order (Spearman 0.978 or more under any
+one change). Of the 32 movers, 24 moved the right way, 5 too far, 2 neither and 1 the wrong way.
+The other public Pakistan ranking, committers.top, is led by farm accounts and could not see 45 of
+v3's top 50.
+
+**What was too easy, and what changed.**
+
+| Found                                                                                                                                            | Change in v3.1                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| 30 quick reviews of strangers' pull requests in famous projects scored 828, the top of the board                                                 | A review by someone with no role in the project counts as if the project had no stars                                        |
+| One friend with a year-old account could add 12 credits, by merging, being reviewed and contributing                                             | One cap per person across all three, scaled by the stars of the best target, at least half                                   |
+| 62 one-line fixes in 52 projects beat 66 large pull requests into one                                                                            | Each further person or place counts at 1/√k                                                                                  |
+| The rejection factor shrank credit that the curve then saturated, so the board's #1 kept 94% of its points with 95 of 142 pull requests rejected | It multiplies the whole part, and skips repositories where the developer merges their own                                    |
+| A pull request a colleague approved earned nothing if its author clicked merge                                                                   | The approver stands for the merger                                                                                           |
+| A pull request merged into one's own project counted as a review and as maintained                                                               | It counts once                                                                                                               |
+| Scripts slipped past the bot rule ("Repo Health Bot") and the sample, which read only the default branch                                         | Bots by App or by name, gh-pages sampled, a minimum sample of 5 for the bot share, commits missing from the history excluded |
+| Even recency steps tied developers whose days merely summed alike, 337 rows                                                                      | A constant ratio from day to day                                                                                             |
+| A one-off moderation pass missed five script accounts the first runs admitted                                                                    | Every batch lists moderation suspects in its run summary                                                                     |
+
+**Not changed, on purpose.** Squash merges create a commit day on the merge date. It looks like
+a double count, but it is the only day a squash-merged contributor's work is credited at all, since
+the branch commits never count, so it stays. Private work stays unscored. Maintainers' issue
+triage, a longer window for collaboration and own pull requests merged into a `develop` branch
+wait for a week of data.
+
+**Measured on the board.** v3.0 and v3.1 on the same measurements of all 1,000 rows, taken in
+the new shape on 16 October with the 21 moderation entries applied.
+
+- 970 scores change, the median by −0.2 points and the mean by −2.5.
+- 9 of the top 10, 46 of the top 50 and 95 of the top 100 stay.
+- Distinct scores rise from 759 to 968, and rows in a tie fall from 392 to 33.
+- 2 developers fall below the gate, both with repositories GitHub credits on 26 and 28 days whose
+  only branch holds none of those commits.
+- The new #1 is ahmershahdev (was #2). headlessNode, with 66 large pull requests into one project,
+  goes from #9 to #5. ZainnQureshii, with 62 small fixes across 52 projects, goes from #8 to #13.
+- Approved pull requests count. arbirali goes from #70 to #23, razasaddiqi from #55 to #24 and
+  salman-codewar from #368 to #58.
+- The missing-commits rule was first drafted to exclude a repository whose sample found fewer than
+  a quarter of its credited days. On the board that also excluded an honest history rewrite and a
+  developer whose work sits on a renamed default branch, so it excludes only when none are found,
+  and a partial history goes to a moderator.
 
 ## How to change the model
 

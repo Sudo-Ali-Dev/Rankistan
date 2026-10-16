@@ -135,7 +135,7 @@ describe('the route', () => {
     expect(first.status).toBe(200);
     expect(body).toMatchObject({
       login: 'ana',
-      model_version: '3.0.0',
+      model_version: '3.1.0',
       moderation: 'applied',
       cached: false
     });

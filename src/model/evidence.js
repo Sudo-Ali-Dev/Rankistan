@@ -13,9 +13,11 @@
  *                  someone else's repository (a pull request closed unmerged does not count);
  *                  a review of a pull request another user wrote.
  *   accepted       a pull request of theirs merged into a repository they do not own, merged by
- *                  a user who is not them and whose account was a year old at the time.
+ *                  a user who is not them and whose account was a year old at the time, or merged
+ *                  by them after such a user approved it (the approver stands for the merger).
  *   reviews        reviews of pull requests by another user whose account was a year old, each
- *                  pull request once.
+ *                  pull request once, marked `outsider` when the reviewer had no role in the
+ *                  project. A pull request also counted as maintained is not a review too.
  *   maintained     pull requests by another user, a year old, merged into their own repository.
  *   appreciation   their own repositories with commits this month and at least FROM_STARS stars.
  *
@@ -24,6 +26,7 @@
  *   future         commits dated after the measurement (the future probe).
  *   impossible     an author date hours after its commit date, or a date after it was read.
  *   bot            half or more of the sampled commits committed by a bot in their name.
+ *   missing        commits GitHub credits on many days, none of which a complete sample finds.
  *   moderation     listed in public/moderation.json with public evidence.
  *
  * Pure: no clock, no I/O. Dates come from the measurement; ages are counted to the date of the
@@ -41,7 +44,7 @@ import {
 import { assertValidatedConfig, SCORE_CONFIG } from './config.js';
 import { compareCodePoints } from './order.js';
 
-export const EVIDENCE_VERSION = 1;
+export const EVIDENCE_VERSION = 2;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const lower = (s) => String(s).toLowerCase();
@@ -53,6 +56,7 @@ export const REASON_FUTURE = 'commits dated in the future';
 export const REASON_LEAD = 'author dates hours after their commit dates';
 export const REASON_AHEAD = 'commits dated after the moment they were read';
 export const REASON_BOT = "commits a bot made in the developer's name";
+export const REASON_MISSING = "commits GitHub counts that are not in the repository's history";
 
 /** Orders items by date, repository, number: a fixed order, so sums are bit-for-bit repeatable. */
 function byDateRepoNumber(a, b) {
@@ -70,18 +74,21 @@ function byDateRepoNumber(a, b) {
  * @param {object[]} moderation  `{repo, reason}` entries from public/moderation.json
  */
 export function exclusions(m, { config, moderation = [] }) {
-  const { MAX_LEAD_HOURS, MAX_AHEAD_HOURS, BOT_SHARE } = config.INTEGRITY;
+  const { MAX_LEAD_HOURS, MAX_AHEAD_HOURS, BOT_SHARE, MIN_BOT_SAMPLE, MISSING_MIN_DAYS } =
+    config.INTEGRITY;
   const out = new Map();
   const add = (repo, reason) => {
     if (!out.has(lower(repo))) out.set(lower(repo), { repo, reason });
   };
+  const creditedDays = new Map(m.commits.map((r) => [lower(r.repo), r.days.length]));
   for (const repo of m.future_repos) add(repo, REASON_FUTURE);
   for (const s of m.integrity) {
-    if (s.sampled === 0) continue;
+    const credited = creditedDays.get(lower(s.repo)) ?? 0;
     if (s.max_lead_hours !== null && s.max_lead_hours > MAX_LEAD_HOURS) add(s.repo, REASON_LEAD);
     else if (s.max_ahead_hours !== null && s.max_ahead_hours > MAX_AHEAD_HOURS)
       add(s.repo, REASON_AHEAD);
-    else if (s.bot / s.sampled >= BOT_SHARE) add(s.repo, REASON_BOT);
+    else if (s.sampled >= MIN_BOT_SAMPLE && s.bot / s.sampled >= BOT_SHARE) add(s.repo, REASON_BOT);
+    else if (s.days === 0 && credited >= MISSING_MIN_DAYS) add(s.repo, REASON_MISSING);
   }
   const committed = new Set(m.commits.map((r) => lower(r.repo)));
   for (const entry of moderation) {
@@ -113,14 +120,24 @@ export function deriveEvidence(m, { config = SCORE_CONFIG, moderation = [] } = {
     if (r.flags & (FLAG_FORK | FLAG_PROFILE) || excluded.has(lower(r.repo))) continue;
     for (const d of r.days) days.add(d.day);
   }
+  // Repositories where they merge their own pull requests: their acceptance rate there says
+  // nothing about whether anyone else accepts their work, so the rejection factor skips them.
+  const selfMerged = new Set();
+  for (const r of m.accepted) {
+    if (r.items.some((i) => i.merger !== null && lower(i.merger.login) === me)) {
+      selfMerged.add(lower(r.repo));
+    }
+  }
   let merged = 0;
   let closed = 0;
   for (const r of m.pull_requests) {
     if (!theirs(r.flags)) continue;
+    const counted = !selfMerged.has(lower(r.repo));
     for (const i of r.items) {
-      if (i.outcome === OUTCOME_MERGED) merged += 1;
-      if (i.outcome === OUTCOME_CLOSED) closed += 1;
-      else days.add(i.day);
+      if (counted && i.outcome === OUTCOME_MERGED) merged += 1;
+      if (i.outcome === OUTCOME_CLOSED) {
+        if (counted) closed += 1;
+      } else days.add(i.day);
     }
   }
   for (const r of m.issues) {
@@ -138,13 +155,14 @@ export function deriveEvidence(m, { config = SCORE_CONFIG, moderation = [] } = {
       const key = `${lower(r.repo)}#${i.number}`;
       const previous = reviewed.get(key);
       // The latest review of a pull request stands for it. Its author is the same on every review
-      // of one pull request; the login breaks a tie anyway, so input order never decides.
-      if (
-        !previous ||
-        i.day > previous.i.day ||
-        (i.day === previous.i.day &&
-          compareCodePoints(lower(i.author.login), lower(previous.i.author.login)) < 0)
-      ) {
+      // of one pull request; the login breaks a tie anyway, and then an insider's review, so
+      // input order never decides.
+      const order = previous
+        ? i.day - previous.i.day ||
+          compareCodePoints(lower(previous.i.author.login), lower(i.author.login)) ||
+          (previous.i.outsider === true ? 1 : 0) - (i.outsider === true ? 1 : 0)
+        : 1;
+      if (order > 0) {
         reviewed.set(key, { r, i });
       }
     }
@@ -157,6 +175,7 @@ export function deriveEvidence(m, { config = SCORE_CONFIG, moderation = [] } = {
       number: i.number,
       date: date(i.day),
       stars: r.stars,
+      outsider: i.outsider === true,
       author: i.author.login,
       author_since: i.author.created
     }))
@@ -166,7 +185,19 @@ export function deriveEvidence(m, { config = SCORE_CONFIG, moderation = [] } = {
   for (const r of m.accepted) {
     if (!theirs(r.flags)) continue;
     for (const i of r.items) {
-      if (!someoneElse(i.merger) || !yearOld(i.merger, date(i.day))) continue;
+      // Merged by someone else of a year's standing, or merged by them after such a user
+      // approved it: either way another person accepted the work.
+      const accepter =
+        someoneElse(i.merger) && yearOld(i.merger, date(i.day))
+          ? { who: i.merger, by: 'merge' }
+          : i.merger !== null &&
+              lower(i.merger.login) === me &&
+              i.approver &&
+              someoneElse(i.approver) &&
+              yearOld(i.approver, date(i.day))
+            ? { who: i.approver, by: 'approval' }
+            : null;
+      if (!accepter) continue;
       accepted.push({
         repo: r.repo,
         owner: lower(r.owner?.login ?? ownerOf(r.repo)),
@@ -175,8 +206,9 @@ export function deriveEvidence(m, { config = SCORE_CONFIG, moderation = [] } = {
         stars: r.stars,
         lines: i.lines,
         files: i.files,
-        merger: i.merger.login,
-        merger_since: i.merger.created
+        merger: accepter.who.login,
+        merger_since: accepter.who.created,
+        accepted_by: accepter.by
       });
     }
   }
@@ -200,6 +232,8 @@ export function deriveEvidence(m, { config = SCORE_CONFIG, moderation = [] } = {
     }
   }
   maintained.sort(byDateRepoNumber);
+  const maintainedKeys = new Set(maintained.map((i) => `${lower(i.repo)}#${i.number}`));
+  const reviewsCounted = reviews.filter((i) => !maintainedKeys.has(`${lower(i.repo)}#${i.number}`));
 
   const appreciation = m.commits
     .filter(
@@ -224,7 +258,7 @@ export function deriveEvidence(m, { config = SCORE_CONFIG, moderation = [] } = {
     ),
     accepted,
     pull_requests_to_others: { merged, closed },
-    reviews,
+    reviews: reviewsCounted,
     maintained,
     appreciation,
     private_contributions: m.restricted,

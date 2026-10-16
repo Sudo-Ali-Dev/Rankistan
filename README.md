@@ -190,7 +190,7 @@ Your score is a number out of 1,000. It adds up three parts, and each part has a
 | Part | Up to | What earns points |
 |---|---|---|
 | **Active days** (work) | 500 | Days in the last 30 you made a commit to a public repository, opened a pull request or an issue on a repository you do not own, or reviewed another developer's pull request. A day counts once, one commit or a hundred |
-| **Open source contributions** (collaboration) | 400 | Your pull requests merged into open source projects you do not own, your reviews of other developers' pull requests, and other developers' pull requests you merged into your own repositories. The other developer's account must be at least a year old |
+| **Open source contributions** (collaboration) | 400 | Your pull requests merged into open source projects you do not own (or merged by you after another developer approved them), your reviews of other developers' pull requests, and other developers' pull requests you merged into your own repositories. The other developer's account must be at least a year old |
 | **Stars** (appreciation) | 100 | Stars on the repository you own with the most stars, if you committed to it in the last 30 days |
 
 **Active days.** Your first active day is worth about 33 points, and each extra day is worth a little less, so a developer who is active most days is not far behind one who is active every day. Recent days count a little more than older days, so a real score can be a few points off this table.
@@ -199,7 +199,7 @@ Your score is a number out of 1,000. It adds up three parts, and each part has a
 |---|---|---|---|---|---|---|
 | Points | 33 | 153 | 278 | 375 | 444 | 500 |
 
-**Open source contributions.** A merged pull request earns up to 1 credit. It earns the full credit in a project with 1,000 or more stars, about 0.7 with 100 stars, 0.4 with 10 stars and 0.1 with none. A review, a pull request you merged into your own repository, or a tiny change of one file and up to 5 lines earns half. More pull requests to the same project, or merged by the same person, earn a little less each. Recent merges count a little more, and if most of your pull requests are closed without being merged, your credits shrink.
+**Open source contributions.** A merged pull request earns up to 1 credit. It earns the full credit in a project with 1,000 or more stars, about 0.7 with 100 stars, 0.4 with 10 stars and 0.1 with none. A review, a pull request you merged into your own repository, or a tiny change of one file and up to 5 lines earns half. A review by someone with no role in the project counts as if the project had no stars. More pull requests to the same project or with the same person earn a little less each, each further project or person counts a little less than the one before, and one person can only give you so much however they help you. Recent merges count a little more, and if most of your pull requests to other projects are closed without being merged, the points from this part shrink in proportion.
 
 | Credits | 1 | 2 | 3 | 6 | 12 |
 |---|---|---|---|---|---|
@@ -211,16 +211,16 @@ Your score is a number out of 1,000. It adds up three parts, and each part has a
 |---|---|---|---|---|
 | Points | 0 | 33 | 67 | 100 |
 
-**An example.** A developer active on 15 of the last 30 days, with 2 pull requests merged yesterday into two open source projects of 5,000 stars, and an own repository of 100 stars worked on this month, scores 378 + 160 + 33 = 571. The About page shows the same example, scored by the model itself.
+**An example.** A developer active on 15 of the last 30 days, with 2 pull requests merged yesterday into two open source projects of 5,000 stars, and an own repository of 100 stars worked on this month, scores 378 + 145 + 33 = 556. The two merges are 1.7 credits, because the second project counts a little less than the first. The About page shows the same example, scored by the model itself.
 
 **Never counted.** Followers, how many repositories you have, account age, activity in private repositories, and commits to forks, profile README repositories, repositories with impossible commit dates or a bot committing in your name, and repositories on [`public/moderation.json`](public/moderation.json).
 
-The tables are those of v3.0.0. The site reads every number from [`score-config.json`](score-config.json), where each constant has the reason for its value beside it, and [`src/model/config.js`](src/model/config.js) refuses a missing, unknown or unexplained one. The exact formula, for anyone recomputing a score, is below.
+The tables are those of v3.1.0. The site reads every number from [`score-config.json`](score-config.json), where each constant has the reason for its value beside it, and [`src/model/config.js`](src/model/config.js) refuses a missing, unknown or unexplained one. The exact formula, for anyone recomputing a score, is below.
 
 ```
 score         = 1000 × (0.5 × work + 0.4 × collaboration + 0.1 × appreciation)
 work          = 1 − (1 − x)², x = recency-weighted share of the last 30 Pakistan days that were active
-collaboration = c / (c + 3), c = credits, counted per project and per person
+collaboration = f × c / (c + 3), c = credits, counted per person and per place, each further one at 1/√k, f the rejection factor
 appreciation  = (log10(stars) − 1) / 3 on your best repository worked on this month, from 10 stars
 ```
 

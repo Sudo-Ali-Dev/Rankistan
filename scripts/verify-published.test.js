@@ -61,7 +61,7 @@ describe('verifyPublished', () => {
   it('fails a row scored by another model version', () => {
     const b = board(rows);
     b.leaderboard[0] = { ...b.leaderboard[0], model_version: '2.0.0' };
-    expect(verifyPublished(b).errors.join()).toMatch(/scored by "2.0.0", not 3.0.0/);
+    expect(verifyPublished(b).errors.join()).toMatch(/scored by "2.0.0", not 3.1.0/);
   });
 
   it('fails a board out of order, a developer listed twice, and a file with no leaderboard', () => {

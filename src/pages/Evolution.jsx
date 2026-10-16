@@ -132,6 +132,27 @@ const EVOLUTION_ENTRIES = [
     reasoning:
       'Version 2 promised to rank active developers, but stars and followers decided who was on top. Version 3 ranks people by how active they are and by the open source contributions other developers accept.',
   },
+  {
+    id: 'v11-review-panel',
+    date: '2026-10-16',
+    title: 'Scoring v3.1, harder to game',
+    summary: 'Six independent checks of v3 against the real board found a few things too easy. They were fixed the same day.',
+    commit: null,
+    formula: 'score = active days (up to 500) + open source contributions (up to 400) + stars (up to 100)',
+    changes: [
+      'Each further project or person counts a little less than the one before. Many one-line fixes spread over many projects no longer beat deep work in one project.',
+      'One person can only give you so much. A friend who merges your pull requests, whose pull requests you review and who sends pull requests to your repository counts once, not three times.',
+      'A review by someone with no role in the project counts as if the project had no stars, so a quick review cannot borrow a famous project\'s standing.',
+      'If most of your pull requests to other projects are closed without being merged, your open source points shrink in proportion. Closing your own pull requests at work no longer counts against you.',
+      'A pull request you merged yourself now counts when another developer approved it first, the way most companies work.',
+      'Commits made by a bot named like "Repo Health Bot" are caught, gh-pages commits are checked too, and commits GitHub counts that are missing from the repository no longer count.',
+      'Recent days still count more, now by the same small step each day, which makes exact ties rare.',
+    ],
+    example:
+      'Measured on the whole board, 9 of the top 10 and 46 of the top 50 stay. headlessNode, with 66 large pull requests merged into one project, moves from 9th to 5th, and ZainnQureshii, with 62 small fixes across 52 projects, from 8th to 13th. Developers whose colleagues approved their pull requests move up, one from 70th to 23rd. Exact ties fall from 392 rows to 33.',
+    reasoning:
+      'The checks agreed that v3 was the right idea and much fairer than v2, but thirty quick reviews of strangers\' pull requests could reach the top of the board, and one friend could add hundreds of points. Each fix closes one of those without costing honest developers.',
+  },
 ];
 
 const LAST_DOCUMENTED = EVOLUTION_ENTRIES[EVOLUTION_ENTRIES.length - 1].date;

@@ -82,6 +82,7 @@ import {
   encodeMeasurement,
   instantOffset,
   measurementWindow,
+  pktDate,
   repositoryFlags,
   searchMergedRange
 } from '../../src/model/measurement.js';
@@ -127,6 +128,8 @@ export const MAX_SEARCH_PAGES = 3;
 export const INTEGRITY_MIN_DAYS = 3;
 export const INTEGRITY_MAX_REPOSITORIES = 30;
 export const INTEGRITY_SAMPLE = 20;
+/** Approving reviews read per merged pull request. */
+export const APPROVALS_READ = 5;
 
 /** Requests in flight at once, per phase. */
 export const CONCURRENCY = 3;
@@ -168,12 +171,13 @@ function requireList(value, what) {
 // Documents
 
 const PR_NODE = `occurredAt pullRequest { number state merged
-      repository { nameWithOwner isFork owner { __typename login } } }`;
+      repository { nameWithOwner isFork isPrivate owner { __typename login } } }`;
 const ISSUE_NODE = `occurredAt issue { number
-      repository { nameWithOwner isFork owner { __typename login } } }`;
-const REVIEW_NODE = `occurredAt pullRequest { number
+      repository { nameWithOwner isFork isPrivate owner { __typename login } } }`;
+// The review's own author association: NONE when the reviewer has no role in the project.
+const REVIEW_NODE = `occurredAt pullRequestReview { authorAssociation } pullRequest { number
       author { __typename login ... on User { createdAt } }
-      repository { nameWithOwner isFork stargazerCount owner { __typename login } } }`;
+      repository { nameWithOwner isFork isPrivate stargazerCount owner { __typename login } } }`;
 
 const connection = (field, node, after = '') =>
   `${field}(first: ${PAGE_SIZE}${after}) { totalCount pageInfo { hasNextPage endCursor } nodes { ${node} } }`;
@@ -187,7 +191,7 @@ function mainFragment(maxRepositories) {
     restrictedContributionsCount
     totalRepositoriesWithContributedCommits
     commitContributionsByRepository(maxRepositories: ${maxRepositories}) {
-      repository { nameWithOwner isFork stargazerCount owner { __typename login } }
+      repository { nameWithOwner isFork isPrivate stargazerCount owner { __typename login } }
       contributions(first: ${PAGE_SIZE}) { totalCount nodes { occurredAt commitCount } }
     }
     ${connection('pullRequestContributions', PR_NODE)}
@@ -251,13 +255,17 @@ export function buildPageQuery(kind) {
 }`;
 }
 
+// Approvals: a pull request its author merged after another user approved it was accepted by
+// that user, and is credited to them as if they had merged it (src/model/evidence.js).
 const ACCEPTED_NODE = `... on PullRequest { number mergedAt additions deletions changedFiles
       mergedBy { __typename login ... on User { createdAt } }
-      repository { nameWithOwner isFork stargazerCount
+      reviews(states: APPROVED, first: ${APPROVALS_READ}) {
+        nodes { author { __typename login ... on User { createdAt } } } }
+      repository { nameWithOwner isFork isPrivate stargazerCount
         owner { __typename login ... on User { createdAt } ... on Organization { createdAt } } } }`;
 const MAINTAINED_NODE = `... on PullRequest { number mergedAt additions deletions changedFiles
       author { __typename login ... on User { createdAt } }
-      repository { nameWithOwner isFork stargazerCount owner { __typename login } } }`;
+      repository { nameWithOwner isFork isPrivate stargazerCount owner { __typename login } } }`;
 
 const searchField = (alias, variable, node, after = '') =>
   `${alias}: search(type: ISSUE, query: $${variable}, first: ${PAGE_SIZE}${after}) {
@@ -297,7 +305,14 @@ export function searchQueries(login, window) {
   };
 }
 
-/** Commit-date samples for `count` repositories, aliased r{i}. */
+const historyOf = (i) =>
+  `history(first: ${INTEGRITY_SAMPLE}, since: $since, author: { id: $a${i} }) {
+        nodes { oid authoredDate committedDate committer { name email user { login } } } }`;
+
+/**
+ * Commit-date samples for `count` repositories, aliased r{i}: the default branch and gh-pages,
+ * the two branches whose commits GitHub counts as contributions.
+ */
 export function buildIntegrityQuery(count) {
   if (!Number.isInteger(count) || count < 1)
     throw new RangeError('buildIntegrityQuery needs count >= 1');
@@ -306,9 +321,9 @@ export function buildIntegrityQuery(count) {
   for (let i = 0; i < count; i += 1) {
     params.push(`$o${i}: String!`, `$n${i}: String!`, `$a${i}: ID!`);
     fields.push(
-      `r${i}: repository(owner: $o${i}, name: $n${i}) { defaultBranchRef { target { ... on Commit {
-      history(first: ${INTEGRITY_SAMPLE}, since: $since, author: { id: $a${i} }) {
-        nodes { authoredDate committedDate committer { name user { login } } } } } } } }`
+      `r${i}: repository(owner: $o${i}, name: $n${i}) {
+      defaultBranchRef { name target { ... on Commit { ${historyOf(i)} } } }
+      gh: ref(qualifiedName: "refs/heads/gh-pages") { target { ... on Commit { ${historyOf(i)} } } } }`
     );
   }
   return `query(${params.join(', ')}) {\n  rateLimit { cost remaining resetAt }\n  ${fields.join('\n  ')}\n}`;
@@ -340,6 +355,7 @@ function repositoryOf(repository, login, what) {
   if (typeof ownerLogin !== 'string') throw new Malformed(`${name} has no owner`);
   return {
     name,
+    private: repository.isPrivate === true,
     flags: repositoryFlags(
       {
         nameWithOwner: name,
@@ -376,7 +392,8 @@ function readContributionPage(kind, conn, { login, window, into }) {
     }
     if (kind === 'issues') {
       const issue = node.issue;
-      const { name, flags } = repositoryOf(issue?.repository, login, 'issue');
+      const { name, flags, private: hidden } = repositoryOf(issue?.repository, login, 'issue');
+      if (hidden) continue; // private work is never scored
       groupInto(
         into,
         name,
@@ -389,14 +406,17 @@ function readContributionPage(kind, conn, { login, window, into }) {
     const pr = node.pullRequest;
     const number = requireCount(pr?.number, `${kind} number`);
     if (kind === 'pull_requests') {
-      const { name, flags } = repositoryOf(pr.repository, login, 'pull request');
+      const { name, flags, private: hidden } = repositoryOf(pr.repository, login, 'pull request');
+      if (hidden) continue;
       const outcome =
         pr.merged === true ? OUTCOME_MERGED : pr.state === 'CLOSED' ? OUTCOME_CLOSED : OUTCOME_OPEN;
       groupInto(into, name, flags, {}, { day, number, outcome });
     } else {
-      const { name, flags } = repositoryOf(pr.repository, login, 'review');
+      const { name, flags, private: hidden } = repositoryOf(pr.repository, login, 'review');
+      if (hidden) continue;
       const stars = requireCount(pr.repository.stargazerCount, `${name} stars`);
-      groupInto(into, name, flags, { stars }, { day, number, author: person(pr.author) });
+      const outsider = node.pullRequestReview?.authorAssociation === 'NONE';
+      groupInto(into, name, flags, { stars }, { day, number, author: person(pr.author), outsider });
     }
   }
   return {
@@ -426,7 +446,8 @@ export function readMain(node, { target, window }) {
   const commits = [];
   const repositories = requireList(c.commitContributionsByRepository, 'commit repositories');
   for (const entry of repositories) {
-    const { name, flags } = repositoryOf(entry?.repository, login, 'commits');
+    const { name, flags, private: hidden } = repositoryOf(entry?.repository, login, 'commits');
+    if (hidden) continue;
     const stars = requireCount(entry.repository.stargazerCount, `${name} stars`);
     const total = requireCount(entry.contributions?.totalCount, `${name} commits`);
     const nodes = requireList(entry.contributions?.nodes, `${name} commit days`);
@@ -481,6 +502,27 @@ export function readMain(node, { target, window }) {
   };
 }
 
+/**
+ * Of the users who approved a pull request, other than its author, the one whose account is
+ * oldest (then by login): the approver most likely to meet the counterparty age rule.
+ */
+export function approverOf(pr, login) {
+  const me = login.toLowerCase();
+  const candidates = requireList(pr.reviews?.nodes ?? [], 'approvals')
+    .map((review) => person(review?.author))
+    .filter((p) => p !== null && p.kind === KIND_USER && p.login.toLowerCase() !== me);
+  candidates.sort((a, b) =>
+    (a.created ?? '9999') < (b.created ?? '9999')
+      ? -1
+      : (a.created ?? '9999') > (b.created ?? '9999')
+        ? 1
+        : a.login.toLowerCase() < b.login.toLowerCase()
+          ? -1
+          : 1
+  );
+  return candidates[0] ?? null;
+}
+
 /** One search page, into `into` (by repo). Returns the next cursor or null. */
 export function readSearchPage(kind, search, { login, window, into }) {
   if (!search || typeof search !== 'object') throw new Malformed(`no ${kind} search`);
@@ -490,7 +532,8 @@ export function readSearchPage(kind, search, { login, window, into }) {
     const number = requireCount(pr.number, `${kind} number`);
     const day = instantOffset(pr.mergedAt, window);
     if (day === null) continue;
-    const { name, flags } = repositoryOf(pr.repository, login, kind);
+    const { name, flags, private: hidden } = repositoryOf(pr.repository, login, kind);
+    if (hidden) continue;
     const stars = requireCount(pr.repository.stargazerCount, `${name} stars`);
     const lines =
       requireCount(pr.additions, `${name}#${number} additions`) +
@@ -499,12 +542,14 @@ export function readSearchPage(kind, search, { login, window, into }) {
     if (kind === 'accepted') {
       if (flags & FLAG_OWNED) continue; // their own repository: not someone else accepting it
       const owner = person(pr.repository.owner);
+      const merger = person(pr.mergedBy);
+      const self = merger !== null && merger.login.toLowerCase() === login.toLowerCase();
       groupInto(
         into,
         name,
         flags,
         { stars, owner },
-        { day, number, merger: person(pr.mergedBy), lines, files }
+        { day, number, merger, lines, files, approver: self ? approverOf(pr, login) : null }
       );
     } else {
       if (!(flags & FLAG_OWNED)) continue;
@@ -520,17 +565,46 @@ export function readSearchPage(kind, search, { login, window, into }) {
   return search.pageInfo?.hasNextPage === true ? search.pageInfo.endCursor : null;
 }
 
-/** A commit-date sample of one repository, relative to the measurement instant. */
+/**
+ * A committer that is automation: a GitHub App (`…[bot]`) or a committer named as a bot ("Repo
+ * Health Bot", "Job Finder Bot", "scraping-bot"). Not the Actions user by itself: companies that
+ * sync their engineers' commits into a public repository commit them as "Github Actions"
+ * (`actions-user`), with the engineer as author (measured on 2026-10-16, plasmicapp/plasmic). Not
+ * the web editor's committer either, GitHub (`web-flow`), which is a person's own edit.
+ */
+export function isBotCommitter(committer) {
+  const login = committer?.user?.login;
+  const name = committer?.name;
+  if (typeof login === 'string' && /\[bot\]$/i.test(login)) return true;
+  return typeof name === 'string' && (/\[bot\]$/i.test(name) || /\bbot\b/i.test(name));
+}
+
+/**
+ * A commit-date sample of one repository, relative to the measurement instant: the developer's
+ * commits since the window began on the default branch and on gh-pages, one commit once.
+ */
 export function readIntegrity(node, { repo, measuredAtMs }) {
-  const history = node?.defaultBranchRef?.target?.history;
-  if (!node?.defaultBranchRef || !history) {
-    return { repo, sampled: 0, bot: 0, max_lead_hours: null, max_ahead_hours: null };
+  const histories = [node?.defaultBranchRef?.target?.history, node?.gh?.target?.history].filter(
+    Boolean
+  );
+  const seen = new Set();
+  const commits = [];
+  let truncated = false;
+  for (const history of histories) {
+    const nodes = requireList(history.nodes, `${repo} history`);
+    if (nodes.length >= INTEGRITY_SAMPLE) truncated = true;
+    for (const commit of nodes) {
+      const key = typeof commit?.oid === 'string' ? commit.oid : null;
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      commits.push(commit);
+    }
   }
-  const nodes = requireList(history.nodes, `${repo} history`);
   let bot = 0;
   let lead = -Infinity;
   let ahead = -Infinity;
-  for (const commit of nodes) {
+  const dates = new Set();
+  for (const commit of commits) {
     const authored = Date.parse(commit?.authoredDate);
     const committed = Date.parse(commit?.committedDate);
     if (!Number.isFinite(authored) || !Number.isFinite(committed)) {
@@ -538,17 +612,18 @@ export function readIntegrity(node, { repo, measuredAtMs }) {
     }
     lead = Math.max(lead, (authored - committed) / HOUR_MS);
     ahead = Math.max(ahead, (Math.max(authored, committed) - measuredAtMs) / HOUR_MS);
-    const committer = commit.committer;
-    const botName = (value) => typeof value === 'string' && /\[bot\]$/i.test(value);
-    if (botName(committer?.user?.login) || botName(committer?.name)) bot += 1;
+    if (isBotCommitter(commit.committer)) bot += 1;
+    dates.add(pktDate(authored));
   }
   const round = (h) => (Number.isFinite(h) ? Math.round(h * 10) / 10 : null);
   return {
     repo,
-    sampled: nodes.length,
+    sampled: commits.length,
     bot,
     max_lead_hours: round(lead),
-    max_ahead_hours: round(ahead)
+    max_ahead_hours: round(ahead),
+    // Only a sample holding every commit since the window began says which days have none.
+    days: truncated ? null : dates.size
   };
 }
 

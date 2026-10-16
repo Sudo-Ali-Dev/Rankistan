@@ -1,5 +1,5 @@
 /**
- * The developer score (scoring v3), from the evidence (src/model/evidence.js). The pipeline
+ * The developer score (scoring v3.1), from the evidence (src/model/evidence.js). The pipeline
  * (scripts/score.js), the board check (scripts/verify-published.js) and the Worker's preview
  * (cloudflare/score-preview.js) all call this one implementation.
  *
@@ -8,10 +8,15 @@
  *
  *   Work           x = Σ recency weights of working days / Σ recency weights of every day
  *                  Work = 1 − (1 − x)^CURVE_POWER
- *   Collaboration  c = f·accepted + reviews + maintained,  Collaboration = c / (c + HALF_POINT)
- *                  accepted = the smaller of Σ_owner and Σ_merger of min(CAP, log2(1 + V)),
- *                  V the group's Σ starWeight·size·recency; reviews likewise by owner and by
- *                  author; maintained by author; f the rejection factor
+ *   Collaboration  Collaboration = f · c / (c + HALF_POINT), f the rejection factor
+ *                  c = the smaller of a breadth sum over counterparties and over places, where
+ *                  each item's value is starWeight·size·recency (half for a review or a merge
+ *                  into one's own project, the floor's star weight for an outsider's review):
+ *                    counterparty  the merger or approver, the reviewed author, the contributor
+ *                    place         the repository owner (maintained items by contributor)
+ *                  a group's credit is min(CAP · max(CAP_STAR_FLOOR, starWeight of its best
+ *                  target), log2(1 + V)), and groups count largest first, the k-th at
+ *                  1 / k^BREADTH_POWER
  *   Appreciation   max over active own projects of clamp(decades of stars above FROM_STARS
  *                  / DECADES) × min(1, commit days / FULL_AFTER_DAYS)
  *
@@ -25,6 +30,7 @@ import { deriveEvidence } from './evidence.js';
 import { compareCodePoints } from './order.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const lower = (s) => String(s).toLowerCase();
 
 /** What the model reads from a row in the state. Nothing else affects the score. */
 export const MODEL_INPUT_FIELDS = Object.freeze(['contributions']);
@@ -37,10 +43,15 @@ export const PUBLISHED_MODEL_FIELDS = Object.freeze([
   'scored_at'
 ]);
 
-/** The recency weight of a window day, 0 the oldest: falls evenly from 1 to RECENCY_FLOOR. */
+/**
+ * The recency weight of a window day, 0 the oldest: 1 for the newest, RECENCY_FLOOR for the
+ * oldest, by a constant ratio. Rounded to 12 places, so an engine's last-bit difference in `**`
+ * cannot reach a published score.
+ */
 export function recencyWeight(offset, config) {
   const { WINDOW_DAYS, RECENCY_FLOOR } = config;
-  return RECENCY_FLOOR + ((1 - RECENCY_FLOOR) * offset) / (WINDOW_DAYS - 1);
+  const weight = RECENCY_FLOOR ** ((WINDOW_DAYS - 1 - offset) / (WINDOW_DAYS - 1));
+  return Math.round(weight * 1e12) / 1e12;
 }
 
 function offsetOf(date, window, config) {
@@ -65,17 +76,33 @@ export function sizeWeight({ lines, files }, config) {
   return files <= TINY_MAX_FILES && lines <= TINY_MAX_LINES ? TINY_WEIGHT : 1;
 }
 
-/** Σ over groups (in key order) of min(CAP, log2(1 + the group's Σ value)). */
-function groupCredit(items, key, value, config) {
-  const totals = new Map();
+/**
+ * The breadth sum over groups: each group's credit is min(its cap, log2(1 + Σ value)), its cap
+ * CAP_PER_GROUP × max(CAP_STAR_FLOOR, starWeight of its best target), and the credits count
+ * largest first, the k-th at 1 / k^BREADTH_POWER. Ties keep key order, so the sum is the same bits
+ * whatever order the items came in.
+ */
+function breadthCredit(items, key, config) {
+  const C = config.COLLABORATION;
+  const groups = new Map();
   for (const item of items) {
     const k = String(key(item)).toLowerCase();
-    totals.set(k, (totals.get(k) || 0) + value(item));
+    const g = groups.get(k) || { value: 0, stars: 0 };
+    g.value += item.value;
+    g.stars = Math.max(g.stars, item.stars);
+    groups.set(k, g);
   }
+  const credits = [...groups.keys()].sort(compareCodePoints).map((k) => {
+    const g = groups.get(k);
+    const cap = C.CAP_PER_GROUP * Math.max(C.CAP_STAR_FLOOR, starWeight(g.stars, config));
+    return Math.min(cap, Math.log2(1 + g.value));
+  });
+  // A stable sort: equal credits keep key order.
+  credits.sort((a, b) => b - a);
   let sum = 0;
-  for (const k of [...totals.keys()].sort(compareCodePoints)) {
-    sum += Math.min(config.COLLABORATION.CAP_PER_GROUP, Math.log2(1 + totals.get(k)));
-  }
+  credits.forEach((credit, i) => {
+    sum += credit / (i + 1) ** C.BREADTH_POWER;
+  });
   return sum;
 }
 
@@ -102,22 +129,38 @@ export function partsFromEvidence(evidence, { config = SCORE_CONFIG } = {}) {
   const work = 1 - (1 - x) ** config.WORK.CURVE_POWER;
 
   const C = config.COLLABORATION;
-  const acceptedValue = (i) => starWeight(i.stars, config) * sizeWeight(i, config) * w(i.date);
-  const accepted = Math.min(
-    groupCredit(evidence.accepted, (i) => i.owner, acceptedValue, config),
-    groupCredit(evidence.accepted, (i) => i.merger, acceptedValue, config)
-  );
+  // Every item that counts, with what it is worth, who vouched for it and where.
+  const items = [];
+  for (const i of evidence.accepted) {
+    items.push({
+      value: starWeight(i.stars, config) * sizeWeight(i, config) * w(i.date),
+      stars: i.stars,
+      person: i.merger,
+      place: `o:${i.owner}`
+    });
+  }
+  for (const i of evidence.reviews) {
+    const stars = i.outsider ? 0 : i.stars;
+    items.push({
+      value: C.REVIEW_WEIGHT * starWeight(stars, config) * w(i.date),
+      stars,
+      person: i.author,
+      place: `o:${i.owner}`
+    });
+  }
+  for (const i of evidence.maintained) {
+    items.push({
+      value: C.MAINTAINED_WEIGHT * starWeight(i.stars, config) * sizeWeight(i, config) * w(i.date),
+      stars: i.stars,
+      person: i.author,
+      place: `a:${lower(i.author)}`
+    });
+  }
+  const byPerson = breadthCredit(items, (i) => i.person, config);
+  const byPlace = breadthCredit(items, (i) => i.place, config);
+  const c = Math.min(byPerson, byPlace);
   const f = rejectionFactor(evidence.pull_requests_to_others, config);
-  const reviewValue = (i) => C.REVIEW_WEIGHT * starWeight(i.stars, config) * w(i.date);
-  const reviews = Math.min(
-    groupCredit(evidence.reviews, (i) => i.owner, reviewValue, config),
-    groupCredit(evidence.reviews, (i) => i.author, reviewValue, config)
-  );
-  const maintainedValue = (i) =>
-    C.MAINTAINED_WEIGHT * starWeight(i.stars, config) * sizeWeight(i, config) * w(i.date);
-  const maintained = groupCredit(evidence.maintained, (i) => i.author, maintainedValue, config);
-  const c = f * accepted + reviews + maintained;
-  const collaboration = c / (c + C.HALF_POINT);
+  const collaboration = (f * c) / (c + C.HALF_POINT);
 
   const A = config.APPRECIATION;
   let appreciation = 0;
@@ -140,10 +183,9 @@ export function partsFromEvidence(evidence, { config = SCORE_CONFIG } = {}) {
       working_days: evidence.working_days.length,
       x,
       c,
-      accepted,
+      by_person: byPerson,
+      by_place: byPlace,
       rejection_factor: f,
-      reviews,
-      maintained,
       appreciated
     }
   };

@@ -38,11 +38,11 @@ function collaborationWhat(evidence) {
   return items.length ? items.join(', ') : `None in the last ${WINDOW_DAYS} days`;
 }
 
-function collaborationHow(credits, points) {
+function collaborationHow(credits, points, rejection = 1) {
   if (!(credits > 0)) {
     return `No credits yet. One pull request merged into a popular open source project would add about ${Math.round(pointsForCredits(1))} points.`;
   }
-  return `Each pull request earns up to 1 credit, more in a project with more stars. A review, or a pull request merged into your own repository, earns half. Together yours earn ${credits.toFixed(2)} credits, which give ${formatPoints(points)} points. For comparison, 1 credit gives ${Math.round(pointsForCredits(1))} and 3 credits give ${Math.round(pointsForCredits(3))}.`;
+  return `Each pull request earns up to 1 credit, more in a project with more stars. A review, or a pull request merged into your own repository, earns half, and each further project or person counts a little less. Together yours earn ${credits.toFixed(2)} credits, which give ${formatPoints(pointsForCredits(credits))} points.${rejection < 1 ? ` Most of your pull requests to other projects were closed without being merged, so that is multiplied by ${rejection.toFixed(2)}, giving ${formatPoints(points)}.` : ''} For comparison, 1 credit gives ${Math.round(pointsForCredits(1))} and 3 credits give ${Math.round(pointsForCredits(3))}.`;
 }
 
 function starsHow(repo, points) {
@@ -144,7 +144,11 @@ export default function ScoreBreakdownPanel({ preview, gatesPassed = true }) {
               <td className="p-3 sm:p-4 text-outline">
                 {collaborationWhat(evidence)}
                 <span className="block text-[10px] text-outline/70 mt-0.5 font-body normal-case">
-                  {collaborationHow(preview.details?.c, points('collaboration'))}
+                  {collaborationHow(
+                    preview.details?.c,
+                    points('collaboration'),
+                    preview.details?.rejection_factor
+                  )}
                 </span>
               </td>
               <td className="p-3 sm:p-4 text-right text-primary font-bold tabular-nums">

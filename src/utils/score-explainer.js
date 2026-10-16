@@ -90,16 +90,16 @@ export const SCORE_PARTS = [
     points: COLLABORATION_POINTS,
     question: 'Did other developers accept your work?',
     lines: [
-      "You earn credits for three things. Your pull request merged into an open source project you do not own. Your review of another developer's pull request. Another developer's pull request that you merged into your own repository.",
-      `A merged pull request earns up to 1 credit. It earns the full credit in a project with ${fmt(FULL_CREDIT_STARS)} or more stars, about ${credit(99)} with 100 stars, ${credit(9)} with 10 stars and ${COLLABORATION.STARS_FLOOR} with none. A review, or a pull request you merged into your own repository, earns half. So does a tiny change of one file and up to ${COLLABORATION.TINY_MAX_LINES} lines.`,
-      `The other developer's account must be at least ${COUNTERPARTY_AGE} old. More pull requests to the same project, or merged by the same person, earn a little less each, so nobody can boost a friend without limit.`
+      "You earn credits for three things. Your pull request merged into an open source project you do not own, or one you merged yourself after another developer approved it. Your review of another developer's pull request. Another developer's pull request that you merged into your own repository.",
+      `A merged pull request earns up to 1 credit. It earns the full credit in a project with ${fmt(FULL_CREDIT_STARS)} or more stars, about ${credit(99)} with 100 stars, ${credit(9)} with 10 stars and ${COLLABORATION.STARS_FLOOR} with none. A review, or a pull request you merged into your own repository, earns half. So does a tiny change of one file and up to ${COLLABORATION.TINY_MAX_LINES} lines. A review by someone with no role in the project counts as if the project had no stars.`,
+      `The other developer's account must be at least ${COUNTERPARTY_AGE} old. More pull requests to the same project, or with the same person, earn a little less each, and each further project or person counts a little less than the one before. One person can only give you so much, whether they merge your work, you review theirs or they send you pull requests.`
     ],
     table: {
       head: ['Credits', 'Points'],
       rows: [1, 2, 3, 6, 12].map((c) => [String(c), String(Math.round(pointsForCredits(c)))])
     },
     after:
-      'Recent merges count a little more than older ones. If most of your pull requests are closed without being merged, your credits shrink.'
+      'Recent merges count a little more than older ones. If most of your pull requests to other projects are closed without being merged, the points from this part shrink in proportion.'
   },
   {
     id: 'appreciation',
@@ -182,12 +182,12 @@ const exampleResult = scoreModel(encodeMeasurement(exampleMeasurement()));
 const examplePoints = (id) => Math.round(SCALE * WEIGHTS[id] * exampleResult.parts[id]);
 
 export const SCORE_EXAMPLE = {
-  story: `Ayesha is a made-up developer. In the last ${WINDOW_DAYS} days she was active on ${EXAMPLE_DAYS} days, spread across the month. Yesterday ${EXAMPLE_MERGES} of her pull requests were merged into ${EXAMPLE_MERGES} different open source projects with ${fmt(EXAMPLE_TARGET_STARS)} stars each, so she earned ${EXAMPLE_MERGES} credits. Her own repository has ${fmt(EXAMPLE_STARS)} stars and she committed to it this month.`,
+  story: `Ayesha is a made-up developer. In the last ${WINDOW_DAYS} days she was active on ${EXAMPLE_DAYS} days, spread across the month. Yesterday ${EXAMPLE_MERGES} of her pull requests were merged into ${EXAMPLE_MERGES} different open source projects with ${fmt(EXAMPLE_TARGET_STARS)} stars each, worth ${round1(exampleResult.details.c)} credits, because the second project counts a little less than the first. Her own repository has ${fmt(EXAMPLE_STARS)} stars and she committed to it this month.`,
   rows: [
     { name: PART_LABELS.work, why: `${EXAMPLE_DAYS} active days`, points: examplePoints('work') },
     {
       name: PART_LABELS.collaboration,
-      why: `${EXAMPLE_MERGES} credits`,
+      why: `${round1(exampleResult.details.c)} credits`,
       points: examplePoints('collaboration')
     },
     {
