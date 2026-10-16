@@ -171,7 +171,7 @@ describe('buildReport', () => {
 
   it('states what it covers', () => {
     expect(report).toContain(
-      'Rows: 4. Measured in shape 2: 2 (50.0%). In the previous shape, waiting for their batch: 1. Undecodable: 0. Without a block: 1.'
+      'Rows: 4. Measured: 2 (50.0%), 2 in shape 3. In a shape the model cannot read, waiting for their batch: 1. Undecodable: 0. Without a block: 1.'
     );
     expect(report).toContain("Block age at the board's last update, hours: p50 1.0");
   });

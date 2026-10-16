@@ -11,9 +11,10 @@ export const W = measurementWindow(NOW);
 
 /** The instant of 10:00 Pakistan time on the window's day `offset`. */
 export const at = (offset) => `${windowDate(W, offset)}T05:00:00Z`;
-export const repo = (name, { fork = false, stars = 0, org = false } = {}) => ({
+export const repo = (name, { fork = false, stars = 0, org = false, hidden = false } = {}) => ({
   nameWithOwner: name,
   isFork: fork,
+  isPrivate: hidden,
   stargazerCount: stars,
   owner: { __typename: org ? 'Organization' : 'User', login: name.split('/')[0] }
 });
@@ -94,8 +95,9 @@ export const prNode = (offset, name, { merged = false, state = 'OPEN', number = 
   occurredAt: at(offset),
   pullRequest: { number, state, merged, repository: repo(name) }
 });
-export const reviewNode = (offset, name, author, number = 1) => ({
+export const reviewNode = (offset, name, author, number = 1, association = 'CONTRIBUTOR') => ({
   occurredAt: at(offset),
+  pullRequestReview: { authorAssociation: association },
   pullRequest: {
     number,
     author: author
@@ -108,9 +110,14 @@ export const mergedNode = (
   offset,
   name,
   merger,
-  { number = 1, additions = 10, deletions = 2, files = 2, stars = 100 } = {}
+  { number = 1, additions = 10, deletions = 2, files = 2, stars = 100, approvers = [] } = {}
 ) => ({
   number,
+  reviews: {
+    nodes: approvers.map(([login, createdAt]) => ({
+      author: { __typename: 'User', login, createdAt }
+    }))
+  },
   mergedAt: at(offset),
   additions,
   deletions,
@@ -211,7 +218,22 @@ export function fakeGitHub(people, { onRequest } = {}) {
           const i = k.slice(1);
           const name = `${variables[`o${i}`]}/${variables[`n${i}`]}`;
           const owner = Object.values(people).find((p) => p.main.id === variables[`a${i}`]);
-          const nodes = owner?.history[name] || [];
+          // A repository without a given history answers with one commit on each day it is
+          // credited, as GitHub would for a history nobody rewrote.
+          const nodes =
+            owner?.history[name] ??
+            (
+              owner?.main.c.commitContributionsByRepository.find(
+                (e) => e.repository.nameWithOwner === name
+              )?.contributions.nodes || []
+            )
+              .slice(0, 20)
+              .map((d, j) => ({
+                oid: `${name}-${j}`,
+                authoredDate: d.occurredAt,
+                committedDate: d.occurredAt,
+                committer: { name: 'dev', user: null }
+              }));
           data[`r${i}`] = { defaultBranchRef: { target: { history: { nodes } } } };
         });
     }

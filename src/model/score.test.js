@@ -5,6 +5,7 @@ import {
   deriveEvidence,
   REASON_AHEAD,
   REASON_BOT,
+  REASON_MISSING,
   REASON_FUTURE,
   REASON_LEAD
 } from './evidence.js';
@@ -97,7 +98,7 @@ describe('config', () => {
   const clone = () => JSON.parse(JSON.stringify(rawConfig));
 
   it('accepts the shipped file, frozen', () => {
-    expect(SCORE_CONFIG.MODEL_VERSION).toBe('3.0.0');
+    expect(SCORE_CONFIG.MODEL_VERSION).toBe('3.1.0');
     expect(Object.isFrozen(SCORE_CONFIG.COLLABORATION)).toBe(true);
   });
 
@@ -154,10 +155,24 @@ describe('config', () => {
 // The parts
 
 describe('the curve and the weights', () => {
-  it('weighs yesterday 1 and the oldest day RECENCY_FLOOR, evenly between', () => {
+  it('weighs yesterday 1 and the oldest day RECENCY_FLOOR, by the same ratio from day to day', () => {
     expect(recencyWeight(29, SCORE_CONFIG)).toBe(1);
     expect(recencyWeight(0, SCORE_CONFIG)).toBe(0.5);
-    expect(recencyWeight(14.5, SCORE_CONFIG)).toBeCloseTo(0.75, 12);
+    expect(recencyWeight(14.5, SCORE_CONFIG)).toBeCloseTo(Math.SQRT1_2, 11);
+    const ratio = recencyWeight(1, SCORE_CONFIG) / recencyWeight(0, SCORE_CONFIG);
+    for (let k = 1; k < 29; k += 1) {
+      expect(recencyWeight(k + 1, SCORE_CONFIG) / recencyWeight(k, SCORE_CONFIG)).toBeCloseTo(
+        ratio,
+        10
+      );
+    }
+  });
+
+  it('separates developers whose working days merely sum to the same offsets', () => {
+    // Even steps scored days {0, 29} and {14, 15} the same; a constant ratio does not.
+    const ends = score(measurement({ commits: [ownRepo([0, 29])] })).score_exact;
+    const middle = score(measurement({ commits: [ownRepo([14, 15])] })).score_exact;
+    expect(ends).not.toBe(middle);
   });
 
   it('weighs a target by the digits of its stars', () => {
@@ -271,6 +286,7 @@ describe('integrity', () => {
     bot: 0,
     max_lead_hours: 0,
     max_ahead_hours: -10,
+    days: null,
     ...extra
   });
   const excludedBy = (m) => deriveEvidence(m).excluded;
@@ -303,6 +319,36 @@ describe('integrity', () => {
       ]
     });
     expect(excludedBy(m)).toEqual([]);
+  });
+
+  it('judges the bot share only on a sample of MIN_BOT_SAMPLE or more', () => {
+    const commits = [ownRepo([1, 2, 3, 4, 5], { repo: 'ana/app' })];
+    const small = measurement({ commits, integrity: [sample('ana/app', { sampled: 2, bot: 1 })] });
+    expect(excludedBy(small)).toEqual([]);
+    const big = measurement({ commits, integrity: [sample('ana/app', { sampled: 6, bot: 3 })] });
+    expect(excludedBy(big)).toEqual([{ repo: 'ana/app', reason: REASON_BOT }]);
+  });
+
+  it('excludes a repository whose credited commits a complete sample cannot find at all', () => {
+    const commits = [ownRepo(range(0, 20), { repo: 'ana/app' })];
+    const found = (days) =>
+      measurement({ commits, integrity: [sample('ana/app', { sampled: days, days })] });
+    // None of twenty credited days in the history: nobody can check them.
+    expect(excludedBy(found(0))).toEqual([{ repo: 'ana/app', reason: REASON_MISSING }]);
+    // A history that kept some is often an honest rewrite: a moderator reads it instead.
+    expect(excludedBy(found(1))).toEqual([]);
+    // A sample cut at its limit says nothing about the days it did not reach.
+    const cut = measurement({
+      commits,
+      integrity: [sample('ana/app', { sampled: 20, days: null })]
+    });
+    expect(excludedBy(cut)).toEqual([]);
+    // Fewer than MISSING_MIN_DAYS credited days are not judged.
+    const few = measurement({
+      commits: [ownRepo(range(0, 9), { repo: 'ana/app' })],
+      integrity: [sample('ana/app', { sampled: 0, days: 0 })]
+    });
+    expect(excludedBy(few)).toEqual([]);
   });
 
   it('applies the moderation list, with its reason', () => {
@@ -347,7 +393,7 @@ describe('collaboration', () => {
       ]
     });
     expect(deriveEvidence(m).accepted.map((a) => a.number)).toEqual([1]);
-    expect(collab(m).accepted).toBeCloseTo(1, 12);
+    expect(collab(m).c).toBeCloseTo(1, 12);
   });
 
   it("judges the merger's age on the day of the merge, so time passing changes nothing", () => {
@@ -367,8 +413,9 @@ describe('collaboration', () => {
       )
     );
     const puppet = collab(measurement({ accepted: many }));
-    const cap = SCORE_CONFIG.COLLABORATION.CAP_PER_GROUP;
-    expect(puppet.accepted).toBeLessThanOrEqual(cap);
+    const { CAP_PER_GROUP: cap, CAP_STAR_FLOOR } = SCORE_CONFIG.COLLABORATION;
+    // One person, vouching through repositories nobody starred: half the cap.
+    expect(puppet.c).toBeLessThanOrEqual(cap * CAP_STAR_FLOOR + 1e-12);
     // One owner with a hundred merges by many people is capped the same way.
     const one = collab(
       measurement({
@@ -381,7 +428,7 @@ describe('collaboration', () => {
         ]
       })
     );
-    expect(one.accepted).toBe(cap);
+    expect(one.c).toBe(cap);
   });
 
   it('weighs a tiny change half', () => {
@@ -391,27 +438,28 @@ describe('collaboration', () => {
         accepted: [merge('a/b', 1000, [mergeItem(29, 1, veteran('maint'), { lines: 2, files: 1 })])]
       })
     );
-    expect(tiny.accepted).toBeCloseTo(Math.log2(1.5), 12);
-    expect(big.accepted).toBeCloseTo(1, 12);
+    expect(tiny.c).toBeCloseTo(Math.log2(1.5), 12);
+    expect(big.c).toBeCloseTo(1, 12);
   });
 
-  it('shrinks the accepted credit of a mostly-rejected spray', () => {
+  it('shrinks the collaboration points of a mostly-rejected spray in proportion', () => {
     const accepted = [merge('a/b', 1000, [mergeItem(29, 1)])];
     const spray = {
       repo: 'a/b',
       flags: FLAG_ORG,
       items: range(0, 30).map((d) => ({ day: d, number: 100 + d, outcome: OUTCOME_CLOSED }))
     };
-    const clean = collab(measurement({ accepted }));
-    const sprayed = collab(measurement({ accepted, pull_requests: [spray] }));
-    expect(sprayed.c).toBeLessThan(clean.c / 4);
+    const clean = score(measurement({ accepted })).parts.collaboration;
+    const sprayed = score(measurement({ accepted, pull_requests: [spray] }));
+    expect(sprayed.parts.collaboration).toBeCloseTo(clean * sprayed.details.rejection_factor, 12);
+    expect(sprayed.parts.collaboration).toBeLessThan(clean / 4);
   });
 
   it('counts one pull request once however many times it was reviewed, at half a merge', () => {
     const items = range(0, 5).map((d) => ({ day: 25 + d, number: 1, author: veteran('carl') }));
     const m = measurement({ reviews: [{ repo: 'acme/lib', flags: FLAG_ORG, stars: 1000, items }] });
     expect(deriveEvidence(m).reviews).toHaveLength(1);
-    expect(collab(m).reviews).toBeCloseTo(Math.log2(1.5), 12);
+    expect(collab(m).c).toBeCloseTo(Math.log2(1.5), 12);
   });
 
   it("credits maintainers for other people's pull requests merged into their projects", () => {
@@ -434,14 +482,141 @@ describe('collaboration', () => {
         }
       ]
     });
-    expect(collab(m).maintained).toBeCloseTo(Math.log2(1.5), 12);
+    expect(collab(m).c).toBeCloseTo(Math.log2(1.5), 12);
   });
 
-  it('gives half the collaboration points for three merges into well-known projects by three people this week', () => {
+  it('counts three merges into well-known projects by three people yesterday as 1 + 1/√2 + 1/√3 credits', () => {
     const accepted = ['a/x', 'b/y', 'c/z'].map((repo, i) =>
       merge(repo, 5000, [mergeItem(29, 1, veteran(`m${i}`))])
     );
-    expect(score(measurement({ accepted })).parts.collaboration).toBeCloseTo(0.5, 12);
+    const c = 1 + 1 / Math.SQRT2 + 1 / Math.sqrt(3);
+    const result = score(measurement({ accepted }));
+    expect(result.details.c).toBeCloseTo(c, 12);
+    expect(result.parts.collaboration).toBeCloseTo(c / (c + 3), 12);
+  });
+
+  it('weighs a review by someone with no role in the project as if the project had no stars', () => {
+    const review = (outsider) =>
+      measurement({
+        reviews: [
+          {
+            repo: 'kubernetes/kubernetes',
+            flags: FLAG_ORG,
+            stars: 100000,
+            items: [{ day: 29, number: 1, author: veteran('carl'), outsider }]
+          }
+        ]
+      });
+    const floor = SCORE_CONFIG.COLLABORATION.STARS_FLOOR * SCORE_CONFIG.COLLABORATION.REVIEW_WEIGHT;
+    expect(collab(review(false)).c).toBeCloseTo(Math.log2(1.5), 12);
+    expect(collab(review(true)).c).toBeCloseTo(Math.log2(1 + floor), 12);
+    // The day still counts: a review is work whoever writes it.
+    expect(deriveEvidence(review(true)).working_days).toHaveLength(1);
+  });
+
+  it('counts a pull request merged after another user approved it, the approver standing for the merger', () => {
+    const self = { login: ME, kind: KIND_USER, created: '2016-01-01' };
+    const item = (approver) => ({ ...mergeItem(29, 1, self), approver });
+    const approved = measurement({ accepted: [merge('acme/app', 1000, [item(veteran('lead'))])] });
+    const e = deriveEvidence(approved);
+    expect(e.accepted).toMatchObject([{ merger: 'lead', accepted_by: 'approval' }]);
+    expect(collab(approved).c).toBeCloseTo(1, 12);
+    // Unapproved, or approved by a month-old account, it is still nobody else's acceptance.
+    const fresh = { login: 'new', kind: KIND_USER, created: '2026-09-01' };
+    for (const approver of [null, fresh, self]) {
+      const m = measurement({ accepted: [merge('acme/app', 1000, [item(approver)])] });
+      expect(deriveEvidence(m).accepted).toEqual([]);
+    }
+  });
+
+  it('lets one person vouch only so far, whether by merging, by being reviewed or by contributing', () => {
+    // A friend who merges your pull requests, whose pull requests you review and who sends
+    // pull requests to your project: one cap for the friend, not three.
+    const friend = veteran('friend');
+    const m = measurement({
+      accepted: [
+        merge(
+          'friendorg/app',
+          0,
+          range(0, 30).map((d) => mergeItem(d, d + 1, friend))
+        )
+      ],
+      reviews: [
+        {
+          repo: 'friendorg/app',
+          flags: FLAG_ORG,
+          stars: 0,
+          items: range(0, 30).map((d) => ({ day: d, number: 100 + d, author: friend }))
+        }
+      ],
+      maintained: [
+        {
+          repo: 'ana/app',
+          flags: FLAG_OWNED,
+          stars: 0,
+          items: range(0, 30).map((d) => ({
+            day: d,
+            number: 200 + d,
+            author: friend,
+            lines: 50,
+            files: 3
+          }))
+        }
+      ]
+    });
+    const { CAP_PER_GROUP, CAP_STAR_FLOOR } = SCORE_CONFIG.COLLABORATION;
+    expect(collab(m).by_person).toBeCloseTo(CAP_PER_GROUP * CAP_STAR_FLOOR, 12);
+    expect(collab(m).c).toBeLessThanOrEqual(CAP_PER_GROUP * CAP_STAR_FLOOR + 1e-12);
+  });
+
+  it('counts a pull request merged into their own project once, not also as a review', () => {
+    const carl = veteran('carl');
+    const m = measurement({
+      reviews: [
+        {
+          repo: 'ana/app',
+          flags: FLAG_OWNED,
+          stars: 1000,
+          items: [{ day: 29, number: 1, author: carl }]
+        }
+      ],
+      maintained: [
+        {
+          repo: 'ana/app',
+          flags: FLAG_OWNED,
+          stars: 1000,
+          items: [{ day: 29, number: 1, author: carl, lines: 50, files: 4 }]
+        }
+      ]
+    });
+    expect(deriveEvidence(m).reviews).toEqual([]);
+    expect(collab(m).c).toBeCloseTo(Math.log2(1.5), 12);
+  });
+
+  it('counts each further person or project a little less than the one before', () => {
+    const accepted = range(0, 4).map((i) =>
+      merge(`o${i}/x`, 5000, [mergeItem(29, 1, veteran(`m${i}`))])
+    );
+    const expected = 1 + 1 / Math.SQRT2 + 1 / Math.sqrt(3) + 1 / 2;
+    expect(collab(measurement({ accepted })).c).toBeCloseTo(expected, 12);
+  });
+
+  it('judges acceptance only in repositories where they do not merge their own pull requests', () => {
+    const self = { login: ME, kind: KIND_USER, created: '2016-01-01' };
+    const own = {
+      repo: 'job/app',
+      flags: FLAG_ORG,
+      items: range(0, 20).map((d) => ({ day: d, number: d + 1, outcome: OUTCOME_CLOSED }))
+    };
+    const m = measurement({
+      accepted: [
+        merge('job/app', 0, [mergeItem(1, 99, self)]),
+        merge('big/lib', 5000, [mergeItem(29, 1)])
+      ],
+      pull_requests: [own]
+    });
+    // Closing their own pull requests at work is not a spray of rejected contributions.
+    expect(score(m).details.rejection_factor).toBe(1);
   });
 });
 
@@ -605,7 +780,12 @@ function randomMeasurement(rand) {
           stars: [0, 40, 2000][pick(3)],
           items: some(4, () => {
             const number = pick(3);
-            return { day: pick(30), number: number + 1, author: authors[number] };
+            return {
+              day: pick(30),
+              number: number + 1,
+              author: authors[number],
+              outsider: rand() < 0.3
+            };
           })
         };
       })
@@ -619,7 +799,13 @@ function randomMeasurement(rand) {
         items: some(4, (j) => ({
           day: pick(30),
           number: j + 1,
-          merger: rand() < 0.1 ? null : person(),
+          merger:
+            rand() < 0.1
+              ? null
+              : rand() < 0.25
+                ? { login: ME, kind: KIND_USER, created: '2016-03-03' }
+                : person(),
+          approver: rand() < 0.5 ? person() : null,
           lines: pick(200),
           files: pick(6)
         }))
@@ -648,7 +834,8 @@ function randomMeasurement(rand) {
               sampled: 10,
               bot: pick(11),
               max_lead_hours: pick(20),
-              max_ahead_hours: -pick(20)
+              max_ahead_hours: -pick(20),
+              days: rand() < 0.5 ? null : pick(12)
             }
           ]
         : []
@@ -773,7 +960,7 @@ describe('published fields', () => {
   it('stamps the version, and dates the score by its measurement, not the clock', () => {
     const r = score(measurement({ commits: [ownRepo([1, 2, 3, 4])] }));
     const fields = publishedScoreFields(r);
-    expect(fields).toMatchObject({ model_version: '3.0.0', scored_at: '2026-10-14T09:30:00Z' });
+    expect(fields).toMatchObject({ model_version: '3.1.0', scored_at: '2026-10-14T09:30:00Z' });
     expect(Object.keys(fields.score_parts)).toEqual(['work', 'collaboration', 'appreciation']);
   });
 

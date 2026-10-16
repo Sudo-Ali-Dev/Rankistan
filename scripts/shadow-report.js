@@ -15,6 +15,7 @@
  *   - nothing is extrapolated: a list GitHub cut is counted and labelled, never scaled up.
  */
 import fs from 'node:fs';
+import { cadence } from './moderation-suspects.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONTRIBUTIONS_FIELD, LEGACY_FIELD, decodeMeasurement } from './measure/contributions.js';
@@ -201,14 +202,6 @@ function describeStats(s, digits = 0) {
   return `p50 ${at(s.p50)}, p90 ${at(s.p90)}, p99 ${at(s.p99)}, max ${at(s.max)} (n=${s.n})`;
 }
 
-/** Coefficient of variation of a repository's commits per active day: near 0 is a metronome. */
-function cadence(days) {
-  const counts = days.map((d) => d.commits);
-  const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
-  const sd = Math.sqrt(counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length);
-  return mean > 0 ? sd / mean : null;
-}
-
 /**
  * Scoring v3 run over every measured row, for calibration: the board it would publish, how its
  * parts are distributed, how it relates to the current score and to popularity, and the
@@ -352,13 +345,11 @@ export function buildReport(payload, { source = 'board' } = {}) {
   for (const row of rows) {
     const block = row?.[CONTRIBUTIONS_FIELD] ?? row?.[LEGACY_FIELD];
     if (block == null) continue;
-    if (block.v !== SHAPE_VERSION) {
-      previousShape += 1;
-      continue;
-    }
     const m = decodeMeasurement(block);
     if (!m) {
-      undecodable += 1;
+      // A shape the model reads but malformed is undecodable; an older one awaits its batch.
+      if (block.v === SHAPE_VERSION) undecodable += 1;
+      else previousShape += 1;
       continue;
     }
     bytes += JSON.stringify(block).length;
@@ -367,9 +358,10 @@ export function buildReport(payload, { source = 'board' } = {}) {
 
   const out = [`# Contributions measurement report (${source})`, ''];
   out.push(
-    `Rows: ${rows.length}. Measured in shape ${SHAPE_VERSION}: ${measured.length} ` +
-      `(${pct(measured.length, rows.length)}). In the previous shape, waiting for their batch: ` +
-      `${previousShape}. Undecodable: ${undecodable}. Without a block: ` +
+    `Rows: ${rows.length}. Measured: ${measured.length} (${pct(measured.length, rows.length)}), ` +
+      `${measured.filter((x) => x.m.version === SHAPE_VERSION).length} in shape ${SHAPE_VERSION}. ` +
+      `In a shape the model cannot read, waiting for their batch: ${previousShape}. ` +
+      `Undecodable: ${undecodable}. Without a block: ` +
       `${rows.length - measured.length - previousShape - undecodable}.`,
     ''
   );

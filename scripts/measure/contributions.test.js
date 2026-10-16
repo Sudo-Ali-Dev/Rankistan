@@ -16,6 +16,7 @@ import {
   judgeAliased,
   measureContributions,
   readIntegrity,
+  isBotCommitter,
   readMain,
   readSearchPage,
   screenCalendars,
@@ -176,6 +177,71 @@ describe('readMain', () => {
   });
 });
 
+describe('what v3.1 reads', () => {
+  const read = (node, target = { login: 'ana', githubId: 7 }) =>
+    readMain(node, { target, window: W });
+
+  it('flags a review by someone with no role in the project, and skips private repositories', () => {
+    const m = read(
+      person('ana', {
+        id: 7,
+        commits: { 'ana/app': { 1: 1 }, 'ana/secret': { 2: 1 } },
+        reviews: [
+          reviewNode(6, 'big/lib', 'carl', 3, 'NONE'),
+          reviewNode(6, 'big/lib', 'carl', 4, 'MEMBER')
+        ]
+      }).main
+    );
+    const reviews = [...m.lists.reviews.values()][0];
+    expect(reviews.items.map((i) => i.outsider)).toEqual([true, false]);
+    expect(m.commits.map((r) => r.repo)).toEqual(['ana/app', 'ana/secret']);
+    const hidden = read({
+      ...person('ana', { id: 7 }).main,
+      c: {
+        ...person('ana', { id: 7 }).main.c,
+        commitContributionsByRepository: [
+          {
+            repository: repo('ana/secret', { hidden: true }),
+            contributions: { totalCount: 1, nodes: [{ occurredAt: at(2), commitCount: 1 }] }
+          }
+        ],
+        totalRepositoriesWithContributedCommits: 1
+      }
+    });
+    expect(hidden.commits).toEqual([]);
+  });
+
+  it('records who approved a pull request its author merged, the oldest account first', () => {
+    const into = new Map();
+    readSearchPage(
+      'accepted',
+      {
+        issueCount: 2,
+        pageInfo: { hasNextPage: false },
+        nodes: [
+          mergedNode(3, 'acme/app', 'ana', {
+            number: 1,
+            approvers: [
+              ['ana', '2010-01-01T00:00:00Z'],
+              ['zed', '2019-01-01T00:00:00Z'],
+              ['bea', '2015-01-01T00:00:00Z']
+            ]
+          }),
+          mergedNode(4, 'acme/app', 'kgryte', {
+            number: 2,
+            approvers: [['bea', '2015-01-01T00:00:00Z']]
+          })
+        ]
+      },
+      { login: 'ana', window: W, into }
+    );
+    const [self, other] = into.get('acme/app').items;
+    expect(self.approver).toEqual({ login: 'bea', kind: 'U', created: '2015-01-01' });
+    // Only a pull request its author merged needs an approver to stand for the merger.
+    expect(other.approver).toBeNull();
+  });
+});
+
 describe('readSearchPage', () => {
   it('keeps merges into repositories the developer does not own, with merger and owner', () => {
     const into = new Map();
@@ -205,7 +271,8 @@ describe('readSearchPage', () => {
         number: 1,
         merger: { login: 'kgryte', kind: 'U', created: '2014-05-05' },
         lines: 12,
-        files: 2
+        files: 2,
+        approver: null
       }
     ]);
     expect(xy.items[0].merger).toBeNull();
@@ -253,7 +320,8 @@ describe('readIntegrity', () => {
       sampled: 2,
       bot: 0,
       max_lead_hours: 12,
-      max_ahead_hours: 3.5
+      max_ahead_hours: 3.5,
+      days: 2
     });
   });
 
@@ -273,13 +341,57 @@ describe('readIntegrity', () => {
     expect(r.bot).toBe(1);
   });
 
+  it('samples gh-pages too, counting a commit on both branches once', () => {
+    const c = commit('2026-10-13T07:00:00Z', '2026-10-13T07:00:00Z');
+    const r = readIntegrity(
+      {
+        defaultBranchRef: { target: { history: { nodes: [{ ...c, oid: 'a' }] } } },
+        gh: {
+          target: {
+            history: {
+              nodes: [
+                { ...c, oid: 'a' },
+                { ...commit('2026-10-14T07:00:00Z', '2026-10-14T07:00:00Z'), oid: 'b' }
+              ]
+            }
+          }
+        }
+      },
+      { repo: 'p/site', measuredAtMs }
+    );
+    expect(r.sampled).toBe(2);
+    expect(r.days).toBe(2);
+  });
+
+  it('says nothing about uncovered days when a branch filled the sample', () => {
+    const nodes = Array.from({ length: 20 }, (_, i) => ({
+      ...commit('2026-10-13T07:00:00Z', '2026-10-13T07:00:00Z'),
+      oid: `c${i}`
+    }));
+    const r = readIntegrity(
+      { defaultBranchRef: { target: { history: { nodes } } } },
+      { repo: 'p/busy', measuredAtMs }
+    );
+    expect(r.days).toBeNull();
+  });
+
+  it('treats named bots and the Actions user as bots, and the web editor as a person', () => {
+    expect(isBotCommitter({ name: 'Repo Health Bot' })).toBe(true);
+    expect(isBotCommitter({ name: 'Job Finder Bot', user: { login: 'actions-user' } })).toBe(true);
+    expect(isBotCommitter({ name: 'github-actions[bot]' })).toBe(true);
+    expect(isBotCommitter({ name: 'x', email: 'action@github.com' })).toBe(true);
+    expect(isBotCommitter({ name: 'GitHub', user: { login: 'web-flow' } })).toBe(false);
+    expect(isBotCommitter({ name: 'Abbot Khan', user: { login: 'abbot' } })).toBe(false);
+  });
+
   it('reports an empty repository as not sampled', () => {
     expect(readIntegrity({ defaultBranchRef: null }, { repo: 'a/b', measuredAtMs })).toEqual({
       repo: 'a/b',
       sampled: 0,
       bot: 0,
       max_lead_hours: null,
-      max_ahead_hours: null
+      max_ahead_hours: null,
+      days: 0
     });
   });
 
@@ -393,7 +505,8 @@ describe('measureContributions', () => {
         sampled: 1,
         bot: 0,
         max_lead_hours: 0,
-        max_ahead_hours: expect.any(Number)
+        max_ahead_hours: expect.any(Number),
+        days: 1
       }
     ]);
   });

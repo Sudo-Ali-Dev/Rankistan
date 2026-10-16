@@ -1,6 +1,6 @@
 {
-  "MODEL_VERSION": "3.0.0",
-  "MODEL_VERSION_RULE": "Semver over published output. Major: any developer's score can change. Minor: published fields or the ordering change, with every score unchanged. Patch: no published output changes.",
+  "MODEL_VERSION": "3.1.0",
+  "MODEL_VERSION_RULE": "Semver over the scoring method. Major: the parts or the measurement they read change. Minor: a rule inside a part changes, and scores can change with it. Patch: no published output changes. Every run scores the whole board again, so a board never holds two versions.",
   "SCALE": 1000,
   "WEIGHTS": {
     "work": 0.5,
@@ -17,6 +17,8 @@
   "COLLABORATION": {
     "HALF_POINT": 3,
     "CAP_PER_GROUP": 4,
+    "CAP_STAR_FLOOR": 0.5,
+    "BREADTH_POWER": 0.5,
     "REVIEW_WEIGHT": 0.5,
     "MAINTAINED_WEIGHT": 0.5,
     "COUNTERPARTY_MIN_AGE_DAYS": 365,
@@ -35,7 +37,9 @@
   "INTEGRITY": {
     "MAX_LEAD_HOURS": 6,
     "MAX_AHEAD_HOURS": 6,
-    "BOT_SHARE": 0.5
+    "BOT_SHARE": 0.5,
+    "MIN_BOT_SAMPLE": 5,
+    "MISSING_MIN_DAYS": 10
   },
   "DERIVATIONS": {
     "SCALE": "Scores read out of 1,000, so each part's weight is also its maximum in points.",
@@ -43,16 +47,16 @@
     "WEIGHTS.collaboration": "Work another person accepted is the one signal a single account cannot produce alone, so it carries most of what separates the top. 40% and not 50%, because 85% of the board has no accepted work in a month and the board must still order them by their own work.",
     "WEIGHTS.appreciation": "Stars are the only sign that people value what someone builds, and the site promises top developers. 10%, because stars can be given by friends or bought, and dormant fame must not outrank current work.",
     "WINDOW_DAYS": "The board is a daily ranking of active developers: a month is long enough to cover a week off and short enough to mean now. Must equal the measurement's window (src/model/measurement.js).",
-    "RECENCY_FLOOR": "Yesterday counts 1 and the oldest day 0.5, falling evenly. A day leaving the window then costs half a day, not a whole one, and ties become rare. Not 0 (a triangle), because one week off would cost 41% of the work credit.",
+    "RECENCY_FLOOR": "Yesterday counts 1 and the oldest day 0.5, each day about 2.4% less than the day after it. A day leaving the window then costs half a day, not a whole one. A constant ratio and not even steps (v3.0), because even steps made two developers tie whenever their working days summed to the same offsets, 337 rows of the board in ties with different days, and a ratio scales every developer alike as the window moves. Not 0 (a triangle), because one week off would cost 41% of the work credit.",
     "WORK.CURVE_POWER": "Work = 1 - (1 - x)^2. Each extra day is worth a little less, so 15 of 30 days earns 75%. A script that commits every day gains 56 points over an honest 20-day developer, not the 167 a straight line would give it.",
     "WORK.GATE_MIN_DAYS": "Eligibility: about one working day a week. Below it a developer is not active in the sense the board claims.",
     "MIN_ACCOUNT_AGE_DAYS": "Eligibility: an account must be a month old to be ranked, so a throwaway made today cannot appear tomorrow. Beyond that an account's age changes nothing: scoring v2 halved the score of accounts under 180 days, which punished students and stopped no farm.",
     "COLLABORATION.HALF_POINT": "C = c / (c + 3): three pull requests merged into well-known projects (1,000 stars or more) by three different people this week earn about half of the collaboration points.",
-    "COLLABORATION.CAP_PER_GROUP": "Each owner, merger or author counts at most log2(1 + V) = 4, about fifteen full-value merges. One project or one person can vouch for a developer only so far.",
-    "COLLABORATION.REVIEW_WEIGHT": "A review of someone else's pull request is real collaboration but the reviewer decides it alone, so it is worth half a merge someone else decided.",
-    "COLLABORATION.MAINTAINED_WEIGHT": "Merging other people's pull requests into one's own project is maintainer work GitHub does not count as a contribution. Half weight, because the developer is the one who decides to merge.",
-    "COLLABORATION.COUNTERPARTY_MIN_AGE_DAYS": "The other person (the merger, the author of a reviewed pull request, the contributor to one's project) must have had their account a year at the time. A fresh second account is free; a year-old one is not.",
-    "COLLABORATION.REJECTION_PRIOR": "f = min(1, 2(M + 2) / (M + X + 4)) over pull requests opened in other people's repositories: a few rejections cost nothing, and a spray that is mostly closed unmerged shrinks its accepted credit in proportion.",
+    "COLLABORATION.CAP_PER_GROUP": "Each counterparty or project counts at most log2(1 + V) = 4, about fifteen full-value merges, scaled by CAP_STAR_FLOOR below. One project or one person can vouch for a developer only so far.",
+    "COLLABORATION.REVIEW_WEIGHT": "A review of someone else's pull request is real collaboration but the reviewer decides it alone, so it is worth half a merge someone else decided. A review by someone GitHub reports as having no role in the project (association NONE) is weighed as if the project had no stars, so a review cannot borrow a famous project's standing: 30 such reviews scored 828, the top of the board, before this rule.",
+    "COLLABORATION.MAINTAINED_WEIGHT": "Merging other people's pull requests into one's own project is maintainer work GitHub does not count as a contribution. Half weight, because the developer is the one who decides to merge. A pull request counted here is not also counted as a review.",
+    "COLLABORATION.COUNTERPARTY_MIN_AGE_DAYS": "The other person (the merger or the approver of a pull request its author merged, the author of a reviewed pull request, the contributor to one's project) must have had their account a year at the time. A fresh second account is free; a year-old one is not.",
+    "COLLABORATION.REJECTION_PRIOR": "f = min(1, 2(M + 2) / (M + X + 4)) over pull requests opened in other people's repositories where the developer does not merge their own, and the collaboration part is multiplied by f. A few rejections cost nothing, and a spray that is mostly closed unmerged loses points in proportion, which v3.0's credit-only factor did not do once the curve saturated.",
     "COLLABORATION.STARS_FLOOR": "A merge into a project nobody has starred still counts 0.1: student teamwork is real, but it is the weakest evidence that anyone independent valued the work.",
     "COLLABORATION.STARS_PER_DIGIT": "Each digit of the target's star count adds 0.3, so 9 stars weighs 0.4, 99 weighs 0.7 and 999 or more the full 1. Popularity weighs in by digits, never linearly.",
     "COLLABORATION.TINY_MAX_FILES": "A tiny change touches one file.",
@@ -63,6 +67,10 @@
     "APPRECIATION.FULL_AFTER_DAYS": "Stars count only for a project the developer worked on this month, in full after 4 days of commits in it. Dormant projects earn nothing.",
     "INTEGRITY.MAX_LEAD_HOURS": "No honest history has an author date hours after its commit date: amend, rebase and cherry-pick keep the author date and move the commit date later. 6 hours allows two machines' clocks to disagree, as a misset Pakistani clock (5 hours) would.",
     "INTEGRITY.MAX_AHEAD_HOURS": "A commit dated more than 6 hours after the moment it was read was dated by hand. Its repository's commits do not count.",
-    "INTEGRITY.BOT_SHARE": "A repository where half or more of the sampled commits were committed by a bot in the developer's name is automation, not their work."
+    "INTEGRITY.BOT_SHARE": "A repository where half or more of the sampled commits were committed by a bot in the developer's name is automation, not their work.",
+    "COLLABORATION.CAP_STAR_FLOOR": "A group's cap is CAP_PER_GROUP times its best target's star weight, but never less than half: one person vouching through repositories nobody starred gives at most 2, a well-known project the full 4. Not the plain star weight, which cut real student teamwork in 0-star repositories to a fifth (measured 2026-10-16).",
+    "COLLABORATION.BREADTH_POWER": "Groups count largest first, the k-th at 1 / k^0.5: a second person or project adds 71% of its credit, the tenth 32%, the fiftieth 14%. Breadth still counts, but 62 one-line fixes merged across 52 projects no longer outweigh 66 large pull requests merged into one (measured 2026-10-16).",
+    "INTEGRITY.MIN_BOT_SAMPLE": "The bot share is judged on 5 or more sampled commits, so one bot commit in a sample of two does not remove a person's repository.",
+    "INTEGRITY.MISSING_MIN_DAYS": "A repository GitHub credits with commits on 10 or more days, where a complete sample of the developer's commits on the default branch and gh-pages finds none at all, holds credited commits that are not in it any more, and nobody can check them, so its commits do not count. Only none: a history that kept some days is often an honest rewrite or a renamed default branch (two measured on 2026-10-16), so it goes to a moderator instead (scripts/moderation-suspects.js)."
   }
 }

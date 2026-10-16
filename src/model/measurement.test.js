@@ -207,7 +207,7 @@ describe('the stored block', () => {
     const block = encodeMeasurement(sample());
     expect(block.pp.map((p) => p[0])).toEqual(['kgryte', 'newbie', 'stdlib-js']);
     expect(block.ac[0][3]).toBe(2);
-    expect(block.rv[0][3]).toEqual([3, 2, 1, 3, 4, NOBODY]);
+    expect(block.rv[0][3]).toEqual([3, 2, 1, 0, 3, 4, NOBODY, 0]);
   });
 
   it('is positional and flat', () => {

@@ -24,7 +24,7 @@
  * The future probe asks for commits dated two or more days after the measurement's Pakistan date.
  * No time zone is that far ahead, so any commit there carries a date its author made up.
  *
- * ## The stored block (SHAPE_VERSION 2)
+ * ## The stored block (SHAPE_VERSION 3)
  *
  *   v     SHAPE_VERSION
  *   at    measured_at, ISO 8601 to the second
@@ -34,25 +34,36 @@
  *   cr    commits: [repo, flags, stars, [day, commits, ...]]
  *   pr    pull requests opened: [repo, flags, [day, number, outcome, ...]]
  *   is    issues opened: [repo, flags, [day, number, ...]]
- *   rv    reviews given: [repo, flags, stars, [day, number, author, ...]]
- *   ac    pull requests of theirs that someone merged into a repository they do not own, by merge
- *         date: [repo, flags, stars, owner, [day, number, merger, lines, files, ...]]
+ *   rv    reviews given: [repo, flags, stars, [day, number, author, outsider, ...]]. `outsider` is 1
+ *         when GitHub reported the review's author association as NONE: no role in the project.
+ *   ac    pull requests of theirs merged into a repository they do not own, by merge date:
+ *         [repo, flags, stars, owner, [day, number, merger, lines, files, approver, ...]].
+ *         `approver`, for a pull request they merged themselves, is the user who approved it
+ *         (the one whose account is oldest, when several did), else -1.
  *   mt    pull requests by other people merged into their own repositories, by merge date:
  *         [repo, flags, stars, [day, number, author, lines, files, ...]]
  *   pp    people: [login, kind, created]. `owner`, `merger` and `author` index into it, -1 when
  *         GitHub reports no account (deleted). kind is U (user), O (organization), B (bot) or X
  *         (anything else); created is the account's creation date, or null when not reported.
  *   fu    repositories holding commits dated in the future
- *   ig    commit-date samples: [repo, sampled, bot, lead, ahead]. `bot` counts sampled commits a
- *         bot committed; `lead` is the most hours an author date ran ahead of its commit date;
- *         `ahead` the most hours any date ran past the measurement. null when nothing was sampled.
+ *   ig    commit-date samples, of the default branch and gh-pages (the branches GitHub counts):
+ *         [repo, sampled, bot, lead, ahead, days]. `bot` counts sampled commits a bot committed;
+ *         `lead` is the most hours an author date ran ahead of its commit date; `ahead` the most
+ *         hours any date ran past the measurement, both null when nothing was sampled. `days` is
+ *         the Pakistan dates the sample covers when it holds every commit of theirs since the
+ *         window began, else null.
  *   cut   CUT_* bits: which lists are known to be incomplete. Nothing is extrapolated.
  *
  * `day` is the offset into the window, 0 (the oldest date) to 29. Repositories are ordered by
  * name and items by day then number, so equal measurements encode to equal bytes.
+ *
+ * Shape 2 blocks still decode: a review reads as not by an outsider, a merge as unapproved, and a
+ * sample as not covering its days. Those are the readings that change nothing a shape 2 block
+ * said, so a block measured before shape 3 scores as it did, short of the new rules.
  */
 
-export const SHAPE_VERSION = 2;
+export const SHAPE_VERSION = 3;
+const READABLE_SHAPES = new Set([2, 3]);
 export const WINDOW_DAYS = 30;
 export const PKT_OFFSET_HOURS = 5;
 
@@ -216,7 +227,10 @@ export function encodeMeasurement(m) {
   };
   for (const repo of m.accepted) {
     person(repo.owner);
-    repo.items.forEach((item) => person(item.merger));
+    repo.items.forEach((item) => {
+      person(item.merger);
+      person(item.approver);
+    });
   }
   for (const repo of m.reviews) repo.items.forEach((item) => person(item.author));
   for (const repo of m.maintained) repo.items.forEach((item) => person(item.author));
@@ -259,7 +273,12 @@ export function encodeMeasurement(m) {
         r.repo,
         r.flags,
         r.stars,
-        flat(r.items, [(i) => i.day, (i) => i.number, (i) => ref(i.author)])
+        flat(r.items, [
+          (i) => i.day,
+          (i) => i.number,
+          (i) => ref(i.author),
+          (i) => (i.outsider ? 1 : 0)
+        ])
       ]),
     ac: [...m.accepted]
       .sort(byName)
@@ -273,7 +292,8 @@ export function encodeMeasurement(m) {
           (i) => i.number,
           (i) => ref(i.merger),
           (i) => i.lines,
-          (i) => i.files
+          (i) => i.files,
+          (i) => ref(i.approver ?? null)
         ])
       ]),
     mt: [...m.maintained]
@@ -294,7 +314,7 @@ export function encodeMeasurement(m) {
     fu: [...m.future_repos].sort(compareText),
     ig: [...m.integrity]
       .sort(byName)
-      .map((r) => [r.repo, r.sampled, r.bot, r.max_lead_hours, r.max_ahead_hours]),
+      .map((r) => [r.repo, r.sampled, r.bot, r.max_lead_hours, r.max_ahead_hours, r.days ?? null]),
     cut: m.cut
   };
 }
@@ -338,11 +358,13 @@ function tuples(values, width, what) {
 }
 
 /**
- * The readable form of a stored v2 block, or null for anything that is not a well-formed one.
+ * The readable form of a stored block (shape 2 or 3), or null for anything that is not a
+ * well-formed one.
  * Every index into `pp` is checked, so a reader never meets a dangling reference.
  */
 export function decodeMeasurement(block) {
-  if (!block || typeof block !== 'object' || block.v !== SHAPE_VERSION) return null;
+  if (!block || typeof block !== 'object' || !READABLE_SHAPES.has(block.v)) return null;
+  const v3 = block.v === 3;
   try {
     const people = list(block.pp, 'pp').map(([login, kind, created], i) => {
       text(login, `pp[${i}] login`);
@@ -367,7 +389,7 @@ export function decodeMeasurement(block) {
     if (!isCount(block.id)) throw new Malformed('id');
 
     return {
-      version: SHAPE_VERSION,
+      version: block.v,
       measured_at: block.at,
       login: text(block.u, 'u'),
       github_id: block.id,
@@ -404,24 +426,33 @@ export function decodeMeasurement(block) {
         repo: text(repo, 'rv repo'),
         flags: count(flags, `${repo} flags`),
         stars: count(stars, `${repo} stars`),
-        items: tuples(items, 3, `${repo} reviews`).map(([d, number, author]) => ({
-          day: day(d, repo),
-          number: count(number, `${repo} number`),
-          author: who(author, `${repo}#${number} author`)
-        }))
+        items: tuples(items, v3 ? 4 : 3, `${repo} reviews`).map(([d, number, author, outsider]) => {
+          if (v3 && outsider !== 0 && outsider !== 1) {
+            throw new Malformed(`${repo}#${number} outsider ${JSON.stringify(outsider)}`);
+          }
+          return {
+            day: day(d, repo),
+            number: count(number, `${repo} number`),
+            author: who(author, `${repo}#${number} author`),
+            outsider: outsider === 1
+          };
+        })
       })),
       accepted: list(block.ac, 'ac').map(([repo, flags, stars, owner, items]) => ({
         repo: text(repo, 'ac repo'),
         flags: count(flags, `${repo} flags`),
         stars: count(stars, `${repo} stars`),
         owner: who(owner, `${repo} owner`),
-        items: tuples(items, 5, `${repo} merges`).map(([d, number, merger, lines, files]) => ({
-          day: day(d, repo),
-          number: count(number, `${repo} number`),
-          merger: who(merger, `${repo}#${number} merger`),
-          lines: count(lines, `${repo}#${number} lines`),
-          files: count(files, `${repo}#${number} files`)
-        }))
+        items: tuples(items, v3 ? 6 : 5, `${repo} merges`).map(
+          ([d, number, merger, lines, files, approver]) => ({
+            day: day(d, repo),
+            number: count(number, `${repo} number`),
+            merger: who(merger, `${repo}#${number} merger`),
+            lines: count(lines, `${repo}#${number} lines`),
+            files: count(files, `${repo}#${number} files`),
+            approver: v3 ? who(approver, `${repo}#${number} approver`) : null
+          })
+        )
       })),
       maintained: list(block.mt, 'mt').map(([repo, flags, stars, items]) => ({
         repo: text(repo, 'mt repo'),
@@ -437,12 +468,13 @@ export function decodeMeasurement(block) {
       })),
       people,
       future_repos: list(block.fu, 'fu').map((repo) => text(repo, 'fu repo')),
-      integrity: list(block.ig, 'ig').map(([repo, sampled, bot, lead, ahead]) => ({
+      integrity: list(block.ig, 'ig').map(([repo, sampled, bot, lead, ahead, covered]) => ({
         repo: text(repo, 'ig repo'),
         sampled: count(sampled, `${repo} sampled`),
         bot: count(bot, `${repo} bot`),
         max_lead_hours: hours(lead, `${repo} lead`),
-        max_ahead_hours: hours(ahead, `${repo} ahead`)
+        max_ahead_hours: hours(ahead, `${repo} ahead`),
+        days: v3 && covered !== null ? count(covered, `${repo} days`) : null
       })),
       cut: count(block.cut, 'cut')
     };
