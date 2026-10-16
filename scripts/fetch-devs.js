@@ -863,7 +863,13 @@ async function fetchPakistaniDevelopers(options = {}) {
   // unlike a fetch that errored.
   const withScreening = (developers) =>
     options.withScreening
-      ? { developers, screenedOut, locationRejected, discoveryComplete }
+      ? {
+          developers,
+          screenedOut,
+          locationRejected,
+          discoveryComplete,
+          candidates: joined.candidates.map(({ id, login, source }) => ({ id, login, source }))
+        }
       : developers;
 
   if (rawOnly) {

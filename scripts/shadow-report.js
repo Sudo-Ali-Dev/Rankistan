@@ -1,31 +1,59 @@
 /**
- * What the shadow measurement says, read off a board: the instrument the next activity model's
- * caps are chosen with.
+ * What the contributions measurement says, read off a board: the instrument scoring v3's
+ * constants are checked against.
  *
- *   node scripts/shadow-report.js [board.json] [--discount 0.5]     default public/data.json
+ *   node scripts/shadow-report.js [board.json]     default public/data.json
  *
- * Prints markdown: coverage of `shadow_contributions` (scripts/measure/contributions.js), the
- * distribution of every input a candidate rule would read, and candidate activity measures
- * compared with today's `activity_score` and with each other.
+ * Prints markdown: coverage of `shadow_contributions` (scripts/measure/contributions.js), and the
+ * distribution of every input the model reads - working days, merges others accepted and who
+ * merged them, reviews and whose pull requests they were on, merges into the developer's own
+ * repositories, and the commit-date evidence. A block of the previous shape is counted as
+ * waiting for its batch to run, never read.
  *
  * Honest by construction:
  *   - every figure states how many rows it is over;
- *   - nothing is extrapolated: a repository list GitHub cut, pull requests that were not read and
- *     events reads that stopped at their page ceiling are counted and labelled, never scaled up;
- *   - a comparison with `activity_score` uses only rows that carry one;
- *   - "top-k" is the top-k of the rows measured, and k shrinks with them.
+ *   - nothing is extrapolated: a list GitHub cut is counted and labelled, never scaled up.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FLAG_OWNED, SHADOW_FIELD, decodeShadow, truncation } from './measure/contributions.js';
+import { SHADOW_FIELD, decodeMeasurement } from './measure/contributions.js';
+import { provisionalWorkingDays, GATE_MIN_DAYS } from './measure/prescreen-log.js';
+import {
+  CUT_ACCEPTED,
+  CUT_COMMIT_REPOS,
+  CUT_DEGRADED,
+  CUT_INTEGRITY,
+  CUT_ISSUES,
+  CUT_MAINTAINED,
+  CUT_PULL_REQUESTS,
+  CUT_REVIEWS,
+  FLAG_FORK,
+  FLAG_OWNED,
+  KIND_BOT,
+  KIND_USER,
+  OUTCOME_CLOSED,
+  OUTCOME_MERGED,
+  SHAPE_VERSION
+} from '../src/model/measurement.js';
 
-export const CAPS = Object.freeze([5, 10, 20]);
-export const DEFAULT_DISCOUNT = 0.5;
 export const TOP_K = 50;
 /** Below this many rows a rank correlation is noise, and is not printed. */
 export const MIN_ROWS_TO_COMPARE = 10;
+/** The commit-date evidence the report lists; the model holds its own threshold. */
+export const REPORT_LEAD_HOURS = 6;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const CUTS = [
+  [CUT_COMMIT_REPOS, 'commit repository list'],
+  [CUT_PULL_REQUESTS, 'pull requests'],
+  [CUT_ISSUES, 'issues'],
+  [CUT_REVIEWS, 'reviews'],
+  [CUT_ACCEPTED, 'accepted merges'],
+  [CUT_MAINTAINED, 'merges into own repositories'],
+  [CUT_DEGRADED, 'shorter repository list'],
+  [CUT_INTEGRITY, 'commit-date samples']
+];
 
 /** Nearest-rank quantile of a sorted array. */
 function quantile(sorted, p) {
@@ -98,70 +126,53 @@ export function topOverlap(a, b, k) {
   return shared;
 }
 
-const isZeroStarOwned = (repo) => (repo.flags & FLAG_OWNED) !== 0 && repo.stars === 0;
+const ageDays = (created, at) =>
+  created ? Math.floor((Date.parse(at) - Date.parse(`${created}T00:00:00Z`)) / DAY_MS) : null;
 
-/**
- * The candidate activity measures for one decoded measurement. Every one is computed from the
- * listed repositories only; a cut list is reported, not filled in.
- */
-export function candidateMeasures(m, { discount = DEFAULT_DISCOUNT } = {}) {
-  const commitDays = new Set();
-  for (const repo of m.commit_repositories_30d) for (const d of repo.days) commitDays.add(d.day);
-  const out = {
-    calendar_days: m.calendar_60d.slice(-30).filter((n) => n > 0).length,
-    commit_days: commitDays.size,
-    commits: m.commit_repositories_30d.reduce((sum, r) => sum + r.commits, 0)
-  };
-  for (const cap of CAPS) {
-    let capped = 0;
-    let discounted = 0;
-    for (const repo of m.commit_repositories_30d) {
-      const sum = repo.days.reduce((s, d) => s + Math.min(d.commits, cap), 0);
-      capped += sum;
-      discounted += isZeroStarOwned(repo) ? sum * discount : sum;
-    }
-    out[`cap${cap}`] = capped;
-    out[`cap${cap}_z`] = discounted;
-  }
-  return out;
-}
-
-/** The longest run of zero days in the 60-day calendar. */
-export function longestCalendarGap(calendar) {
-  let longest = 0;
-  let run = 0;
-  for (const n of calendar) {
-    run = n > 0 ? 0 : run + 1;
-    longest = Math.max(longest, run);
-  }
-  return longest;
-}
-
-function inputsOf(m) {
-  const t = m.totals_30d;
-  const listed = m.commit_repositories_30d.reduce((sum, r) => sum + r.commits, 0);
-  const zeroOwned = m.commit_repositories_30d
-    .filter(isZeroStarOwned)
-    .reduce((sum, r) => sum + r.commits, 0);
-  const read = m.pull_request_repositories_30d.reduce((sum, r) => sum + r.read, 0);
+/** Every figure the report reads from one decoded measurement. */
+export function inputsOf(m) {
+  const me = m.login.toLowerCase();
+  const isMe = (p) => p && p.login.toLowerCase() === me;
+  const merges = m.accepted.flatMap((r) => r.items.map((item) => ({ repo: r, item })));
+  const reviews = m.reviews.flatMap((r) => r.items);
+  const theirs = m.pull_requests.filter((r) => !(r.flags & (FLAG_OWNED | FLAG_FORK)));
+  const outcomes = theirs.flatMap((r) => r.items.map((i) => i.outcome));
+  const flagged = m.integrity.filter(
+    (s) =>
+      (s.max_lead_hours ?? -Infinity) > REPORT_LEAD_HOURS ||
+      (s.max_ahead_hours ?? -Infinity) > REPORT_LEAD_HOURS ||
+      (s.sampled > 0 && s.bot * 2 >= s.sampled)
+  );
   return {
-    perRepoDay: m.commit_repositories_30d.flatMap((r) => r.days.map((d) => d.commits)),
-    maxRepoDay: Math.max(
-      0,
-      ...m.commit_repositories_30d.flatMap((r) => r.days.map((d) => d.commits))
+    working_days: provisionalWorkingDays(m),
+    restricted: m.restricted,
+    accepted: merges.length,
+    accepted_by_user: merges.filter(
+      ({ item }) => item.merger?.kind === KIND_USER && !isMe(item.merger)
+    ).length,
+    accepted_by_self: merges.filter(({ item }) => isMe(item.merger)).length,
+    accepted_by_bot: merges.filter(({ item }) => item.merger?.kind === KIND_BOT).length,
+    accepted_by_nobody: merges.filter(({ item }) => !item.merger).length,
+    accepted_young_merger: merges.filter(
+      ({ item }) =>
+        item.merger?.kind === KIND_USER &&
+        !isMe(item.merger) &&
+        (ageDays(item.merger.created, m.measured_at) ?? 0) < 365
+    ).length,
+    accepted_owners: new Set(merges.map(({ repo }) => repo.repo.split('/')[0].toLowerCase())).size,
+    accepted_tiny: merges.filter(({ item }) => item.files <= 1 && item.lines <= 5).length,
+    reviews: reviews.length,
+    reviews_self: reviews.filter((i) => isMe(i.author)).length,
+    reviews_bot: reviews.filter((i) => i.author?.kind === KIND_BOT).length,
+    maintained: m.maintained.reduce((s, r) => s + r.items.length, 0),
+    maintained_bot: m.maintained.reduce(
+      (s, r) => s + r.items.filter((i) => i.author?.kind === KIND_BOT).length,
+      0
     ),
-    perRepo: m.commit_repositories_30d.map((r) => r.commits),
-    repositories: t.commit_repositories,
-    zeroOwnedShare: listed > 0 ? zeroOwned / listed : null,
-    restricted: t.restricted,
-    pullRequests: t.pull_requests,
-    mergedByOther: m.pull_request_repositories_30d.reduce((sum, r) => sum + r.merged_by_other, 0),
-    mergedByOtherShare:
-      read > 0
-        ? m.pull_request_repositories_30d.reduce((sum, r) => sum + r.merged_by_other, 0) / read
-        : null,
-    prGap: m.pull_request_gap_30d?.median_seconds ?? null,
-    gap60: longestCalendarGap(m.calendar_60d)
+    others_merged: outcomes.filter((o) => o === OUTCOME_MERGED).length,
+    others_closed: outcomes.filter((o) => o === OUTCOME_CLOSED).length,
+    future_repos: m.future_repos,
+    flagged
   };
 }
 
@@ -180,357 +191,154 @@ function table(header, rows) {
   ].join('\n');
 }
 
+function describeStats(s, digits = 0) {
+  if (!s.n) return 'none';
+  const at = (value) => fmt(value, digits);
+  return `p50 ${at(s.p50)}, p90 ${at(s.p90)}, p99 ${at(s.p99)}, max ${at(s.max)} (n=${s.n})`;
+}
+
 /**
  * The report for a board payload, as markdown.
  * @param {object} payload  data.json's shape
- * @param {{ discount?: number, source?: string }} [options]
+ * @param {{ source?: string }} [options]
  */
-export function buildReport(payload, { discount = DEFAULT_DISCOUNT, source = 'board' } = {}) {
+export function buildReport(payload, { source = 'board' } = {}) {
   const rows = Array.isArray(payload?.leaderboard) ? payload.leaderboard : [];
   const boardAt = Date.parse(payload?.last_updated);
   const measured = [];
+  let previousShape = 0;
   let undecodable = 0;
+  let bytes = 0;
   for (const row of rows) {
-    if (row?.[SHADOW_FIELD] == null) continue;
-    const m = decodeShadow(row[SHADOW_FIELD]);
+    const block = row?.[SHADOW_FIELD];
+    if (block == null) continue;
+    if (block.v !== SHAPE_VERSION) {
+      previousShape += 1;
+      continue;
+    }
+    const m = decodeMeasurement(block);
     if (!m) {
       undecodable += 1;
       continue;
     }
-    measured.push({ row, m, inputs: inputsOf(m), cut: truncation(m) });
+    bytes += JSON.stringify(block).length;
+    measured.push({ row, m, inputs: inputsOf(m) });
   }
-  const n = measured.length;
-  const count = (test) => measured.filter(test).length;
-  const gapUnder = (seconds) => (x) => x.inputs.prGap != null && x.inputs.prGap < seconds;
-  const out = [];
 
-  out.push('# Shadow contributions report', '');
+  const out = [`# Contributions measurement report (${source})`, ''];
   out.push(
-    `Source: ${source}, last_updated ${payload?.last_updated ?? 'unknown'}, ${rows.length} rows. ` +
-      `${n} rows carry a decodable block` +
-      (undecodable ? `, ${undecodable} carry one this code cannot read` : '') +
-      '. Every figure below is over the rows it names; nothing is extrapolated.',
+    `Rows: ${rows.length}. Measured in shape ${SHAPE_VERSION}: ${measured.length} ` +
+      `(${pct(measured.length, rows.length)}). In the previous shape, waiting for their batch: ` +
+      `${previousShape}. Undecodable: ${undecodable}. Without a block: ` +
+      `${rows.length - measured.length - previousShape - undecodable}.`,
     ''
   );
-
-  // Coverage
-  out.push('## Coverage', '');
-  out.push(`- Rows with a block: ${n} of ${rows.length} (${pct(n, rows.length)}).`);
-  const windows = new Map();
-  for (const { m } of measured) {
-    const key = `${m.scoring_window.from}..${m.scoring_window.to}`;
-    windows.set(key, (windows.get(key) || 0) + 1);
-  }
-  if (windows.size) {
-    out.push(
-      `- Scoring windows, [from, to): ${[...windows].map(([w, c]) => `${w} (${c})`).join(', ')}.`
-    );
-  }
-  const ages = {
-    'after last_updated': 0,
-    '< 1 day': 0,
-    '1-2 days': 0,
-    '2-7 days': 0,
-    '>= 7 days': 0,
-    unknown: 0
-  };
-  for (const { m } of measured) {
-    const age = (boardAt - Date.parse(m.measured_at)) / DAY_MS;
-    if (!Number.isFinite(age)) ages.unknown += 1;
-    else if (age < 0) ages['after last_updated'] += 1;
-    else if (age < 1) ages['< 1 day'] += 1;
-    else if (age < 2) ages['1-2 days'] += 1;
-    else if (age < 7) ages['2-7 days'] += 1;
-    else ages['>= 7 days'] += 1;
-  }
-  out.push(
-    `- Age at last_updated: ${
-      Object.entries(ages)
-        .filter(([, c]) => c > 0)
-        .map(([a, c]) => `${a} ${c}`)
-        .join(', ') || 'none'
-    }.`,
-    ''
-  );
-  const byBatch = new Map();
-  for (const row of rows) {
-    const b = row?.batch_index ?? '?';
-    const entry = byBatch.get(b) || { rows: 0, blocks: 0 };
-    entry.rows += 1;
-    if (decodeShadow(row?.[SHADOW_FIELD])) entry.blocks += 1;
-    byBatch.set(b, entry);
-  }
-  out.push(
-    table(
-      ['batch', 'rows', 'with a block', 'share'],
-      [...byBatch]
-        .sort((a, b) => Number(a[0]) - Number(b[0]))
-        .map(([b, e]) => [b, e.rows, e.blocks, pct(e.blocks, e.rows)])
-    ),
-    ''
-  );
-
-  if (n === 0) {
-    out.push('No row carries a block yet, so there is nothing more to report.');
+  if (measured.length === 0) {
+    out.push('No row carries a measurement of this shape yet.');
     return out.join('\n');
   }
 
-  // Truncation
-  const cutRepos = measured.filter((x) => x.cut.commit_repositories);
-  const unlisted = cutRepos.reduce((sum, x) => sum + x.cut.commits_unlisted, 0);
-  const withEvents = measured.filter((x) => x.row.events_window);
-  const truncatedEvents = withEvents.filter((x) => x.row.events_window.truncated);
-  out.push('## What was not seen', '');
+  const n = measured.length;
+  const ages = measured.map(({ m }) => (boardAt - Date.parse(m.measured_at)) / 3600000);
   out.push(
-    `- Commit repository list cut by GitHub: ${cutRepos.length} of ${n} rows, ${unlisted} commits ` +
-      'unlisted. Per-repository figures for these rows cover the listed repositories only.',
-    `- Pull request repository list cut: ` +
-      `${measured.filter((x) => x.cut.pull_request_repositories).length} of ${n} rows; rows with ` +
-      `more pull requests in one repository than were read: ` +
-      `${measured.filter((x) => x.cut.pull_requests_unread).length} of ${n}. Merged counts cover ` +
-      'the pull requests read.',
-    `- Events read behind \`activity_score\` stopped at its page ceiling: ${truncatedEvents.length} ` +
-      `of ${withEvents.length} rows that record it; days those reads reached back: ` +
-      `${describeStats(summarize(truncatedEvents.map((x) => x.row.events_window.days)), 1)}.`,
-    `- Rows sharing private counts (restricted > 0): ${count((x) => x.inputs.restricted > 0)} ` +
-      `of ${n}. Their calendar days include private work, which is context and never scored.`,
+    `Block age at the board's last update, hours: ${describeStats(summarize(ages), 1)}.`,
+    `Block size, bytes: ${describeStats(summarize(measured.map(({ row }) => JSON.stringify(row[SHADOW_FIELD]).length)))}; ` +
+      `${bytes} in all.`,
     ''
   );
 
-  // Distributions
-  out.push('## Inputs', '');
-  const dist = (label, values, digits = 0) => {
-    const s = summarize(values);
-    return [
-      label,
-      s.n,
-      fmt(s.p50, digits),
-      fmt(s.p90, digits),
-      fmt(s.p99, digits),
-      fmt(s.max, digits)
-    ];
-  };
-  const all = (key) => measured.map((x) => x.inputs[key]);
-  const flat = (key) => measured.flatMap((x) => x.inputs[key]);
-  const decoded = (fn) => measured.map((x) => fn(x));
+  out.push('## Cut lists', '');
   out.push(
     table(
-      ['input (30 days unless named)', 'n', 'p50', 'p90', 'p99', 'max'],
+      ['list', 'rows'],
+      CUTS.map(([bit, name]) => [name, `${measured.filter(({ m }) => m.cut & bit).length} of ${n}`])
+    ),
+    ''
+  );
+
+  const field = (key) => measured.map(({ inputs }) => inputs[key]);
+  const sum = (key) => field(key).reduce((a, b) => a + b, 0);
+  const rowsWith = (key) => measured.filter(({ inputs }) => inputs[key] > 0).length;
+
+  out.push('## Working days', '');
+  out.push(
+    `Provisional definition (scripts/measure/prescreen-log.js): ${describeStats(summarize(field('working_days')))}. ` +
+      `Under ${GATE_MIN_DAYS}: ${measured.filter(({ inputs }) => inputs.working_days < GATE_MIN_DAYS).length} of ${n}.`,
+    `Private contributions (context, never scored): ${describeStats(summarize(field('restricted')))}; ` +
+      `rows sharing any: ${rowsWith('restricted')} of ${n}.`,
+    ''
+  );
+
+  out.push('## Merges into repositories the developer does not own', '');
+  out.push(
+    table(
+      ['figure', 'merges', 'rows'],
       [
-        dist('commits per repository per day (days with any)', flat('perRepoDay')),
-        dist('max commits in one repository on one day, per row', all('maxRepoDay')),
-        dist('commits per repository', flat('perRepo')),
-        dist('repositories with commits, per row', all('repositories')),
-        dist(
-          'commits, per row',
-          decoded((x) => x.m.totals_30d.commits)
-        ),
-        dist(
-          'calendar active days (includes private)',
-          decoded((x) => candidateMeasures(x.m).calendar_days)
-        ),
-        dist(
-          'commit active days',
-          decoded((x) => candidateMeasures(x.m).commit_days)
-        ),
-        dist('share of commits in owned zero-star repositories', all('zeroOwnedShare'), 2),
-        dist('restricted (private) contributions', all('restricted')),
-        dist('pull requests opened', all('pullRequests')),
-        dist('pull requests merged by someone else (of those read)', all('mergedByOther')),
-        dist('share merged by someone else (of those read)', all('mergedByOtherShare'), 2),
-        dist('median seconds between PR creations (>= 5 PRs)', all('prGap')),
-        dist('longest calendar gap in 60 days, days', all('gap60'))
-      ]
+        ['all', sum('accepted'), rowsWith('accepted')],
+        ['merged by another user', sum('accepted_by_user'), rowsWith('accepted_by_user')],
+        [
+          '  of which the merger is under a year old',
+          sum('accepted_young_merger'),
+          rowsWith('accepted_young_merger')
+        ],
+        ['merged by the developer', sum('accepted_by_self'), rowsWith('accepted_by_self')],
+        ['merged by a bot', sum('accepted_by_bot'), rowsWith('accepted_by_bot')],
+        ['merger account gone', sum('accepted_by_nobody'), rowsWith('accepted_by_nobody')],
+        ['one file and at most 5 lines', sum('accepted_tiny'), rowsWith('accepted_tiny')]
+      ].map(([a, b, c]) => [a, b, `${c} of ${n}`])
     ),
-    ''
-  );
-  const zeroAll = measured.filter((x) => x.inputs.zeroOwnedShare === 1).length;
-  const noOther = measured.filter(
-    (x) => x.inputs.pullRequests > 0 && x.inputs.mergedByOther === 0
-  ).length;
-  out.push(
-    `- Rows whose every listed commit is in an owned zero-star repository: ${zeroAll} of ${n}.`,
-    `- Rows with pull requests, none merged by someone else: ${noOther} of ` +
-      `${measured.filter((x) => x.inputs.pullRequests > 0).length}.`,
-    `- Rows with a PR-creation median under 61 s: ${count(gapUnder(61))}; ` +
-      `under 300 s: ${count(gapUnder(300))} ` +
-      `(of ${measured.filter((x) => x.inputs.prGap != null).length} with a median).`,
-    ''
-  );
-
-  // Candidates
-  const candidates = measured.map((x) => candidateMeasures(x.m, { discount }));
-  const names = Object.keys(candidates[0]);
-  const scored = measured
-    .map((x, i) => ({ x, c: candidates[i] }))
-    .filter(
-      ({ x }) => typeof x.row.activity_score === 'number' && Number.isFinite(x.row.activity_score)
-    );
-  const k = Math.min(TOP_K, Math.floor(scored.length / 5));
-  out.push('## Candidate activity measures', '');
-  out.push(
-    '`calendar_days` and `commit_days` count active days in the scoring window; `commits` is the ' +
-      `listed total; \`capK\` sums min(commits, K) over every repository-day; \`capK_z\` is the same ` +
-      `with owned zero-star repositories weighted ${discount}. Compared with today's ` +
-      `\`activity_score\` over the ${scored.length} rows that carry both; top-k overlap uses ` +
-      `k = ${k} (min(${TOP_K}, n/5)), so below ${TOP_K * 5} rows it is not ` +
-      `the top-${TOP_K} of the board.`,
-    ''
-  );
-  const activity = scored.map(({ x }) => x.row.activity_score);
-  const comparable = scored.length >= MIN_ROWS_TO_COMPARE;
-  const withEvents30 = measured
-    .map((x, i) => ({ c: candidates[i], e: x.row.events_30d }))
-    .filter(({ e }) => Number.isInteger(e));
-  const events30 = withEvents30.map(({ e }) => e);
-  if (!comparable) {
-    out.push(
-      `Only ${scored.length} rows carry both, under the ${MIN_ROWS_TO_COMPARE} this report ` +
-        'compares on; the activity_score columns are left empty rather than filled with noise.',
-      ''
-    );
-  }
-  out.push(
-    table(
-      [
-        'candidate',
-        `Spearman vs activity_score (n=${scored.length})`,
-        `top-${k} shared with activity_score`,
-        `Spearman vs events_30d (n=${withEvents30.length})`
-      ],
-      names.map((name) => {
-        const values = scored.map(({ c }) => c[name]);
-        return [
-          name,
-          comparable ? fmt(spearman(values, activity), 3) : '-',
-          comparable && k > 0 ? `${topOverlap(values, activity, k)} of ${k}` : '-',
-          fmt(
-            spearman(
-              withEvents30.map(({ c }) => c[name]),
-              events30
-            ),
-            3
-          )
-        ];
-      })
-    ),
-    ''
-  );
-  const truncatedScored = scored.filter(({ x }) => x.row.events_window?.truncated);
-  if (truncatedScored.length) {
-    out.push(
-      `${truncatedScored.length} of these ${scored.length} \`activity_score\` values came from ` +
-        'an events read that stopped at its page ceiling: the baseline itself saw only part of ' +
-        'the window.',
-      ''
-    );
-  }
-
-  out.push(`Candidates against each other, over all ${n} rows with a block (Spearman):`, '');
-  out.push(
-    table(
-      ['', ...names],
-      names.map((a) => [
-        a,
-        ...names.map((b) =>
-          fmt(
-            spearman(
-              candidates.map((c) => c[a]),
-              candidates.map((c) => c[b])
-            ),
-            2
-          )
-        )
-      ])
-    ),
-    ''
-  );
-
-  // Extremes
-  const place = {};
-  for (const name of names) {
-    const p = positions(candidates.map((c) => c[name]));
-    place[name] = (i) => p[i];
-  }
-  const activityPositions = positions(
-    measured.map((x) => (typeof x.row.activity_score === 'number' ? x.row.activity_score : -1))
-  );
-  const pick = new Set();
-  const by = (fn) =>
-    measured
-      .map((x, i) => ({ i, v: fn(x, i) }))
-      .sort((a, b) => b.v - a.v)
-      .slice(0, 5)
-      .forEach(({ i }) => pick.add(i));
-  by((x) => x.m.totals_30d.commits);
-  by((x) => x.inputs.maxRepoDay);
-  by((x) => x.inputs.pullRequests - x.inputs.mergedByOther);
-  by((x) => (x.inputs.prGap == null ? -Infinity : -x.inputs.prGap));
-  out.push(
-    `## Where the most extreme accounts land (positions among the ${n} rows with a block)`,
     '',
-    'The five highest by commits, by commits in one repository on one day, and by pull requests ' +
-      'not merged by someone else, and the five with the shortest PR-creation median. The ' +
-      '`activity_score` column and each candidate column are positions, 1 the highest.',
+    `Distinct owners per developer: ${describeStats(summarize(field('accepted_owners').filter((v) => v > 0)))}.`,
+    `Their pull requests to others' repositories opened in the window: ${sum('others_merged')} merged, ` +
+      `${sum('others_closed')} closed without merging.`,
     ''
   );
+
+  out.push('## Reviews and merges into their own repositories', '');
   out.push(
-    table(
-      [
-        'developer',
-        'board rank',
-        'commits',
-        'max repo-day',
-        'owned zero-star share',
-        'PRs (by others)',
-        'PR median s',
-        'events read, days',
-        'activity_score',
-        ...names
-      ],
-      [...pick]
-        .sort((a, b) => measured[b].m.totals_30d.commits - measured[a].m.totals_30d.commits)
-        .map((i) => {
-          const { row, m, inputs, cut } = measured[i];
-          return [
-            row.username,
-            row.rank ?? '-',
-            cut.commit_repositories
-              ? `${m.totals_30d.commits} (${m.totals_30d.commits - cut.commits_unlisted} listed)`
-              : m.totals_30d.commits,
-            inputs.maxRepoDay,
-            fmt(inputs.zeroOwnedShare, 2),
-            `${inputs.pullRequests} (${inputs.mergedByOther})`,
-            fmt(inputs.prGap),
-            row.events_window ? fmt(row.events_window.days, 1) : '-',
-            typeof row.activity_score === 'number' ? `#${activityPositions[i]}` : '-',
-            ...names.map((name) => `#${place[name](i)}`)
-          ];
-        })
-    ),
+    `Reviews: ${sum('reviews')} on ${rowsWith('reviews')} rows; on their own pull requests ` +
+      `${sum('reviews_self')}, on a bot's ${sum('reviews_bot')}.`,
+    `Other people's pull requests merged into their repositories: ${sum('maintained')} on ` +
+      `${rowsWith('maintained')} rows, ${sum('maintained_bot')} of them by bots.`,
     ''
   );
+
+  out.push('## Commit-date evidence', '');
+  const future = measured.filter(({ inputs }) => inputs.future_repos.length > 0);
+  const flagged = measured.filter(({ inputs }) => inputs.flagged.length > 0);
+  out.push(
+    `Rows with commits dated in the future: ${future.length} of ${n}. Rows with a sampled ` +
+      `repository whose author dates run more than ${REPORT_LEAD_HOURS} h ahead of their commit ` +
+      `dates or past the measurement, or whose commits are half or more by a bot: ${flagged.length} of ${n}.`,
+    ''
+  );
+  if (future.length + flagged.length > 0) {
+    out.push(
+      table(
+        ['developer', 'repository', 'evidence'],
+        [
+          ...future.flatMap(({ m, inputs }) =>
+            inputs.future_repos.map((repo) => [m.login, repo, 'future-dated commits'])
+          ),
+          ...flagged.flatMap(({ m, inputs }) =>
+            inputs.flagged.map((s) => [
+              m.login,
+              s.repo,
+              `lead ${fmt(s.max_lead_hours, 1)} h, ahead ${fmt(s.max_ahead_hours, 1)} h, bot ${s.bot}/${s.sampled}`
+            ])
+          )
+        ]
+      ),
+      ''
+    );
+  }
   return out.join('\n');
 }
 
-function describeStats(s, digits = 0) {
-  if (!s.n) return 'none';
-  const at = (value) => fmt(value, digits);
-  return `p50 ${at(s.p50)}, p90 ${at(s.p90)}, max ${at(s.max)} (n=${s.n})`;
-}
-
 function main(argv) {
-  const args = [...argv];
-  const discountAt = args.indexOf('--discount');
-  let discount = DEFAULT_DISCOUNT;
-  if (discountAt !== -1) {
-    discount = Number(args[discountAt + 1]);
-    args.splice(discountAt, 2);
-    if (!(discount >= 0 && discount <= 1)) throw new Error('--discount must be between 0 and 1');
-  }
-  const target = path.resolve(process.cwd(), args[0] || path.join('public', 'data.json'));
+  const target = path.resolve(process.cwd(), argv[0] || path.join('public', 'data.json'));
   const payload = JSON.parse(fs.readFileSync(target, 'utf8'));
-  console.log(buildReport(payload, { discount, source: path.relative(process.cwd(), target) }));
+  console.log(buildReport(payload, { source: path.relative(process.cwd(), target) }));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
