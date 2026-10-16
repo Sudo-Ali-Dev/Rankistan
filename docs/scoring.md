@@ -228,7 +228,12 @@ graph-painting service, with author dates 21.8 hours after their commit dates.
 
 **What is left to a person.** 18 repositories have commits on 20 or more days at a near-constant
 rate. They are listed for a moderator to check against the commits, not excluded, and none belongs
-to a developer in the top 50. `public/moderation.json` starts empty.
+to a developer in the top 50. Read one by one on 16 October, 13 went into `public/moderation.json`.
+11 are scripts committing in the developer's name, such as 248 commits titled "update activity log"
+or a script updating health check logs up to eight times a day. 2 are repositories where GitHub counts
+commits on 20 or more days that are not in the repository's history, so nobody can check them. The
+other 5 read as a person's work, LeetCode solutions, a game and a portfolio, and still count. The
+13 entries lower 10 developers' scores and take 3 of them below the gate.
 
 **Collaboration.** 4,586 merges went into repositories the developer does not own, for 252
 developers. 3,525 of them the developer merged themselves, which counts for nothing. 1,046 were

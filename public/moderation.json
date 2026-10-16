@@ -1,4 +1,83 @@
 {
   "about": "Repositories whose commits do not count toward a Rankistan score, each with the reason and the evidence. A listed repository loses only its own commits, and the developer's other work still counts. To appeal an entry, open an issue at https://github.com/Sudo-Ali-Dev/Rankistan/issues.",
-  "repositories": []
+  "repositories": [
+    {
+      "repo": "adisher/youtube-poop",
+      "reason": "The gh-pages branch holds 91 commits titled \"remnant state update\" made by LLM Shorts Bot in the developer's name, around the clock.",
+      "evidence": "https://github.com/adisher/youtube-poop/commits/gh-pages?author=adisher&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "asimzeeshan/eva-tech-brief",
+      "reason": "Every commit in the window is one a day titled with that day's date, 23 of them, each made between 14:26 and 14:28 UTC.",
+      "evidence": "https://github.com/asimzeeshan/eva-tech-brief/commits/main?author=asimzeeshan&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "asteroidcrib729/job-finder-app",
+      "reason": "107 commits titled \"update job discovery state\" in 30 days, all committed by Job Finder Bot in the developer's name, two to five a day.",
+      "evidence": "https://github.com/asteroidcrib729/job-finder-app/commits/main?author=asteroidcrib729&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "DevMirza-Blog/devmirza-blog-backend-new",
+      "reason": "26 identical commits titled \"Update package-lock.json to latest\", one a day between 02:37 and 04:50 UTC.",
+      "evidence": "https://github.com/DevMirza-Blog/devmirza-blog-backend-new/commits/main?author=Zaid-maker&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "faizanali2k05/daily-activity",
+      "reason": "All 248 commits in the window are titled \"update activity log\" with the time they were made, five to twelve a day.",
+      "evidence": "https://github.com/faizanali2k05/daily-activity/commits/main?author=faizanali2k05&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "faizanali2k05/python-practice",
+      "reason": "212 of 213 commits in the window are titled \"update activity log\" with the time they were made, up to twelve a day.",
+      "evidence": "https://github.com/faizanali2k05/python-practice/commits/main?author=faizanali2k05&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "faizanali2k05/rust-practice",
+      "reason": "195 of 196 commits in the window are titled \"update activity log\" with the time they were made, four to ten a day.",
+      "evidence": "https://github.com/faizanali2k05/rust-practice/commits/main?author=faizanali2k05&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "Mati54866/SaaS_template",
+      "reason": "GitHub counts a commit here on each of 22 days of the window, and the repository's whole history is 2 commits, so the rest cannot be checked by anyone.",
+      "evidence": "https://github.com/Mati54866/SaaS_template/commits/main",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "openedx/wg-maintenance",
+      "reason": "22 repository health data updates committed by Repo Health Bot in the developer's name, one a day, each merged about two hours later.",
+      "evidence": "https://github.com/openedx/wg-maintenance/commits/main?author=UsamaSadiq&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "ryomenhaider/daily-data",
+      "reason": "968 commits in 30 days, 22 to 33 every day, each recording or publishing a timestamped pipeline run merged from a branch named automation/run.",
+      "evidence": "https://github.com/ryomenhaider/daily-data/commits/main?author=ryomenhaider&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "salman-rafii/School-Calendar-Demo",
+      "reason": "GitHub counts 96 commits here on 20 days of the window, and the repository's history holds one of them, so the rest cannot be checked by anyone.",
+      "evidence": "https://github.com/salman-rafii/School-Calendar-Demo/commits/main",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "Zaid-maker/status-page",
+      "reason": "164 commits titled \"[Automated] Update Health Check Logs\" in 30 days, three to eight a day around the clock.",
+      "evidence": "https://github.com/Zaid-maker/status-page/commits/main?author=Zaid-maker&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "zaidhafeeez/ideal-bassoon",
+      "reason": "159 commits titled \"[Automated] Update Health Check Logs\" in 30 days, three to eight a day around the clock.",
+      "evidence": "https://github.com/zaidhafeeez/ideal-bassoon/commits/main?author=zaidhafeeez&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    }
+  ]
 }
