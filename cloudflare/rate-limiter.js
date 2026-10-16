@@ -25,41 +25,57 @@
 const WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS = 20;
 
-// Bound the stored array so a caller cannot grow one object's storage without
-// limit. Only timestamps inside the window matter, and the window can never
-// legitimately hold more than MAX_REQUESTS of them.
-const MAX_STORED = MAX_REQUESTS * 2;
+// A caller may ask for a different limit on its own object (the score preview does), within
+// these bounds. The object id is chosen by the Worker, never by a client, so a client cannot pick
+// a laxer limit for a counter it shares with others.
+const MAX_ALLOWED_REQUESTS = 1000;
+const MAX_ALLOWED_WINDOW_MS = 60 * 60 * 1000;
+
+function limitsOf(request) {
+  const params = request ? new URL(request.url).searchParams : new URLSearchParams();
+  const max = Number(params.get('max'));
+  const windowMs = Number(params.get('window'));
+  return {
+    max: Number.isInteger(max) && max > 0 && max <= MAX_ALLOWED_REQUESTS ? max : MAX_REQUESTS,
+    windowMs:
+      Number.isInteger(windowMs) && windowMs > 0 && windowMs <= MAX_ALLOWED_WINDOW_MS
+        ? windowMs
+        : WINDOW_MS
+  };
+}
 
 export class RateLimiter {
   constructor(state) {
     this.state = state;
   }
 
-  async fetch() {
+  async fetch(request) {
+    const { max: MAX, windowMs: WINDOW } = limitsOf(request);
+    // Bound the stored array so a caller cannot grow one object's storage without
+    // limit. Only timestamps inside the window matter, and the window can never
+    // legitimately hold more than MAX of them.
+    const MAX_STORED = MAX * 2;
     const now = Date.now();
-    const cutoff = now - WINDOW_MS;
+    const cutoff = now - WINDOW;
 
     const stored = (await this.state.storage.get('hits')) || [];
     const recent = stored.filter((ts) => ts > cutoff);
 
-    if (recent.length >= MAX_REQUESTS) {
+    if (recent.length >= MAX) {
       // Persist the pruned array so storage does not keep expired entries, but
       // do not record this attempt: a rejected request must not extend the
       // window, otherwise a caller who keeps hammering is locked out forever.
       if (recent.length !== stored.length) {
         await this.state.storage.put('hits', recent.slice(-MAX_STORED));
       }
-      const retryAfter = Math.max(1, Math.ceil((recent[0] + WINDOW_MS - now) / 1000));
+      const retryAfter = Math.max(1, Math.ceil((recent[0] + WINDOW - now) / 1000));
       return Response.json({ allowed: false, retryAfter }, { status: 200 });
     }
 
     recent.push(now);
     await this.state.storage.put('hits', recent.slice(-MAX_STORED));
 
-    return Response.json(
-      { allowed: true, remaining: MAX_REQUESTS - recent.length },
-      { status: 200 }
-    );
+    return Response.json({ allowed: true, remaining: MAX - recent.length }, { status: 200 });
   }
 }
 

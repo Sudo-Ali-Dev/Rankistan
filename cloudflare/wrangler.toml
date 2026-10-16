@@ -33,3 +33,16 @@ script_name = "rankistan-summary-api"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RateLimiter"]
+
+# The score preview (/api/score-preview/:login, score-preview.js) keeps one measured result per
+# login until the Pakistan date turns over. The Cache API does nothing on *.workers.dev, so the
+# cache is a Durable Object too. Reads with the secret GITHUB_PREVIEW_TOKEN when set (a
+# fine-grained token with public read only), else GITHUB_DISPATCH_TOKEN; never the pipeline's.
+[[durable_objects.bindings]]
+name = "PREVIEW_CACHE"
+class_name = "PreviewCache"
+script_name = "rankistan-summary-api"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PreviewCache"]
