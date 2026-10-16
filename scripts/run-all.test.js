@@ -526,6 +526,72 @@ describe('runBatch', () => {
     ]);
   });
 
+  describe('Rank History', () => {
+    const run = (store, history, lines = []) =>
+      runBatch({
+        rescore: keepScores,
+        verify: checkDuplicates,
+        registry: noIntents,
+        batchIndex: 0,
+        store,
+        measure: async () => ({ newEntries: [row('a', 0, 900)], evaluated: ['a'] }),
+        name: 'state-1-1.json.gz',
+        now: NOW,
+        history,
+        log: { log: (l) => lines.push(l), warn: (l) => lines.push(l) }
+      });
+    const loaded = { ...state(existing), history_through: '2026-10-11', history_scrubbed: [5] };
+
+    it('brings the history up to date before the save, and records how far it got', async () => {
+      const calls = [];
+      const store = memoryStore(loaded, calls);
+      const asked = [];
+      await run(store, async (args) => {
+        calls.push('history');
+        asked.push(args);
+        return {
+          through: '2026-10-12',
+          scrubbed: [5],
+          written: ['2026-10-12'],
+          gaps: [],
+          purged: []
+        };
+      });
+      expect(calls).toEqual(['load', 'history', 'save']);
+      expect(asked[0]).toMatchObject({ through: '2026-10-11', scrubbed: [5], now: NOW });
+      expect(store.saved.board).toMatchObject({
+        history_through: '2026-10-12',
+        history_scrubbed: [5]
+      });
+    });
+
+    it('saves the board anyway when the history cannot be written, and tries again next run', async () => {
+      const store = memoryStore(loaded, []);
+      const lines = [];
+      await run(
+        store,
+        async () => {
+          throw new Error('HTTP 502');
+        },
+        lines
+      );
+      expect(store.saved.board).toMatchObject({
+        history_through: '2026-10-11',
+        history_scrubbed: [5]
+      });
+      expect(lines.some((l) => l.startsWith('::warning title=RANK_HISTORY::'))).toBe(true);
+    });
+
+    it('carries the history pointer forward on a run that does not write it', async () => {
+      const store = memoryStore(loaded, []);
+      await run(store, null);
+      expect(store.saved.board).toMatchObject({
+        history_through: '2026-10-11',
+        history_scrubbed: [5]
+      });
+    });
+  });
+
   it('records when this batch ran, and carries every other batch run forward', async () => {
     const calls = [];
     const earlier = { 7: { at: at(1), measured: 3, complete: true } };

@@ -231,7 +231,7 @@ describe('pipeline-only fields', () => {
 
 describe('pipeline-only top-level fields', () => {
   it('keep who left the board, and why, out of every file the browser or the Worker reads', () => {
-    expect(PIPELINE_ONLY_TOP_FIELDS).toEqual(['departures', 'history_through']);
+    expect(PIPELINE_ONLY_TOP_FIELDS).toEqual(['departures', 'history_through', 'history_scrubbed']);
     const state = {
       ...REAL,
       departures: [{ at: '2026-10-17T03:00:00.000Z', id: 7, reason: 'displaced' }],

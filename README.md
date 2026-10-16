@@ -129,6 +129,8 @@ Rows owned by the other 23 batches are carried across untouched, the whole board
 
 The board is pipeline state, not a file in git. Each run of `update-digest.yml` loads the newest state from the [`pipeline-state`](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/pipeline-state) release, merges its batch in, and saves the whole board back as a new asset, `state-<run_id>-<run_attempt>.json.gz` (the shape of `data.json`, gzipped). The newest 72 are kept, and so is the last state of each Pakistan date for 400 days, the record a history of the board is built from. See [`scripts/state-store.js`](scripts/state-store.js).
 
+Rank History is kept beside it, on the [`board-history`](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/board-history) release, one gzipped file per month with one line per Pakistan date, where every developer on the board stood at that day's close. The first run after a date ends writes it, about 24 KB. History starts on 17 October 2026, and a developer who opts out is removed from every file. See [`scripts/rank-history.js`](scripts/rank-history.js), [`scripts/history-store.js`](scripts/history-store.js) and [`docs/rank-history-design.md`](docs/rank-history-design.md).
+
 Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, unscorable, displaced below the 1,000 cap, or opted out. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. The site's own `data.json` is that state without its pipeline-only fields (the contributions measurement) and without the per-developer evidence, which only `dev/<login>.json` carries, so the Worker and outside readers download what they did before those fields existed. A code push and a data update therefore both deploy the latest of each.
 
 `public/data.json` used to be committed every hour, and was 98.4% of the repository's packed size.
@@ -342,6 +344,8 @@ scripts/
     locations.js        # The 15 cities, the excluded names, the foreign-place reject list
   registry.js           # Registration and opt-out issues, keyed on the account id
   state-store.js        # The board's state on the pipeline-state release (save, pull, restore)
+  rank-history.js       # Rank History: one record per Pakistan date, from that day's close
+  history-store.js      # Rank History's months on the board-history release, and the daily write
   should-run.js         # The backup trigger's guard: does a run already cover this hour?
   watchdog.js           # Hourly checks; keeps one self-closing issue
   score.js              # Batch scoring (a thin wrapper over src/model/)
