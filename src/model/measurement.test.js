@@ -23,8 +23,7 @@ import {
   isMeasurement,
   measurementWindow,
   pktDate,
-  repositoryFlags,
-  searchMergedRange
+  repositoryFlags
 } from './measurement.js';
 
 const NOW = Date.parse('2026-10-14T09:30:00Z');
@@ -52,10 +51,6 @@ describe('measurementWindow', () => {
 
   it('probes for future commits from two days after the measurement, for a year', () => {
     expect(W.future).toEqual({ from: '2026-10-16T00:00:00Z', to: '2027-10-15T23:59:59Z' });
-  });
-
-  it('gives a search range to the second', () => {
-    expect(searchMergedRange(W)).toBe('2026-09-13T19:00:00+00:00..2026-10-13T18:59:59+00:00');
   });
 
   it('refuses a measurement without a time', () => {

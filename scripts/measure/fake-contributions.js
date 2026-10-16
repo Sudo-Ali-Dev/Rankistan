@@ -44,7 +44,8 @@ export function person(login, options = {}) {
     restricted = 0,
     commitRepositories,
     prPages = [],
-    acceptedPages = []
+    acceptedPages = [],
+    repositories = null
   } = options;
   const commitEntries = Object.entries(commits).map(([name, byDay]) => ({
     repository: repo(name, { stars: stars[name] ?? 0 }),
@@ -76,24 +77,50 @@ export function person(login, options = {}) {
       }
     },
     prPages,
-    accepted: {
-      issueCount: accepted.length,
-      pageInfo: { hasNextPage: acceptedPages.length > 0, endCursor: 'a1' },
-      nodes: accepted
-    },
+    accepted: page(accepted, acceptedPages.length ? 'a1' : null),
     acceptedPages,
-    maintained: {
-      issueCount: maintained.length,
-      pageInfo: { hasNextPage: false, endCursor: null },
-      nodes: maintained
-    },
+    // Their own repositories, newest push first: those they committed to (pushed on their last
+    // commit day) and those others' pull requests were merged into, with those merges.
+    repositories: repositories ?? ownRepositories(login, commitEntries, maintained),
     history
   };
 }
 
-export const prNode = (offset, name, { merged = false, state = 'OPEN', number = 1 } = {}) => ({
+function ownRepositories(login, commitEntries, maintained) {
+  const byName = new Map();
+  for (const entry of commitEntries) {
+    const name = entry.repository.nameWithOwner;
+    if (name.split('/')[0] !== login) continue;
+    const last = entry.contributions.nodes
+      .map((n) => n.occurredAt)
+      .sort()
+      .at(-1);
+    byName.set(name, { ...entry.repository, pushedAt: last, merges: [] });
+  }
+  for (const pr of maintained) {
+    const name = pr.repository.nameWithOwner;
+    const known = byName.get(name) ?? { ...pr.repository, pushedAt: pr.mergedAt, merges: [] };
+    if (pr.mergedAt > known.pushedAt) known.pushedAt = pr.mergedAt;
+    const { repository: _, ...node } = pr;
+    known.merges.push(node);
+    byName.set(name, known);
+  }
+  const nodes = [...byName.values()]
+    .sort((a, b) => (a.pushedAt < b.pushedAt ? 1 : -1))
+    .map(({ merges, ...repository }) => ({
+      ...repository,
+      pullRequests: page(merges.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)))
+    }));
+  return page(nodes);
+}
+
+export const prNode = (
+  offset,
+  name,
+  { merged = false, state = 'OPEN', number = 1, mergedAt = merged ? at(offset) : null } = {}
+) => ({
   occurredAt: at(offset),
-  pullRequest: { number, state, merged, repository: repo(name) }
+  pullRequest: { number, state, merged, mergedAt, repository: repo(name) }
 });
 export const reviewNode = (offset, name, author, number = 1, association = 'CONTRIBUTOR') => ({
   occurredAt: at(offset),
@@ -119,6 +146,7 @@ export const mergedNode = (
     }))
   },
   mergedAt: at(offset),
+  updatedAt: at(offset),
   additions,
   deletions,
   changedFiles: files,
@@ -148,11 +176,15 @@ export function fakeGitHub(people, { onRequest } = {}) {
         ? 'calendar'
         : query.includes('history(')
           ? 'integrity'
-          : query.includes('$after') && query.includes('user(login: $login)')
-            ? 'page'
-            : query.includes('$after')
-              ? 'search-page'
-              : 'search';
+          : query.includes('r: repository(')
+            ? 'repository-merges'
+            : query.includes('$after') && query.includes('{ login a: ')
+              ? 'accepted-page'
+              : query.includes('$after') && query.includes('{ login m: ')
+                ? 'repositories-page'
+                : query.includes('$after')
+                  ? 'page'
+                  : 'merges';
     const call = { kind, variables, query };
     calls.push(call);
     const override = onRequest?.({ ...call, n: calls.length });
@@ -194,23 +226,30 @@ export function fakeGitHub(people, { onRequest } = {}) {
           )
         }
       };
-    } else if (kind === 'search') {
-      Object.keys(variables).forEach((k) => {
-        const login = variables[k]
-          .match(/author:(\S+)|user:(\S+)/)
-          .slice(1)
-          .find(Boolean);
-        const p = byLogin(login);
-        data[k.slice(1)] = k.startsWith('qa') ? p.accepted : p.maintained;
-      });
-    } else if (kind === 'search-page') {
-      const login = variables.q.match(/author:(\S+)/)[1];
-      const p = byLogin(login);
-      data.s = {
-        issueCount: 0,
-        pageInfo: { hasNextPage: p.acceptedPages.length > 1, endCursor: 'a2' },
-        nodes: p.acceptedPages.shift() || []
+    } else if (kind === 'merges') {
+      Object.keys(variables)
+        .filter((k) => /^l\d+$/.test(k))
+        .forEach((k) => {
+          const alias = `u${k.slice(1)}`;
+          const p = byLogin(variables[k]);
+          if (!p) {
+            data[alias] = null;
+            errors.push({ type: 'NOT_FOUND', path: [alias] });
+            return;
+          }
+          data[alias] = { login: p.main.login, a: p.accepted, m: p.repositories };
+        });
+    } else if (kind === 'accepted-page') {
+      const p = byLogin(variables.login);
+      const next = p.acceptedPages.shift() || [];
+      data.u0 = {
+        login: p.main.login,
+        a: page(next, p.acceptedPages.length ? `a${p.acceptedPages.length + 1}` : null)
       };
+    } else if (kind === 'repositories-page') {
+      data.u0 = { login: byLogin(variables.login).main.login, m: page([]) };
+    } else if (kind === 'repository-merges') {
+      data.r = { pullRequests: page([]) };
     } else {
       Object.keys(variables)
         .filter((k) => /^o\d+$/.test(k))
