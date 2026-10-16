@@ -259,8 +259,13 @@ other 5 read as a person's work, LeetCode solutions, a game and a portfolio, and
 13 entries lower 10 developers' scores and take 3 of them below the gate. A second pass the same evening read the
 developers the first v3 runs had admitted, after a review panel found scripts among them, and
 listed 8 more repositories of 6 developers. 6 are scripts or generated content, 1 is a daily
-one-character edit to a comment and 1 holds commits that are not in its history. The 21 entries are
-read on every run.
+one-character edit to a comment and 1 holds commits that are not in its history. A third pass after a panel
+on the tie at 500 read four of its members and listed 79 repositories. 56 belong to one account
+redeploying the same source to gh-pages every day, 15 to an account committing "automated update"
+in each three times a day, 7 to scheduled monitoring deploys, and 1 to a button label retyped one
+letter per commit every day. Where a listed repository also held a few real commits on its main
+branch, the reason says so and an appeal can restore it once the deploys stop. The 100 entries
+are read on every run.
 
 **Collaboration.** 4,586 merges went into repositories the developer does not own, for 252
 developers. 3,525 of them the developer merged themselves, which counts for nothing. 1,046 were

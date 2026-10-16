@@ -38,6 +38,12 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "BilalMoazzam/Aesthetic-CRM",
+      "reason": "About 20 commits a day, each adding one letter to the same button label in BookingManager.jsx, which is broken and typed again letter by letter the next day. Seen on 4, 10 and 15 October.",
+      "evidence": "https://github.com/BilalMoazzam/Aesthetic-CRM/commits?author=BilalMoazzam&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
       "repo": "DevMirza-Blog/devmirza-blog-backend-new",
       "reason": "26 identical commits titled \"Update package-lock.json to latest\", one a day between 02:37 and 04:50 UTC.",
       "evidence": "https://github.com/DevMirza-Blog/devmirza-blog-backend-new/commits/main?author=Zaid-maker&since=2026-09-16&until=2026-10-16",
@@ -65,6 +71,342 @@
       "repo": "Haris-Ahmed83/Ai-Projects-Bundle",
       "reason": "Two commits a day titled \"chore(daily)\" with the date, each adding one generated project of exactly 144 lines from a series of 730.",
       "evidence": "https://github.com/Haris-Ahmed83/Ai-Projects-Bundle/commits/main?author=Haris-Ahmed83&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/andaaz-e-pakwaan-restaurant",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/andaaz-e-pakwaan-restaurant/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/apex-transit-llc-website",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/apex-transit-llc-website/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/bulk-email-verifier",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/bulk-email-verifier/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/CallAudit-X",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/CallAudit-X/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/callauditx-nest-react",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/callauditx-nest-react/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/Canadian-Website-Scraper",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/Canadian-Website-Scraper/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/clientreadyftsolutionsdombom",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/clientreadyftsolutionsdombom/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/dat-stream-studio",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/dat-stream-studio/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/datx-chrome-extension",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/datx-chrome-extension/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/dev",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/dev/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/devops",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/devops/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/devops2",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/devops2/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/email-verification-platform",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/email-verification-platform/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/email-verifier-pro",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/email-verifier-pro/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/excel-call-queue-automator",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/excel-call-queue-automator/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/excel-mc-data-cleaner",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/excel-mc-data-cleaner/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/excel-state-extractor-formula",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/excel-state-extractor-formula/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/fake-news-detector",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/fake-news-detector/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/fiverr-lead-extractor-crm",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same. Its other 3 days of commits on the main branch are excluded with it, and can be restored on appeal once the daily deploys stop.",
+      "evidence": "https://github.com/mafzalkalwardev/fiverr-lead-extractor-crm/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/fmcsa-safer-scraper",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/fmcsa-safer-scraper/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/forward-email-automation",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/forward-email-automation/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/google-workspace-bulk-user-provisioning",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/google-workspace-bulk-user-provisioning/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/indus-transport-auto-dialer",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/indus-transport-auto-dialer/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/indus-transports-dispatch-website",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/indus-transports-dispatch-website/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/kb-transport-llc-website",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/kb-transport-llc-website/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/LearningDashboard",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/LearningDashboard/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/logistics-pro-website",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/logistics-pro-website/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/mailforge",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/mailforge/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/mnist-cnn-digit-recognition",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/mnist-cnn-digit-recognition/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/mouse-coordinate-tracker",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/mouse-coordinate-tracker/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/multi-smtp-email-automation",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/multi-smtp-email-automation/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/mywebpagetask",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/mywebpagetask/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/one-stop-car-care-website",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/one-stop-car-care-website/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/online-food-delivery",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/online-food-delivery/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/pdf-mc-number-extractor",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/pdf-mc-number-extractor/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/playwright-website-scraper-pro",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/playwright-website-scraper-pro/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/portfilio",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/portfilio/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/portfolio-afzal-kalwar-vite",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/portfolio-afzal-kalwar-vite/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/python-auto-dialer-pro",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/python-auto-dialer-pro/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/python-sms-automation",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/python-sms-automation/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/python-smtp-email-automation",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/python-smtp-email-automation/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/quickdraw-test",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/quickdraw-test/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/quizmaster-backend-complete",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/quizmaster-backend-complete/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/quizmaster-online-testing-system",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/quizmaster-online-testing-system/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/rdp",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/rdp/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/restaurant-management-react",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/restaurant-management-react/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/safer-carrier-extractor",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/safer-carrier-extractor/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/safer-web-scraper",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/safer-web-scraper/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/screen-capture-app",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/screen-capture-app/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/simple-learning-dashboard",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/simple-learning-dashboard/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/student-management-system-blazor",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/student-management-system-blazor/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/student-report-card-system",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/student-report-card-system/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/toolzology-chrome-extension",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/toolzology-chrome-extension/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/university-web-labs",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/university-web-labs/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/vicidial-hyperv-lab",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/vicidial-hyperv-lab/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "mafzalkalwardev/wooly-wool-storefront",
+      "reason": "A commit on the gh-pages branch every day of the window, all 30 titled with the same deploy hash, redeploying the same source each day. One of 56 repositories of this account doing the same.",
+      "evidence": "https://github.com/mafzalkalwardev/wooly-wool-storefront/commits/gh-pages?author=mafzalkalwardev&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
     },
     {
@@ -98,6 +440,96 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "rehan-devs/apex-ridge-roofing",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/apex-ridge-roofing/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/chromacraft-studio",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/chromacraft-studio/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/chronopins",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/chronopins/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/drip-and-garlic",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/drip-and-garlic/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/neuroaware",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/neuroaware/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/NovaPulse",
+      "reason": "About three commits a day on every day of the window, 97 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/NovaPulse/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/prowler-website",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/prowler-website/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/regex-recipes",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/regex-recipes/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/rehan-portfolio",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/rehan-portfolio/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/Scoop---Ice-Cream-Website",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/Scoop---Ice-Cream-Website/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/solumsiteworks",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/solumsiteworks/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/TidyMail",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/TidyMail/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/titan-concrete-website",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/titan-concrete-website/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/veldora-gaming-platform",
+      "reason": "About three commits a day on every day of the window, 86 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/veldora-gaming-platform/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "rehan-devs/voltguard-website",
+      "reason": "About three commits a day on every day of the window, 87 in all, each titled \"chore, automated update\" with a timestamp. One of 15 repositories of this account committing the same at the same moments.",
+      "evidence": "https://github.com/rehan-devs/voltguard-website/commits?author=rehan-devs&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
       "repo": "ryomenhaider/daily-data",
       "reason": "968 commits in 30 days, 22 to 33 every day, each recording or publishing a timestamped pipeline run merged from a branch named automation/run.",
       "evidence": "https://github.com/ryomenhaider/daily-data/commits/main?author=ryomenhaider&since=2026-09-16&until=2026-10-16",
@@ -107,6 +539,48 @@
       "repo": "salman-rafii/School-Calendar-Demo",
       "reason": "GitHub counts 96 commits here on 20 days of the window, and the repository's history holds one of them, so the rest cannot be checked by anyone.",
       "evidence": "https://github.com/salman-rafii/School-Calendar-Demo/commits/main",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "shahnawaz-cmd/-automotive-sites-automation",
+      "reason": "Scheduled deploys to the gh-pages branch, 44 or more in the window, all titled with the same deploy hash. Its 5 days of commits on the main branch are excluded with it, and can be restored on appeal once the scheduled deploys stop.",
+      "evidence": "https://github.com/shahnawaz-cmd/-automotive-sites-automation/commits/gh-pages?author=shahnawaz-cmd&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "shahnawaz-cmd/core-web-vitals-monitor",
+      "reason": "Scheduled deploys to the gh-pages branch, 100 or more in the window, all titled with the same deploy hash.",
+      "evidence": "https://github.com/shahnawaz-cmd/core-web-vitals-monitor/commits/gh-pages?author=shahnawaz-cmd&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "shahnawaz-cmd/dvh-functional-stability-regression",
+      "reason": "GitHub credits commits here on 29 days of the window, and the gh-pages branch holds only its latest deploy, because a scheduled deploy writes the branch again each run. The credited days are deploys, not work, and cannot be checked.",
+      "evidence": "https://github.com/shahnawaz-cmd/dvh-functional-stability-regression/commits/gh-pages",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "shahnawaz-cmd/Prod-member_area-monitoring-",
+      "reason": "GitHub credits commits here on 30 days of the window, and the gh-pages branch holds only its latest deploy, because a scheduled deploy writes the branch again each run. The credited days are deploys, not work, and cannot be checked.",
+      "evidence": "https://github.com/shahnawaz-cmd/Prod-member_area-monitoring-/commits/gh-pages",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "shahnawaz-cmd/qa-auth-flow-regression",
+      "reason": "Scheduled deploys to the gh-pages branch, 30 or more in the window, all titled with the same deploy hash.",
+      "evidence": "https://github.com/shahnawaz-cmd/qa-auth-flow-regression/commits/gh-pages?author=shahnawaz-cmd&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "shahnawaz-cmd/qa-seo-website-monitor",
+      "reason": "Scheduled deploys to the gh-pages branch, 100 or more in the window, all titled with the same deploy hash. Its 1 days of commits on the main branch are excluded with it, and can be restored on appeal once the scheduled deploys stop.",
+      "evidence": "https://github.com/shahnawaz-cmd/qa-seo-website-monitor/commits/gh-pages?author=shahnawaz-cmd&since=2026-09-16&until=2026-10-16",
+      "added": "2026-10-16"
+    },
+    {
+      "repo": "shahnawaz-cmd/scc-prod-stability-monitor",
+      "reason": "Scheduled deploys to the gh-pages branch, 30 or more in the window, all titled with the same deploy hash.",
+      "evidence": "https://github.com/shahnawaz-cmd/scc-prod-stability-monitor/commits/gh-pages?author=shahnawaz-cmd&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
     },
     {
