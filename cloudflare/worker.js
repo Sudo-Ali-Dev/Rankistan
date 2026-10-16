@@ -1,6 +1,8 @@
 // The Durable Object class must be exported from the Worker entrypoint for
 // wrangler to bind it.
 export { RateLimiter } from './rate-limiter.js';
+export { PreviewCache } from './score-preview.js';
+import { handleScorePreviewRequest } from './score-preview.js';
 import { dispatchScheduledWorkflows } from './scheduled.js';
 import { handleHealthRequest } from './health.js';
 import { RATE_LIMIT_MAX_REQUESTS, GITHUB_USERNAME_RE } from './limits.js';
@@ -271,6 +273,23 @@ async function isRateLimited(request, env) {
     return allowed !== true;
   } catch (error) {
     console.error(`RATE_LIMITER unavailable for ${ip}; rejecting. ${error.message}`);
+    return true;
+  }
+}
+
+// A named counter with its own limit, on the same Durable Object: `preview:ip` is per client IP,
+// any other name is one counter for everyone. Fails closed, as isRateLimited does.
+async function isLimitedBy(request, env, name, { max, windowMs }) {
+  const namespace = env?.RATE_LIMITER;
+  if (!namespace || typeof namespace.idFromName !== 'function') return true;
+  const id = name.endsWith(':ip') ? `${name}:${getClientIp(request)}` : name;
+  try {
+    const stub = namespace.get(namespace.idFromName(id));
+    const response = await stub.fetch(`https://rate-limiter/check?max=${max}&window=${windowMs}`);
+    const { allowed } = await response.json();
+    return allowed !== true;
+  } catch (error) {
+    console.error(`RATE_LIMITER unavailable for ${id}; rejecting. ${error.message}`);
     return true;
   }
 }
@@ -712,6 +731,14 @@ export default {
 
     if (url.pathname === '/api/health') {
       return handleHealthRequest();
+    }
+
+    if (url.pathname.startsWith('/api/score-preview/')) {
+      return handleScorePreviewRequest(request, env, {
+        jsonResponse,
+        corsOrigin,
+        isLimited: (name, limit) => isLimitedBy(request, env, name, limit)
+      });
     }
 
     if (url.pathname !== '/api/dev-summary') {
