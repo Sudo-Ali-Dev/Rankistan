@@ -3,7 +3,7 @@ import {
   SCREEN_MIN_DAYS,
   comparePrescreen,
   prescreenStep,
-  provisionalWorkingDays,
+  workingDays,
   sampleOrder
 } from './prescreen-log.js';
 import {
@@ -19,14 +19,23 @@ import {
 
 const empty = (overrides = {}) => ({
   login: 'ana',
+  github_id: 7,
+  measured_at: '2026-10-14T09:30:00Z',
+  window: { from: '2026-09-14', to: '2026-10-14' },
+  restricted: 0,
   commits: [],
   pull_requests: [],
   issues: [],
   reviews: [],
+  accepted: [],
+  maintained: [],
+  future_repos: [],
+  integrity: [],
+  cut: 0,
   ...overrides
 });
 
-describe('provisionalWorkingDays', () => {
+describe('workingDays', () => {
   it('counts a day once, however much was done on it', () => {
     const m = empty({
       commits: [
@@ -41,7 +50,7 @@ describe('provisionalWorkingDays', () => {
         { repo: 'ana/lib', flags: FLAG_OWNED, days: [{ day: 2, commits: 5 }] }
       ]
     });
-    expect(provisionalWorkingDays(m)).toBe(2);
+    expect(workingDays(m)).toBe(2);
   });
 
   it("ignores forks and profile repositories, anyone's", () => {
@@ -51,7 +60,7 @@ describe('provisionalWorkingDays', () => {
         { repo: 'bob/bob', flags: FLAG_PROFILE, days: [{ day: 2, commits: 1 }] }
       ]
     });
-    expect(provisionalWorkingDays(m)).toBe(0);
+    expect(workingDays(m)).toBe(0);
   });
 
   it("counts pull requests and issues only in other people's repositories, and no rejected pull request", () => {
@@ -76,7 +85,7 @@ describe('provisionalWorkingDays', () => {
         { repo: 'acme/lib', flags: 0, items: [{ day: 5, number: 2 }] }
       ]
     });
-    expect(provisionalWorkingDays(m)).toBe(2);
+    expect(workingDays(m)).toBe(2);
   });
 
   it("counts reviews of another user's pull request only", () => {
@@ -94,7 +103,7 @@ describe('provisionalWorkingDays', () => {
         }
       ]
     });
-    expect(provisionalWorkingDays(m)).toBe(1);
+    expect(workingDays(m)).toBe(1);
   });
 });
 
