@@ -20,6 +20,17 @@ import {
 import { verifyPublished } from './verify-published.js';
 import { readBoardFile, mergeBatch, runBatch, dispatchWorkflows } from './run-all.js';
 import { readRegistry } from './registry.js';
+import { measuredRow } from '../src/model/__fixtures__/measured.js';
+import { assignRanks, boardOrder, boardSeed } from '../src/model/order.js';
+
+// A board of real measured rows: `days` working days each, so the order is known.
+const measuredBoard = (entries, last_updated = '2026-10-13T00:00:00.000Z') => {
+  const rows = entries.map(([username, batch, days], i) =>
+    measuredRow(username, { days, githubId: 100 + i }, { batch_index: batch })
+  );
+  const leaderboard = assignRanks(rows.sort(boardOrder(boardSeed(last_updated))));
+  return { last_updated, total_devs: leaderboard.length, leaderboard };
+};
 
 const REPO = 'owner/repo';
 const API = `https://api.github.com/repos/${REPO}`;
@@ -496,15 +507,7 @@ describe('restoreLatest, the rollback path', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  const ranked = (names, batch) =>
-    board(names, {
-      leaderboard: names.map((username, i) => ({
-        username,
-        rank: i + 1,
-        score: 900 - i,
-        batch_index: batch
-      }))
-    });
+  const ranked = (names, batch) => measuredBoard(names.map((name, i) => [name, batch, 30 - i]));
 
   it('writes the newest state, verified, as a file the pipeline continues from', async () => {
     const gh = fakeGitHub({ withRelease: true });
@@ -519,7 +522,7 @@ describe('restoreLatest, the rollback path', () => {
     const { board: next } = mergeBatch({
       existing: readBoardFile(target).leaderboard,
       batchIndex: 4,
-      newEntries: [{ username: 'a', batch_index: 4, score: 950 }],
+      newEntries: [measuredRow('a', { days: 30, githubId: 100 }, { batch_index: 4 })],
       evaluated: ['a', 'b', 'c'],
       log: quiet
     });
@@ -566,16 +569,23 @@ describe('one pipeline run against the release', () => {
   // runBatch over the real store and dispatch, with only fetch faked: load the
   // newest state, merge one batch into it, guard, save it as a new asset,
   // prune, and dispatch the deploy and the watchdog.
-  const rows = (batch, names, score) =>
-    names.map((username, i) => ({ username, batch_index: batch, score: score - i }));
+  // [username, batch, working days] for each row.
+  const rows = (batch, names, days) =>
+    names.map((username, i) =>
+      measuredRow(
+        username,
+        { days: days - i, githubId: 200 + days * 10 + i },
+        { batch_index: batch }
+      )
+    );
 
   it('saves the merged board as the newest state, then dispatches', async () => {
     const gh = fakeGitHub({ withRelease: true });
-    const before = board([]);
-    before.leaderboard = [...rows(3, ['a', 'b'], 900), ...rows(8, ['c'], 500)].map((r, i) => ({
-      ...r,
-      rank: i + 1
-    }));
+    const before = measuredBoard([
+      ['a', 3, 27],
+      ['b', 3, 26],
+      ['c', 8, 20]
+    ]);
     gh.seed('state-41-1.json.gz', gz(before));
 
     const client = makeGitHubClient({
@@ -589,7 +599,7 @@ describe('one pipeline run against the release', () => {
       batchIndex: 8,
       store,
       registry: () => readRegistry({ api: client }),
-      measure: async () => ({ newEntries: rows(8, ['c', 'd'], 950), evaluated: ['c', 'd'] }),
+      measure: async () => ({ newEntries: rows(8, ['c', 'd'], 30), evaluated: ['c', 'd'] }),
       dispatch: () => dispatchWorkflows({ client, log: quiet }),
       name: 'state-42-1.json.gz',
       now: START,
@@ -614,11 +624,14 @@ describe('one pipeline run against the release', () => {
 
   it('takes an opted-out developer off the saved board, from the issue alone', async () => {
     const gh = fakeGitHub({ withRelease: true });
-    const before = board([]);
-    before.leaderboard = [...rows(3, ['a', 'b'], 900), ...rows(8, ['c'], 500)].map((r, i) => ({
+    const before = measuredBoard([
+      ['a', 3, 27],
+      ['b', 3, 26],
+      ['c', 8, 20]
+    ]);
+    before.leaderboard = before.leaderboard.map((r) => ({
       ...r,
-      rank: i + 1,
-      avatar_url: `https://avatars.githubusercontent.com/u/${100 + i}?v=4`
+      avatar_url: `https://avatars.githubusercontent.com/u/${r.github_id}?v=4`
     }));
     gh.seed('state-41-1.json.gz', gz(before));
     // b, in batch 3, opts out; batch 8 runs.
@@ -636,7 +649,7 @@ describe('one pipeline run against the release', () => {
       batchIndex: 8,
       store,
       registry: () => readRegistry({ api: client }),
-      measure: async () => ({ newEntries: rows(8, ['c'], 950), evaluated: ['c'] }),
+      measure: async () => ({ newEntries: rows(8, ['c'], 30), evaluated: ['c'] }),
       name: 'state-42-1.json.gz',
       now: START,
       log: quiet
@@ -649,7 +662,7 @@ describe('one pipeline run against the release', () => {
 
   it('saves and deploys, then fails the run, when the watchdog has been disabled', async () => {
     const gh = fakeGitHub({ withRelease: true });
-    gh.seed('state-41-1.json.gz', gz(board(['a'])));
+    gh.seed('state-41-1.json.gz', gz(measuredBoard([['a', 0, 20]])));
     gh.workflowStates['watchdog.yml'] = 'disabled_inactivity';
     const client = makeGitHubClient({ token: 't', repo: REPO, fetchImpl: gh.fetch });
     const store = createStateStore({ client, log: quiet });
@@ -672,7 +685,17 @@ describe('one pipeline run against the release', () => {
 
   it('leaves the state as it was when the guard refuses', async () => {
     const gh = fakeGitHub({ withRelease: true });
-    const before = board(['a', 'b']);
+    // A state from before the switch: rows scored by v2, with no measurement v3 can read. Every
+    // row would leave the board unscorable, and the switch's guard refuses that.
+    const before = board(['a', 'b'], {
+      leaderboard: ['a', 'b'].map((username, i) => ({
+        username,
+        rank: i + 1,
+        score: 100 - i,
+        batch_index: 3,
+        model_version: '2.0.0'
+      }))
+    });
     gh.seed('state-41-1.json.gz', gz(before));
     const client = makeGitHubClient({ token: 't', repo: REPO, fetchImpl: gh.fetch });
     const store = createStateStore({ client, log: quiet });
@@ -682,16 +705,15 @@ describe('one pipeline run against the release', () => {
         batchIndex: 0,
         store,
         registry: () => readRegistry({ api: client }),
-        // A versioned row with nothing to recompute it from: verification refuses.
         measure: async () => ({
-          newEntries: [{ username: 'z', batch_index: 0, score: 1, model_version: '2.0.0' }]
+          newEntries: [measuredRow('z', { days: 9, githubId: 9 }, { batch_index: 0 })]
         }),
         dispatch: () => dispatchWorkflows({ client, log: quiet }),
         name: 'state-42-1.json.gz',
         now: START,
         log: quiet
       })
-    ).rejects.toThrow(/Refusing to save/);
+    ).rejects.toThrow(/Refusing to save: 2 of 2 rows carry no measurement/);
     expect(gh.assets.map((a) => a.name)).toEqual(['state-41-1.json.gz']);
     expect(gh.dispatched).toEqual([]);
   });

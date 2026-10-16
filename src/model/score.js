@@ -1,249 +1,226 @@
 /**
- * The developer score. This is the only implementation: the pipeline
- * (scripts/score.js), the Register preview (src/utils/score-breakdown.js) and
- * the published-board check (scripts/verify-published.js) all call it.
+ * The developer score (scoring v3), from the evidence (src/model/evidence.js). The pipeline
+ * (scripts/score.js), the board check (scripts/verify-published.js) and the Worker's preview
+ * (cloudflare/score-preview.js) all call this one implementation.
  *
- *   base  = min(stars, cap)·w + activity + min(followers, cap)·w + min(repos, cap)·w
- *   exact = base × (account younger than SIX_MONTHS_DAYS ? AGE_PENALTY_MULTIPLIER : 1)
- *   score = round(exact)
+ *   score_exact = SCALE × (w_work·Work + w_collaboration·Collaboration + w_appreciation·Appreciation)
+ *   score       = round(score_exact)
  *
- * Every input is required. The previous pipeline had three ways to arrive at
- * an activity figure - the events, a per-type 30-day count scored as though it
- * were one day, and `events_30d × 3.125` - and the last two are gone. A
- * published score is computed from the measurement or it is not computed.
+ *   Work           x = Σ recency weights of working days / Σ recency weights of every day
+ *                  Work = 1 − (1 − x)^CURVE_POWER
+ *   Collaboration  c = f·accepted + reviews + maintained,  Collaboration = c / (c + HALF_POINT)
+ *                  accepted = the smaller of Σ_owner and Σ_merger of min(CAP, log2(1 + V)),
+ *                  V the group's Σ starWeight·size·recency; reviews likewise by owner and by
+ *                  author; maintained by author; f the rejection factor
+ *   Appreciation   max over active own projects of clamp(decades of stars above FROM_STARS
+ *                  / DECADES) × min(1, commit days / FULL_AFTER_DAYS)
+ *
+ * Pure and clock-free: the same evidence gives the same score, bit for bit, wherever it runs. Every
+ * sum runs in a fixed order (evidence order, then groups by key), because floating-point addition
+ * is not associative and a published score is checked by recomputing it.
  */
-import { assertValidatedConfig, majorVersion, SCORE_CONFIG } from './config.js';
-import { computeActivityBreakdown30d, requireNow } from './activity.js';
+import { assertValidatedConfig, majorVersion, SCORE_CONFIG, PART_IDS } from './config.js';
+import { decodeMeasurement } from './measurement.js';
+import { deriveEvidence } from './evidence.js';
+import { compareCodePoints } from './order.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** What scoreModel reads from a developer. Nothing else affects the score. */
-export const MODEL_INPUT_FIELDS = Object.freeze([
-  'total_stars',
-  'followers',
-  'public_repos',
-  'created_at',
-  'raw_events_60d'
-]);
+/** What the model reads from a row in the state. Nothing else affects the score. */
+export const MODEL_INPUT_FIELDS = Object.freeze(['contributions']);
 
-/**
- * What a published row must carry, beyond the profile counts and created_at,
- * for its score to be recomputed without the raw events. The age penalty
- * depends on when the row was scored, so `scored_at` is part of the input.
- */
+/** What a served row carries for its score to be recomputed without the measurement. */
 export const PUBLISHED_MODEL_FIELDS = Object.freeze([
   'score_exact',
-  'activity_score',
+  'score_parts',
   'model_version',
   'scored_at'
 ]);
 
-function whose(row) {
-  return typeof row?.username === 'string' ? ` for ${row.username}` : '';
+/** The recency weight of a window day, 0 the oldest: falls evenly from 1 to RECENCY_FLOOR. */
+export function recencyWeight(offset, config) {
+  const { WINDOW_DAYS, RECENCY_FLOOR } = config;
+  return RECENCY_FLOOR + ((1 - RECENCY_FLOOR) * offset) / (WINDOW_DAYS - 1);
 }
 
-function show(value) {
-  return value === undefined ? 'undefined' : JSON.stringify(value);
-}
-
-function requireCount(row, field) {
-  const value = row?.[field];
-  if (!Number.isInteger(value) || value < 0) {
-    throw new TypeError(
-      `scoring model: \`${field}\` must be a non-negative integer${whose(row)}, got ${show(value)}`
-    );
+function offsetOf(date, window, config) {
+  const offset = Math.round(
+    (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${window.from}T00:00:00Z`)) / DAY_MS
+  );
+  if (!Number.isInteger(offset) || offset < 0 || offset >= config.WINDOW_DAYS) {
+    throw new RangeError(`scoring model: ${JSON.stringify(date)} is not a date in the window`);
   }
-  return value;
+  return offset;
 }
 
-function requireTimestamp(row, field) {
-  const value = row?.[field];
-  const ms = typeof value === 'string' ? new Date(value).getTime() : NaN;
-  if (Number.isNaN(ms)) {
-    throw new TypeError(
-      `scoring model: \`${field}\` must be an ISO date string${whose(row)}, got ${show(value)}`
-    );
+/** A target's weight by its stars: STARS_FLOOR, plus STARS_PER_DIGIT per digit, at most 1. */
+export function starWeight(stars, config) {
+  const { STARS_FLOOR, STARS_PER_DIGIT } = config.COLLABORATION;
+  return Math.min(1, STARS_FLOOR + STARS_PER_DIGIT * Math.log10(1 + stars));
+}
+
+/** Half (TINY_WEIGHT) for a one-file change of at most TINY_MAX_LINES lines. */
+export function sizeWeight({ lines, files }, config) {
+  const { TINY_MAX_FILES, TINY_MAX_LINES, TINY_WEIGHT } = config.COLLABORATION;
+  return files <= TINY_MAX_FILES && lines <= TINY_MAX_LINES ? TINY_WEIGHT : 1;
+}
+
+/** Σ over groups (in key order) of min(CAP, log2(1 + the group's Σ value)). */
+function groupCredit(items, key, value, config) {
+  const totals = new Map();
+  for (const item of items) {
+    const k = String(key(item)).toLowerCase();
+    totals.set(k, (totals.get(k) || 0) + value(item));
   }
-  return ms;
+  let sum = 0;
+  for (const k of [...totals.keys()].sort(compareCodePoints)) {
+    sum += Math.min(config.COLLABORATION.CAP_PER_GROUP, Math.log2(1 + totals.get(k)));
+  }
+  return sum;
+}
+
+/** The rejection factor: min(1, P(M + P) / (M + X + 2P)), P the prior. */
+export function rejectionFactor({ merged, closed }, config) {
+  const p = config.COLLABORATION.REJECTION_PRIOR;
+  return Math.min(1, (p * (merged + p)) / (merged + closed + 2 * p));
 }
 
 /**
- * Everything after the activity term. Shared by scoreModel and
- * recomputePublished so the two cannot drift: a published score is checked by
- * the same arithmetic that produced it.
+ * The three parts, and the figures behind them, from evidence.
+ * @returns {{work: number, collaboration: number, appreciation: number, details: object}}
  */
-function combine({ stars, followers, publicRepos, activityScore, createdAtMs, nowMs }, config) {
-  const cappedStars = Math.min(stars, config.MAX_STARS_FOR_SCORING);
-  const cappedFollowers = Math.min(followers, config.MAX_FOLLOWERS_FOR_SCORING);
-  const cappedPublicRepos = Math.min(publicRepos, config.MAX_PUBLIC_REPOS_FOR_SCORING);
+export function partsFromEvidence(evidence, { config = SCORE_CONFIG } = {}) {
+  assertValidatedConfig(config);
+  const window = evidence.window;
+  const w = (date) => recencyWeight(offsetOf(date, window, config), config);
 
-  const starsPoints = cappedStars * config.STAR_WEIGHT;
-  const followersPoints = cappedFollowers * config.WEIGHTS.followers;
-  const publicReposPoints = cappedPublicRepos * config.WEIGHTS.publicRepos;
+  let total = 0;
+  for (let k = 0; k < config.WINDOW_DAYS; k += 1) total += recencyWeight(k, config);
+  let weighted = 0;
+  for (const date of evidence.working_days) weighted += w(date);
+  const x = weighted / total;
+  const work = 1 - (1 - x) ** config.WORK.CURVE_POWER;
 
-  // Left to right, in this order. It is the order the score has always been
-  // summed in, and floating-point addition is not associative.
-  const baseScore = starsPoints + activityScore + followersPoints + publicReposPoints;
+  const C = config.COLLABORATION;
+  const acceptedValue = (i) => starWeight(i.stars, config) * sizeWeight(i, config) * w(i.date);
+  const accepted = Math.min(
+    groupCredit(evidence.accepted, (i) => i.owner, acceptedValue, config),
+    groupCredit(evidence.accepted, (i) => i.merger, acceptedValue, config)
+  );
+  const f = rejectionFactor(evidence.pull_requests_to_others, config);
+  const reviewValue = (i) => C.REVIEW_WEIGHT * starWeight(i.stars, config) * w(i.date);
+  const reviews = Math.min(
+    groupCredit(evidence.reviews, (i) => i.owner, reviewValue, config),
+    groupCredit(evidence.reviews, (i) => i.author, reviewValue, config)
+  );
+  const maintainedValue = (i) =>
+    C.MAINTAINED_WEIGHT * starWeight(i.stars, config) * sizeWeight(i, config) * w(i.date);
+  const maintained = groupCredit(evidence.maintained, (i) => i.author, maintainedValue, config);
+  const c = f * accepted + reviews + maintained;
+  const collaboration = c / (c + C.HALF_POINT);
 
-  const accountAgeDays = Math.floor((nowMs - createdAtMs) / DAY_MS);
-  const agePenaltyApplied = accountAgeDays < config.SIX_MONTHS_DAYS;
-  const multiplier = agePenaltyApplied ? config.AGE_PENALTY_MULTIPLIER : 1;
-  const scoreExact = baseScore * multiplier;
-
-  if (!Number.isFinite(scoreExact)) {
-    throw new RangeError(`scoring model: score is not finite (${scoreExact})`);
+  const A = config.APPRECIATION;
+  let appreciation = 0;
+  let appreciated = null;
+  for (const r of evidence.appreciation) {
+    const decades = Math.log10(r.stars) - Math.log10(A.FROM_STARS);
+    const value =
+      Math.min(1, Math.max(0, decades / A.DECADES)) * Math.min(1, r.days / A.FULL_AFTER_DAYS);
+    if (value > appreciation) {
+      appreciation = value;
+      appreciated = r.repo;
+    }
   }
 
   return {
-    score: Math.round(scoreExact),
-    score_exact: scoreExact,
-    age_penalty_applied: agePenaltyApplied,
-    components: {
-      stars: {
-        raw: stars,
-        capped: cappedStars,
-        cap: config.MAX_STARS_FOR_SCORING,
-        weight: config.STAR_WEIGHT,
-        points: starsPoints
-      },
-      followers: {
-        raw: followers,
-        capped: cappedFollowers,
-        cap: config.MAX_FOLLOWERS_FOR_SCORING,
-        weight: config.WEIGHTS.followers,
-        points: followersPoints
-      },
-      public_repos: {
-        raw: publicRepos,
-        capped: cappedPublicRepos,
-        cap: config.MAX_PUBLIC_REPOS_FOR_SCORING,
-        weight: config.WEIGHTS.publicRepos,
-        points: publicReposPoints
-      },
-      base_score: baseScore,
-      age: {
-        account_age_days: accountAgeDays,
-        threshold_days: config.SIX_MONTHS_DAYS,
-        multiplier,
-        applied: agePenaltyApplied
-      }
+    work,
+    collaboration,
+    appreciation,
+    details: {
+      working_days: evidence.working_days.length,
+      x,
+      c,
+      accepted,
+      rejection_factor: f,
+      reviews,
+      maintained,
+      appreciated
     }
   };
 }
 
-/**
- * Score one developer.
- *
- * @param {{ total_stars: number, followers: number, public_repos: number,
- *           created_at: string, raw_events_60d: object[] }} inputs
- * @param {{ config: object, now: Date | number }} options
- *   `config` must come from validateScoreConfig (use SCORE_CONFIG). `now` is
- *   the instant the score is taken at; both the 30-day window and the age
- *   penalty are measured from it.
- */
-export function scoreModel(inputs, { config, now } = {}) {
+/** The score from the three parts. One function, so a check recomputes with the same arithmetic. */
+export function scoreFromParts(parts, { config = SCORE_CONFIG } = {}) {
   assertValidatedConfig(config);
-  const nowMs = requireNow(now);
-
-  if (inputs === null || typeof inputs !== 'object') {
-    throw new TypeError(`scoring model: expected a developer object, got ${show(inputs)}`);
+  let sum = 0;
+  for (const id of PART_IDS) {
+    const value = parts?.[id];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+      throw new RangeError(
+        `scoring model: part ${id} is ${JSON.stringify(value)}, not a number in [0, 1]`
+      );
+    }
+    sum += config.WEIGHTS[id] * value;
   }
+  return config.SCALE * sum;
+}
 
-  const stars = requireCount(inputs, 'total_stars');
-  const followers = requireCount(inputs, 'followers');
-  const publicRepos = requireCount(inputs, 'public_repos');
-  const createdAtMs = requireTimestamp(inputs, 'created_at');
-
-  if (!Array.isArray(inputs.raw_events_60d)) {
-    throw new TypeError(
-      `scoring model: \`raw_events_60d\` is required${whose(inputs)}. ` +
-        'There is no approximate path: a score is computed from the events or not at all.'
-    );
-  }
-
-  const activity = computeActivityBreakdown30d(inputs.raw_events_60d, { config, now: nowMs });
-  const combined = combine(
-    { stars, followers, publicRepos, activityScore: activity.total, createdAtMs, nowMs },
-    config
-  );
-
+/** The whole result for evidence. */
+export function scoreEvidence(evidence, { config = SCORE_CONFIG } = {}) {
+  const parts = partsFromEvidence(evidence, { config });
+  const scoreExact = scoreFromParts(parts, { config });
   return {
-    score: combined.score,
-    score_exact: combined.score_exact,
-    activity_score: activity.total,
-    components: {
-      ...combined.components,
-      activity: { points: activity.total, by_type: activity.byType }
+    score: Math.round(scoreExact),
+    score_exact: scoreExact,
+    parts: {
+      work: parts.work,
+      collaboration: parts.collaboration,
+      appreciation: parts.appreciation
     },
-    age_penalty_applied: combined.age_penalty_applied
+    details: parts.details,
+    gate: evidence.working_days.length >= config.WORK.GATE_MIN_DAYS,
+    evidence
   };
 }
 
 /**
- * The model fields a scored row is published with. `scored_at` is `now`
- * itself, at millisecond precision, so the age penalty recomputes exactly.
+ * The score of a stored measurement block. Throws on a block that is not a measurement: a score
+ * is computed from the measurement or not at all.
  */
-export function publishedScoreFields(result, { config, now } = {}) {
+export function scoreModel(block, { config = SCORE_CONFIG, moderation = [] } = {}) {
+  const m = decodeMeasurement(block);
+  if (!m) throw new TypeError('scoring model: the row carries no measurement this model can read');
+  return scoreEvidence(deriveEvidence(m, { config, moderation }), { config });
+}
+
+/** The fields a scored row carries. `scored_at` is when the inputs were measured. */
+export function publishedScoreFields(result, { config = SCORE_CONFIG } = {}) {
   assertValidatedConfig(config);
   return {
     score: result.score,
     score_exact: result.score_exact,
-    activity_score: result.activity_score,
+    score_parts: { ...result.parts },
     model_version: config.MODEL_VERSION,
-    scored_at: new Date(requireNow(now)).toISOString()
+    scored_at: result.evidence.measured_at
   };
 }
 
 /**
- * Recompute `score` and `score_exact` from a published row alone.
- *
- * The raw events are not published, so `activity_score` is taken as measured;
- * everything downstream of it - caps, weights, the sum, the age penalty, the
- * rounding - is recomputed. A row from a different major model version is
- * refused, since by definition its score is not this model's to reproduce.
- * Within a major version, minor and patch releases promise identical scores,
- * so a mismatch there is a broken promise and is reported as one.
+ * Recomputes a published row's score from its `score_parts`, and refuses a row scored by another
+ * major version: its parts mean something else.
  */
-export function recomputePublished(row, { config } = {}) {
+export function recomputePublished(row, { config = SCORE_CONFIG } = {}) {
   assertValidatedConfig(config);
-
   if (typeof row?.model_version !== 'string') {
     throw new TypeError(
-      `scoring model: row${whose(row)} has no model_version; it predates versioned scoring ` +
-        'and cannot be recomputed'
+      `recomputePublished: ${JSON.stringify(row?.username)} carries no model_version`
     );
   }
   if (majorVersion(row.model_version) !== majorVersion(config.MODEL_VERSION)) {
-    throw new RangeError(
-      `scoring model: row${whose(row)} was scored by model ${row.model_version}, ` +
-        `this code is ${config.MODEL_VERSION}; across a major version scores are not comparable`
-    );
-  }
-
-  const activityScore = row.activity_score;
-  if (typeof activityScore !== 'number' || !Number.isFinite(activityScore) || activityScore < 0) {
     throw new TypeError(
-      `scoring model: \`activity_score\` must be a finite number >= 0${whose(row)}, ` +
-        `got ${show(activityScore)}`
+      `recomputePublished: ${row.username} was scored by ${row.model_version}, this is ${config.MODEL_VERSION}`
     );
   }
-
-  const { score, score_exact } = combine(
-    {
-      stars: requireCount(row, 'total_stars'),
-      followers: requireCount(row, 'followers'),
-      publicRepos: requireCount(row, 'public_repos'),
-      activityScore,
-      createdAtMs: requireTimestamp(row, 'created_at'),
-      nowMs: requireTimestamp(row, 'scored_at')
-    },
-    config
-  );
-
-  return { score, score_exact };
-}
-
-/** The published row's score, recomputed under the model this code ships. */
-export function scoreFromPublished(row) {
-  return recomputePublished(row, { config: SCORE_CONFIG }).score;
+  const scoreExact = scoreFromParts(row.score_parts, { config });
+  return { score: Math.round(scoreExact), score_exact: scoreExact };
 }

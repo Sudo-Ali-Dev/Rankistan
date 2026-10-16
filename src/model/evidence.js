@@ -1,8 +1,8 @@
 /**
- * Scoring v3's evidence: from one measurement (src/model/measurement.js), everything that counts
+ * The score's evidence: from one measurement (src/model/measurement.js), everything that counts
  * toward the score and nothing that does not, each item a public thing on GitHub anyone can open.
  *
- * Every rule about *what counts* lives here; src/model/next/score.js only does arithmetic on the
+ * Every rule about *what counts* lives here; src/model/score.js only does arithmetic on the
  * result. That split is what makes a published score checkable: the evidence is published with
  * it (dev/<login>.json), and the score is a pure function of the evidence.
  *
@@ -37,9 +37,9 @@ import {
   OUTCOME_CLOSED,
   OUTCOME_MERGED,
   addDays
-} from '../measurement.js';
+} from './measurement.js';
 import { assertValidatedConfig, SCORE_CONFIG } from './config.js';
-import { compareCodePoints } from '../order.js';
+import { compareCodePoints } from './order.js';
 
 export const EVIDENCE_VERSION = 1;
 

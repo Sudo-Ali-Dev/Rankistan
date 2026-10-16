@@ -553,11 +553,12 @@ async function runCli(argv = process.argv.slice(2), env = process.env) {
     const client = makeGitHubClient({ token: env.GITHUB_TOKEN || env.MY_GITHUB_PAT, repo });
     const target = path.resolve(positional[0] || path.join('public', 'data.json'));
     const { verifyPublished } = await import('./verify-published.js');
+    const { loadModerationFile, MODERATION_PATH } = await import('./moderation.js');
+    const moderation = loadModerationFile(path.join(process.cwd(), MODERATION_PATH));
     await restoreLatest({
       store: createStateStore({ client }),
       target,
-      verify: (payload) =>
-        verifyPublished(payload, { allowMixedVersions: env.ALLOW_MIXED_MODELS === '1' }),
+      verify: (payload) => verifyPublished(payload, { moderation }),
       force: flags.force
     });
     console.log(

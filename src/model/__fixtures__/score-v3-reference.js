@@ -1,6 +1,6 @@
 /**
  * An independent, deliberately naive implementation of scoring v3, written from the formula in
- * docs and the config rather than from src/model/next/score.js, for the differential test. It
+ * docs and the config rather than from src/model/score.js, for the differential test. It
  * reads the decoded measurement directly (no evidence step), so a rule implemented twice
  * differently shows up as a mismatch.
  *

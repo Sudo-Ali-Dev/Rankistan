@@ -4,7 +4,7 @@
 // feed. Scoring v3 is computed from GitHub's contributions API and search, which need a token, so
 // the preview moves here and runs the pipeline's own code: the same measurement
 // (scripts/measure/contributions.js), the same evidence rules and the same arithmetic
-// (src/model/next/). What it returns is the score the pipeline would publish for the same day,
+// (src/model/). What it returns is the score the pipeline would publish for the same day,
 // with the evidence behind it, so anyone can check any developer's score item by item.
 //
 // Costs and limits:
@@ -18,14 +18,14 @@
 //   - it never waits on a GitHub rate limit: a request that would have to wait answers 503.
 import { GITHUB_USERNAME_RE } from './limits.js';
 import {
-  createShadowClient,
+  createMeasurementClient,
   decodeMeasurement,
-  measureShadowContributions
+  measureContributions
 } from '../scripts/measure/contributions.js';
 import { measurementWindow } from '../src/model/measurement.js';
-import { deriveEvidence } from '../src/model/next/evidence.js';
-import { scoreEvidence } from '../src/model/next/score.js';
-import { SCORE_CONFIG } from '../src/model/next/config.js';
+import { deriveEvidence } from '../src/model/evidence.js';
+import { scoreEvidence } from '../src/model/score.js';
+import { SCORE_CONFIG } from '../src/model/config.js';
 
 export const PREVIEW_PER_IP = Object.freeze({ max: 5, windowMs: 60 * 1000 });
 // At about 2 points a measurement, at most ~1,200 points an hour.
@@ -58,7 +58,7 @@ export async function previewScore(
   login,
   { token, now = Date.now(), fetchImpl, moderation = [], sleep }
 ) {
-  const client = createShadowClient({
+  const client = createMeasurementClient({
     token,
     fetchImpl,
     minIntervalMs: 0,
@@ -66,7 +66,7 @@ export async function previewScore(
     log: quiet,
     ...(sleep ? { sleep } : {})
   });
-  const { blocks, failed } = await measureShadowContributions([{ username: login }], {
+  const { blocks, failed } = await measureContributions([{ username: login }], {
     client,
     now,
     log: quiet

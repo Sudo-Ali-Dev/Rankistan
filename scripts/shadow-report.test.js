@@ -7,7 +7,7 @@ import {
   summarize,
   topOverlap
 } from './shadow-report.js';
-import { SHADOW_FIELD } from './measure/contributions.js';
+import { CONTRIBUTIONS_FIELD } from './measure/contributions.js';
 import {
   FLAG_ORG,
   FLAG_OWNED,
@@ -48,7 +48,10 @@ function measurement(login, overrides = {}) {
   };
 }
 
-const row = (username, m) => ({ username, ...(m ? { [SHADOW_FIELD]: encodeMeasurement(m) } : {}) });
+const row = (username, m) => ({
+  username,
+  ...(m ? { [CONTRIBUTIONS_FIELD]: encodeMeasurement(m) } : {})
+});
 
 describe('statistics', () => {
   it('ranks ties at their average', () => {
@@ -160,7 +163,7 @@ describe('buildReport', () => {
     leaderboard: [
       row('ana', measurement('ana', { restricted: 5 })),
       row('zed', measurement('zed', { future_repos: ['zed/paint'], cut: 1 })),
-      { username: 'legacy', [SHADOW_FIELD]: { v: 1, at: '2026-10-13T00:00:00Z' } },
+      { username: 'legacy', [CONTRIBUTIONS_FIELD]: { v: 1, at: '2026-10-13T00:00:00Z' } },
       row('none', null)
     ]
   };

@@ -10,11 +10,8 @@ import {
 } from './score-preview.js';
 import { RateLimiter } from './rate-limiter.js';
 import { NOW, fakeGitHub, mergedNode, person } from '../scripts/measure/fake-contributions.js';
-import {
-  measureShadowContributions,
-  createShadowClient
-} from '../scripts/measure/contributions.js';
-import { scoreModel } from '../src/model/next/score.js';
+import { measureContributions, createMeasurementClient } from '../scripts/measure/contributions.js';
+import { scoreModel } from '../src/model/score.js';
 
 const people = () => ({
   ana: person('ana', {
@@ -77,13 +74,13 @@ describe('previewScore', () => {
     expect(preview.status).toBe(200);
 
     const { fetchImpl: again } = upstream();
-    const client = createShadowClient({
+    const client = createMeasurementClient({
       token: 't',
       fetchImpl: again,
       minIntervalMs: 0,
       log: { log() {}, warn() {} }
     });
-    const { blocks } = await measureShadowContributions([{ username: 'ana' }], {
+    const { blocks } = await measureContributions([{ username: 'ana' }], {
       client,
       now: NOW,
       log: { log() {}, warn() {} }

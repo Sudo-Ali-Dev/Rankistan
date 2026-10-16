@@ -568,13 +568,11 @@ describe('admitFetched', () => {
     });
   });
 
-  it('rejects one below them, as evaluated and ineligible', () => {
-    const verdict = admitFetched(
-      joined,
-      { username: 'two', github_id: 2, public_repos: 2, followers: 9 },
-      quiet
-    );
-    expect(verdict.reject).toMatch(/below this batch's search gates/);
+  it("admits one below search's repository and follower qualifiers, which v3 does not score", () => {
+    const dev = { username: 'two', github_id: 2, public_repos: 0, followers: 0 };
+    expect(admitFetched(joined, dev, quiet)).toEqual({
+      admit: { ...dev, discovery_source: 'registered' }
+    });
   });
 
   it('passes a discovered developer through untouched', () => {

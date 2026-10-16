@@ -12,6 +12,10 @@ import {
   createFileStore,
   dispatchWorkflows,
   reownRows,
+  rescoreRows,
+  migrateRows,
+  assertRescoreIsSafe,
+  MAX_UNSCORABLE_SHARE,
   MIN_REPLACEMENT_RATIO,
   MIN_COHORT_FOR_RATIO_CHECK,
   MAX_MISSED_RUNS,
@@ -23,7 +27,8 @@ import {
 import { MAX_DEVELOPERS } from './fetch-devs.js';
 import { emptyRegistry } from './registry.js';
 import { BATCH_RANGES } from './discovery/batches.js';
-import { SCORE_CONFIG } from '../src/model/config.js';
+import { SCORE_CONFIG, MODEL_VERSION } from '../src/model/config.js';
+import { measuredRow } from '../src/model/__fixtures__/measured.js';
 
 const call = (over = {}) =>
   assertReplacementIsSafe({
@@ -100,19 +105,45 @@ const quiet = { log: () => {}, warn: () => {} };
 // No registrations and no opt-outs. runBatch requires a registry reader.
 const noIntents = async () => emptyRegistry();
 
-// Legacy-shaped rows: verify:published counts them without recomputing, so
-// these tests exercise the merge and guards rather than the scoring model.
+// Rows whose `score` is a marker the merge must carry or replace. These tests exercise the merge
+// and the guards, so they run with a re-scorer that keeps each row's score and a verifier that
+// checks only what the guard adds; rescoreRows and verifyPublished have tests of their own, on
+// real measurements.
 const row = (username, batch, score, extra = {}) => ({
   username,
   batch_index: batch,
   score,
+  score_exact: score,
   ...extra
 });
+const keepScores = (rows) => ({
+  rows: rows.map((r) => ({ ...r })),
+  removed: [],
+  counts: { unscorable: 0, ineligible: 0, changed: 0 }
+});
+const checkDuplicates = (board) => {
+  const seen = new Set();
+  const errors = [];
+  for (const r of board.leaderboard) {
+    const key = r.username.toLowerCase();
+    if (seen.has(key)) errors.push(`${r.username} appears more than once`);
+    seen.add(key);
+  }
+  return { errors };
+};
 const at = (days) => new Date(NOW - days * DAY).toISOString();
 const hoursBefore = (h) => new Date(NOW - h * 3_600_000).toISOString();
 const names = (board) => board.leaderboard.map((d) => d.username);
 const merge = (existing, args) =>
-  mergeBatch({ existing, batchIndex: 0, newEntries: [], now: NOW, log: quiet, ...args });
+  mergeBatch({
+    existing,
+    batchIndex: 0,
+    newEntries: [],
+    now: NOW,
+    rescore: keepScores,
+    log: quiet,
+    ...args
+  });
 
 describe('mergeBatch', () => {
   it('replaces only the rows the batch owns', () => {
@@ -279,6 +310,7 @@ describe('mergeBatch', () => {
         newEntries: reFound,
         evaluated: reFound.map((d) => d.username),
         now: NOW,
+        rescore: keepScores,
         log: quiet
       });
       const nadir = board.leaderboard.find((d) => d.username === 'nadiraliofficial');
@@ -365,21 +397,24 @@ describe('guardBoard', () => {
   it('passes a board that verifies and accounts for everyone who left', () => {
     const next = board(previous.slice(0, 90));
     const removed = previous.slice(90).map((d) => ({ ...d, reason: 'ineligible' }));
-    expect(guardBoard({ previous, board: next, removed, log: quiet }).unexplained).toEqual([]);
+    expect(
+      guardBoard({ previous, board: next, removed, verify: checkDuplicates, log: quiet })
+        .unexplained
+    ).toEqual([]);
   });
 
   it(`refuses more than ${MAX_UNEXPLAINED_LOSS * 100}% leaving with no recorded reason`, () => {
     const next = board(previous.slice(0, 94));
-    expect(() => guardBoard({ previous, board: next, removed: [], log: quiet })).toThrow(
-      /6 of 100 developers would leave the board with no recorded reason/
-    );
+    expect(() =>
+      guardBoard({ previous, board: next, removed: [], verify: checkDuplicates, log: quiet })
+    ).toThrow(/6 of 100 developers would leave the board with no recorded reason/);
   });
 
   it('lets a small unexplained loss through, by name, so it can be found', () => {
     const warnings = [];
     const log = { log: () => {}, warn: (m) => warnings.push(m) };
     const next = board(previous.slice(0, 95));
-    const result = guardBoard({ previous, board: next, removed: [], log });
+    const result = guardBoard({ previous, board: next, removed: [], verify: checkDuplicates, log });
     expect(result.unexplained).toHaveLength(5);
     expect(warnings.join('\n')).toMatch(/u95, u96, u97, u98, u99/);
   });
@@ -388,29 +423,9 @@ describe('guardBoard', () => {
     const next = board(previous.slice(0, 2));
     next.leaderboard[1].username = 'U0';
     const removed = previous.slice(2).map((d) => ({ ...d, reason: 'ineligible' }));
-    expect(() => guardBoard({ previous, board: next, removed, log: quiet })).toThrow(
-      /fails verification .*more than once/
-    );
-  });
-
-  it('accepts mixed model versions only during a migration', () => {
-    const next = board([
-      { ...row('a', 0, 10), model_version: '9.0.0' },
-      { ...row('b', 1, 5), model_version: '8.0.0' }
-    ]);
-    const prev = next.leaderboard;
-    expect(() => guardBoard({ previous: prev, board: next, removed: [], log: quiet })).toThrow(
-      /2 model versions/
-    );
     expect(() =>
-      guardBoard({
-        previous: prev,
-        board: next,
-        removed: [],
-        allowMixedVersions: true,
-        log: quiet
-      })
-    ).not.toThrow();
+      guardBoard({ previous, board: next, removed, verify: checkDuplicates, log: quiet })
+    ).toThrow(/fails verification .*more than once/);
   });
 });
 
@@ -436,6 +451,8 @@ describe('runBatch', () => {
     const calls = [];
     const store = memoryStore(state(existing), calls);
     const result = await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
       registry: noIntents,
       batchIndex: 0,
       store,
@@ -468,6 +485,8 @@ describe('runBatch', () => {
     const earlier = { 7: { at: at(1), measured: 3, complete: true } };
     const store = memoryStore({ ...state(existing), batch_runs: earlier }, calls);
     await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
       registry: noIntents,
       batchIndex: 0,
       store,
@@ -490,10 +509,11 @@ describe('runBatch', () => {
     const store = memoryStore(state(existing), calls);
     await expect(
       runBatch({
+        rescore: keepScores,
         registry: noIntents,
         batchIndex: 0,
         store,
-        // A versioned row that cannot be recomputed: the board fails verification.
+        // Rows no measurement backs: the board fails verification.
         measure: async () => ({
           newEntries: [row('a', 0, 900, { model_version: SCORE_CONFIG.MODEL_VERSION })]
         }),
@@ -513,6 +533,8 @@ describe('runBatch', () => {
       calls
     );
     const result = await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
       registry: noIntents,
       batchIndex: 0,
       store,
@@ -535,6 +557,8 @@ describe('runBatch', () => {
     const store = memoryStore(null, calls);
     const fallback = { load: async () => ({ payload: state(existing), source: 'data.json' }) };
     await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
       registry: noIntents,
       batchIndex: 7,
       store,
@@ -550,6 +574,8 @@ describe('runBatch', () => {
     const calls = [];
     await expect(
       runBatch({
+        rescore: keepScores,
+        verify: checkDuplicates,
         registry: noIntents,
         batchIndex: 0,
         store: memoryStore(null, calls),
@@ -569,6 +595,8 @@ describe('runBatch', () => {
     let seeded = false;
     await expect(
       runBatch({
+        rescore: keepScores,
+        verify: checkDuplicates,
         registry: noIntents,
         batchIndex: 0,
         store: {
@@ -594,6 +622,8 @@ describe('runBatch', () => {
     const store = memoryStore(state(existing), calls);
     await expect(
       runBatch({
+        rescore: keepScores,
+        verify: checkDuplicates,
         registry: noIntents,
         batchIndex: 0,
         store,
@@ -614,6 +644,8 @@ describe('runBatch', () => {
     const store = memoryStore(state(existing), calls);
     let clock = NOW;
     await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
       registry: noIntents,
       batchIndex: 0,
       store,
@@ -632,6 +664,8 @@ describe('runBatch', () => {
     const calls = [];
     const store = memoryStore(state([row('old', 0, 5, { scored_at: at(30) })]), calls);
     await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
       registry: noIntents,
       batchIndex: 0,
       store,
@@ -659,6 +693,8 @@ describe('runBatch', () => {
       const store = memoryStore(state(board), calls);
       let seen = null;
       const result = await runBatch({
+        rescore: keepScores,
+        verify: checkDuplicates,
         batchIndex: 0,
         store,
         registry: intents({ optedOut: new Set([3]) }),
@@ -684,6 +720,8 @@ describe('runBatch', () => {
     it('matches on the account id, so a renamed login cannot escape an opt-out', async () => {
       const store = memoryStore(state(board), []);
       const result = await runBatch({
+        rescore: keepScores,
+        verify: checkDuplicates,
         batchIndex: 0,
         store,
         registry: intents({ optedOut: new Set([1]) }),
@@ -706,6 +744,8 @@ describe('runBatch', () => {
       const lines = [];
       await expect(
         runBatch({
+          rescore: keepScores,
+          verify: checkDuplicates,
           batchIndex: 0,
           store,
           registry: async () => {
@@ -730,6 +770,8 @@ describe('runBatch', () => {
       const store = memoryStore(state(board), calls);
       await expect(
         runBatch({
+          rescore: keepScores,
+          verify: checkDuplicates,
           batchIndex: 0,
           store,
           measure: async () => ({ newEntries: [] }),
@@ -744,6 +786,8 @@ describe('runBatch', () => {
       const store = memoryStore(state(board), []);
       const registered = [{ id: 9, nodeId: 'U_9', login: 'reg', issueNumber: 1, at: at(1) }];
       const result = await runBatch({
+        rescore: keepScores,
+        verify: checkDuplicates,
         batchIndex: 0,
         store,
         registry: intents({ registered }),
@@ -815,6 +859,8 @@ describe('reownRows', () => {
     };
     const lines = [];
     const result = await runBatch({
+      rescore: keepScores,
+      verify: checkDuplicates,
       registry: noIntents,
       batchIndex: 5,
       store,
@@ -959,5 +1005,101 @@ describe('dispatchWorkflows', () => {
       /state is saved, but could not dispatch deploy\.yml \(HTTP 403\)/
     );
     expect(client.calls.filter(([m]) => m === 'POST')).toHaveLength(2);
+  });
+});
+
+describe('scoring v3 on the board', () => {
+  const measured = (name, batch, days, extra = {}) =>
+    measuredRow(
+      name,
+      { days, githubId: 1000 + name.length * 31 + days },
+      { batch_index: batch, ...extra }
+    );
+
+  it('scores every row again from its measurement, and drops one it cannot read', () => {
+    const good = measured('ana', 0, 12);
+    const tampered = { ...measured('bob', 0, 9), score: 999, score_exact: 999 };
+    const { rows, removed, counts } = rescoreRows([good, tampered, { username: 'old', score: 5 }]);
+    expect(rows.map((r) => r.username)).toEqual(['ana', 'bob']);
+    expect(rows[1].score_exact).toBe(measured('bob', 0, 9).score_exact);
+    expect(removed).toEqual([{ row: { username: 'old', score: 5 }, why: 'unscorable' }]);
+    expect(counts).toEqual({ unscorable: 1, ineligible: 0, changed: 1 });
+  });
+
+  it('drops a row whose stored measurement no longer passes the gate', () => {
+    const { removed } = rescoreRows([measured('ana', 0, 20)], {
+      moderation: [{ repo: 'ana/app', reason: 'a script commits here' }]
+    });
+    expect(removed.map((r) => r.why)).toEqual(['ineligible']);
+  });
+
+  it('moves a measurement from its pre-switch field, and drops what v3 does not publish', () => {
+    const before = { ...measured('ana', 0, 12), activity_score: 3, events_window: {} };
+    before.shadow_contributions = before.contributions;
+    delete before.contributions;
+    const { rows, moved } = migrateRows([
+      before,
+      { username: 'v1', shadow_contributions: { v: 1 } }
+    ]);
+    expect(moved).toBe(1);
+    expect(rows[0].contributions).toEqual(measured('ana', 0, 12).contributions);
+    expect(rows[0]).not.toHaveProperty('shadow_contributions');
+    expect(rows[0]).not.toHaveProperty('activity_score');
+    expect(rows[1]).not.toHaveProperty('contributions');
+  });
+
+  it('refuses a switch that would lose more than its share of the board', () => {
+    expect(() =>
+      assertRescoreIsSafe({ previousCount: 100, counts: { unscorable: 3, ineligible: 0 } })
+    ).toThrow(/3 of 100 rows carry no measurement/);
+    expect(() =>
+      assertRescoreIsSafe({
+        previousCount: 100,
+        counts: { unscorable: 100 * MAX_UNSCORABLE_SHARE, ineligible: 0 }
+      })
+    ).not.toThrow();
+    expect(() =>
+      assertRescoreIsSafe({
+        previousCount: 100,
+        counts: { unscorable: 50, ineligible: 0 },
+        allowRescoreLoss: true
+      })
+    ).not.toThrow();
+  });
+
+  it('gives equal scores one rank, and never splits a tie at the cap', () => {
+    const existing = [
+      ...Array.from({ length: MAX_DEVELOPERS - 2 }, (_, i) =>
+        measured(`u${i}`, 1, 30, { github_id: 10 + i })
+      ),
+      measured('tie-a', 2, 4, { github_id: 5001 }),
+      measured('tie-b', 2, 4, { github_id: 5002 }),
+      measured('tie-c', 2, 4, { github_id: 5003 })
+    ];
+    const { board, removed } = mergeBatch({
+      existing,
+      batchIndex: 0,
+      newEntries: [],
+      now: NOW,
+      log: quiet
+    });
+    expect(board.leaderboard).toHaveLength(MAX_DEVELOPERS + 1);
+    const ranks = new Set(board.leaderboard.slice(0, MAX_DEVELOPERS - 2).map((r) => r.rank));
+    expect([...ranks]).toEqual([1]);
+    const tie = board.leaderboard.slice(-3);
+    expect(new Set(tie.map((r) => r.rank)).size).toBe(1);
+    expect(tie[0].rank).toBe(MAX_DEVELOPERS - 1);
+    expect(removed.filter((r) => r.reason === 'displaced')).toEqual([]);
+  });
+
+  it('stamps every row with this model version, from its measurement', () => {
+    const { board } = mergeBatch({
+      existing: [measured('ana', 3, 10)],
+      batchIndex: 0,
+      newEntries: [],
+      now: NOW,
+      log: quiet
+    });
+    expect(board.leaderboard[0]).toMatchObject({ model_version: MODEL_VERSION, rank: 1 });
   });
 });

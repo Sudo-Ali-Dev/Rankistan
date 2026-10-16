@@ -6,9 +6,9 @@
 // Kept apart from contributions.js so that module stays free of Node-only imports: the Worker's
 // preview endpoint bundles it.
 import {
-  createShadowClient,
+  createMeasurementClient,
   decodeMeasurement,
-  measureShadowContributions
+  measureContributions
 } from './contributions.js';
 
 const logins = process.argv.slice(2);
@@ -18,10 +18,10 @@ if (logins.length === 0 || !token) {
   process.exit(2);
 }
 
-const client = createShadowClient({ token });
+const client = createMeasurementClient({ token });
 const log = { log: (line) => console.error(line), warn: (line) => console.error(line) };
 try {
-  const { blocks, failed } = await measureShadowContributions(
+  const { blocks, failed } = await measureContributions(
     logins.map((username) => ({ username })),
     { client, log }
   );

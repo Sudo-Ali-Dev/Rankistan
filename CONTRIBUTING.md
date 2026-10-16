@@ -98,11 +98,14 @@ Explain **why** in the body when it isn't obvious from the diff.
   it from the `pipeline-state` release, merges one batch, saves it back, and
   dispatches `deploy.yml`, the only workflow that deploys Pages. See
   `scripts/state-store.js` and the README's "Where the Board Lives".
-- **The scoring formula exists once, in `src/model/`.** The pipeline and the
-  Register preview both call it; neither does any arithmetic of its own. If a
-  change can move any developer's score, bump the major `MODEL_VERSION` in
-  `score-config.json` (the rule is written beside it) and add a dated entry to
-  `src/pages/Evolution.jsx`.
+- **The scoring model exists once, in `src/model/`.** The pipeline, the board
+  check and the Worker's score preview all call it, and none does any
+  arithmetic of its own. Every constant in `score-config.json` carries its
+  derivation, and the validator refuses one without. If a change can move any
+  developer's score, bump the major `MODEL_VERSION` (the rule is written beside
+  it) and add a dated entry to `src/pages/Evolution.jsx`. Every run scores the
+  whole board again from its measurements, so the change reaches every row at
+  once. The design record is `docs/scoring.md`.
 - **Worker changes need a deploy.** `npm run cf:deploy` is a separate step from
   merging; a merged PR does not update the Worker.
 - **`update-digest.yml` is dispatched by the Cloudflare Worker's cron** by filename

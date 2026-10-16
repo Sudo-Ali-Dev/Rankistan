@@ -529,10 +529,13 @@ export async function joinRegistry({
  *
  *   { admit: row }    published as measured; a registered developer's row is tagged
  *                     `discovery_source: 'registered'`.
- *   { reject: why }   a registered developer below search's repos:/followers: gates. Evaluated
- *                     and failed, so their row leaves the board, as any ineligible one does.
  *   { skip: why }     the login, fetched by name, now belongs to an account this run never chose
  *                     (renamed and claimed since discovery). Not evaluated.
+ *
+ * A registered developer is not held to search's `repos:` and `followers:` qualifiers. Scoring v3
+ * reads neither (src/model/evidence.js): eligibility is working days, and someone whose work is
+ * all in other people's repositories, or who has no followers, is no less active for it. The
+ * qualifiers stay on discovery itself, where they bound how many accounts are searched.
  */
 export function admitFetched(joined, developer, log = console) {
   const id = developer?.github_id;
@@ -543,12 +546,5 @@ export function admitFetched(joined, developer, log = console) {
   }
   const person = joined?.registered?.get(id);
   if (!person) return { admit: developer };
-  if (!passesRegistrationGates(developer, person.gates)) {
-    const why =
-      `${developer.username} registered but has ${developer.public_repos} public repos and ` +
-      `${developer.followers} followers, below this batch's search gates`;
-    log.log(`Registration: ${why}.`);
-    return { reject: why };
-  }
   return { admit: { ...developer, discovery_source: DISCOVERY_SOURCES.REGISTERED } };
 }

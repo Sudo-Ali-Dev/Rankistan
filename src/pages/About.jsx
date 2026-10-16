@@ -1,48 +1,68 @@
 import React, { useState } from 'react';
 import Contributors from '../components/Contributors';
 import { SCORE_CONFIG } from '../model/config.js';
-import { SCORING_WINDOW_DAYS } from '../model/activity.js';
 // The list discovery searches, read from the pipeline itself, so this page names exactly the
 // cities that are searched.
 import { CITY_TERMS } from '../../scripts/discovery/locations.js';
 
-// Every number in the scoring copy below comes from the model's config, so
+// Every number in the scoring copy below comes from the model's config (score-config.json), so
 // the page cannot describe a formula the pipeline is not running.
 const {
-  STAR_WEIGHT,
+  SCALE,
   WEIGHTS,
-  MAX_STARS_FOR_SCORING,
-  MAX_FOLLOWERS_FOR_SCORING,
-  MAX_PUBLIC_REPOS_FOR_SCORING,
-  SIX_MONTHS_DAYS,
-  AGE_PENALTY_MULTIPLIER,
-  ACTIVITY_SCORING
+  WINDOW_DAYS,
+  RECENCY_FLOOR,
+  WORK,
+  COLLABORATION,
+  APPRECIATION,
+  INTEGRITY,
+  MIN_ACCOUNT_AGE_DAYS
 } = SCORE_CONFIG;
-const PUSH_RULE = ACTIVITY_SCORING.push;
-const PUSH_COUNTED = PUSH_RULE.maxCountedPerDay === null ? '' : ` (${PUSH_RULE.maxCountedPerDay} counted)`;
+const points = (weight) => Math.round(SCALE * weight);
+const WORK_POINTS = points(WEIGHTS.work);
+const COLLABORATION_POINTS = points(WEIGHTS.collaboration);
+const APPRECIATION_POINTS = points(WEIGHTS.appreciation);
+const HALF_WINDOW_SHARE = Math.round(100 * (1 - 0.5 ** WORK.CURVE_POWER));
+const COUNTERPARTY_YEARS = COLLABORATION.COUNTERPARTY_MIN_AGE_DAYS / 365;
+const COUNTERPARTY_AGE = Number.isInteger(COUNTERPARTY_YEARS)
+  ? `${COUNTERPARTY_YEARS === 1 ? 'a year' : `${COUNTERPARTY_YEARS} years`}`
+  : `${COLLABORATION.COUNTERPARTY_MIN_AGE_DAYS} days`;
+const FULL_STAR_WEIGHT_AT = Math.round(10 ** ((1 - COLLABORATION.STARS_FLOOR) / COLLABORATION.STARS_PER_DIGIT));
+const FULL_APPRECIATION_AT = APPRECIATION.FROM_STARS * 10 ** APPRECIATION.DECADES;
 
 const SCORING_WEIGHTS = [
-  { field: 'Stars', weight: `× ${STAR_WEIGHT}`, note: `Capped at ${MAX_STARS_FOR_SCORING} to prevent outlier dominance` },
-  { field: `Activity (${SCORING_WINDOW_DAYS}d)`, weight: 'log2 curve', note: `Per UTC day: base / log2(n+1), then daily cap. Push ${PUSH_RULE.dailyCap}/day${PUSH_COUNTED}, Issue ${ACTIVITY_SCORING.issue.dailyCap}, PR ${ACTIVITY_SCORING.pr.dailyCap}, Release ${ACTIVITY_SCORING.release.dailyCap}` },
-  { field: 'Followers', weight: `× ${WEIGHTS.followers}`, note: `Capped at ${MAX_FOLLOWERS_FOR_SCORING} to prevent outlier dominance` },
-  { field: 'Public Repos', weight: `× ${WEIGHTS.publicRepos}`, note: `Capped at ${MAX_PUBLIC_REPOS_FOR_SCORING} repos (max ${MAX_PUBLIC_REPOS_FOR_SCORING * WEIGHTS.publicRepos} points)` },
+  {
+    field: 'Work',
+    weight: `${WORK_POINTS} pts`,
+    note: `Days in the last ${WINDOW_DAYS} with public work. A day counts once, one commit or a thousand. Recent days weigh more, yesterday 1 and the oldest day ${RECENCY_FLOOR}. Each extra day adds a little less, so working half the days earns ${HALF_WINDOW_SHARE}%.`
+  },
+  {
+    field: 'Collaboration',
+    weight: `${COLLABORATION_POINTS} pts`,
+    note: `Work another person accepted. Your pull requests merged into projects you do not own, reviews of other people's pull requests, and other people's pull requests merged into your projects. The other person's account must be ${COUNTERPARTY_AGE} old. A project counts more the more stars it has, fully at ${FULL_STAR_WEIGHT_AT.toLocaleString('en-US')}.`
+  },
+  {
+    field: 'Appreciation',
+    weight: `${APPRECIATION_POINTS} pts`,
+    note: `Stars on the best known project you own and worked on this month. Nothing below ${APPRECIATION.FROM_STARS} stars, then a third for every tenfold, full at ${FULL_APPRECIATION_AT.toLocaleString('en-US')}. Projects you did not work on this month earn nothing.`
+  }
 ];
 
 const ACTIVITY_FILTERS = [
-  { label: 'Meaningful contributions in 60 days', threshold: '>= 30', icon: 'code' },
-  { label: 'Longest inactivity gap', threshold: '<= 30 days', icon: 'schedule' },
-  { label: 'Account age', threshold: '>= 30 days', icon: 'calendar_month' },
-  { label: 'Public repos', threshold: '> 3', icon: 'folder_open' },
-  { label: 'Followers', threshold: '> 1', icon: 'group' },
+  { label: `Working days in the last ${WINDOW_DAYS}`, threshold: `>= ${WORK.GATE_MIN_DAYS}`, icon: 'code' },
+  { label: 'Account age', threshold: `>= ${MIN_ACCOUNT_AGE_DAYS} days`, icon: 'calendar_month' },
+  { label: 'Location names Pakistan or a Pakistani city, or you registered', threshold: 'Required', icon: 'location_on' }
 ];
+
+const WORKING_DAY_KINDS = ['Commit', "Pull request to someone else's project", "Issue in someone else's project", "Review of someone else's pull request"];
 
 const CITY_NAMES = CITY_TERMS.map((city) => city[0].toUpperCase() + city.slice(1)).join(', ');
 
 const PIPELINE_STEPS = [
   { step: '01', title: 'DISCOVER', icon: 'search', desc: `Search GitHub for Pakistani developers in 24 batches by account creation date: location:pakistan, and a second search for locations that name one of ${CITY_TERMS.length} Pakistani cities without the country. Each search is cut into slices small enough to list whole, so the 1,000-result search cap never truncates one. Developers neither search finds can register by GitHub issue instead, and are evaluated in the batch that covers their account's creation date.` },
-  { step: '02', title: 'FETCH', icon: 'download', desc: 'For each developer, fetch profile, up to 200 recent events (2 pages), and all public repositories.' },
-  { step: '03', title: 'FILTER', icon: 'filter_alt', desc: 'Apply activity thresholds — contributions, inactivity gaps, account age. Only genuinely active developers pass.' },
-  { step: '04', title: 'SCORE', icon: 'calculate', desc: 'Calculate a weighted score from stars, recent activity, followers, and repo count. Apply new-account penalties.' },
+  { step: '02', title: 'MEASURE', icon: 'download', desc: `Read each candidate's contribution calendar, then measure everyone who could qualify from GitHub's contributions API and search. That means every commit day, every pull request, issue and review, and every merge someone else made, over the last ${WINDOW_DAYS} days.` },
+  { step: '03', title: 'FILTER', icon: 'filter_alt', desc: `Keep developers with at least ${WORK.GATE_MIN_DAYS} working days in the last ${WINDOW_DAYS} and an account at least ${MIN_ACCOUNT_AGE_DAYS} days old. Drop commits that cannot be someone's own work, such as commits dated in the future or made by a bot in their name.` },
+  { step: '04', title: 'SCORE', icon: 'calculate', desc: `Score work, collaboration and appreciation out of ${SCALE.toLocaleString('en-US')}. The whole board is scored again from its measurements on every run, so no one keeps an old number.` },
   { step: '05', title: 'MERGE', icon: 'merge', desc: 'Merge scored developers into the leaderboard using per-batch replacement. Anyone who opted out is removed first, whichever batch holds their row. Deduplicate, re-sort, re-rank.' },
   { step: '06', title: 'DEPLOY', icon: 'rocket_launch', desc: 'Build the frontend and deploy to GitHub Pages. Leaderboard, map, and all pages update automatically.' },
 ];
@@ -56,12 +76,12 @@ const SCANNER_METRICS = [
   {
     value: 'Daily',
     label: 'Every Profile Screened',
-    desc: 'Each is checked on its first page of public events. Only those that page does not settle are fetched in full and rescored.'
+    desc: 'Each is checked on its contribution calendar first. Only those who could qualify are measured in full and scored.'
   },
   {
     value: 'Strict',
     label: 'Ranking Gate',
-    desc: 'Only developers that pass all activity thresholds survive into final ranking and publishing.'
+    desc: `Only developers with ${WORK.GATE_MIN_DAYS} or more working days in the last ${WINDOW_DAYS} are ranked.`
   }
 ];
 
@@ -99,17 +119,19 @@ const AI_SUMMARY_STEPS = [
 ];
 
 const FAQ = [
-  { q: 'How often is the leaderboard updated?', a: 'Every hour. A Cloudflare Worker\'s cron triggers the GitHub Actions workflow at the top of each hour, 24 times a day — one batch per hour — with a backup at half past that runs only if the hour was missed. A full cycle through all developers completes in 24 hours.' },
-  { q: 'Why am I not on the leaderboard?', a: `You need at least 30 meaningful contributions in the last 60 days, no gap longer than 30 days, an account older than 30 days, more than 3 public repos, and more than 1 follower. The pipeline also has to find you: your GitHub location must say "Pakistan" or name one of ${CITY_TERMS.length} Pakistani cities (${CITY_NAMES}), or you register by GitHub issue from the Register tab. Some city names are not searched because they mostly mean somewhere else ("Hyderabad" alone is usually Hyderabad, India), so if yours is one of them, add "Pakistan" or register.` },
-  { q: 'What counts as a "meaningful" contribution?', a: 'Only PushEvents, PullRequestEvents, IssuesEvents, and ReleaseEvents. Starring repos, forking, watching, or commenting do not count toward the contribution threshold.' },
-  { q: 'Why is my score lower than expected?', a: `Stars are capped at ${MAX_STARS_FOR_SCORING} and followers are capped at ${MAX_FOLLOWERS_FOR_SCORING} for scoring purposes. Recent activity uses diminishing returns (base / log2(n+1) per event per UTC day) with daily caps per type — spamming pushes in one day earns far less than steady work spread across the month.${PUSH_RULE.maxCountedPerDay === null ? '' : ` Only the first ${PUSH_RULE.maxCountedPerDay} pushes per day count.`} Accounts younger than ${SIX_MONTHS_DAYS} days receive a ${AGE_PENALTY_MULTIPLIER}× penalty on their entire score.` },
-  { q: 'What is the "new account penalty"?', a: `If your GitHub account is less than ${SIX_MONTHS_DAYS} days old, your final score is multiplied by ${AGE_PENALTY_MULTIPLIER}. This prevents newly created accounts from dominating the board.` },
-  { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026), screens every one on its first page of public events, fetches in full only those that page does not settle, then applies strict activity gates before ranking.' },
+  { q: 'How often is the leaderboard updated?', a: 'Every hour. A Cloudflare Worker\'s cron triggers the GitHub Actions workflow at the top of each hour, one batch per hour and 24 a day, with a backup at half past that runs only if the hour was missed. Each developer is measured again once a day, and the whole board is scored again from its measurements on every run.' },
+  { q: 'Why am I not on the leaderboard?', a: `You need at least ${WORK.GATE_MIN_DAYS} working days in the last ${WINDOW_DAYS} and an account at least ${MIN_ACCOUNT_AGE_DAYS} days old. The pipeline also has to find you. Your GitHub location must say "Pakistan" or name one of ${CITY_TERMS.length} Pakistani cities (${CITY_NAMES}), or you register by GitHub issue from the Register tab. Some city names are not searched because they mostly mean somewhere else ("Hyderabad" alone is usually Hyderabad, India), so if yours is one of them, add "Pakistan" or register. The board shows the top 1,000.` },
+  { q: 'What counts as a working day?', a: `A day with at least one public commit, a pull request or issue you opened in someone else's project, or a review of someone else's pull request. A day counts once however much was done on it, so committing a thousand times in a day earns the same as committing once. Commits to forks and to profile README repositories never count. Starring, forking, watching and comments do not count.` },
+  { q: 'Why is my score lower than expected?', a: `Work alone is worth at most ${WORK_POINTS} of ${SCALE.toLocaleString('en-US')} points, and each extra working day adds a little less than the one before. The rest comes from work other people accepted and from stars on projects you are actively building. Followers, repository counts and total stars on old projects do not count at all. Private contributions do not count either, because nobody outside can check them.` },
+  { q: 'Does my account\'s age matter?', a: `Only for eligibility. An account must be ${MIN_ACCOUNT_AGE_DAYS} days old to be ranked. After that its age changes nothing. Age matters for the other side of collaboration instead, since the person who merges your work or whose pull request you review must have had their account ${COUNTERPARTY_AGE}, so a fresh second account cannot vouch for you.` },
+  { q: 'Can my score be gamed?', a: `Volume cannot help, because a day counts once. Commits dated in the future, author dates more than ${INTEGRITY.MAX_LEAD_HOURS} hours after their commit dates, and repositories where a bot commits in your name are excluded automatically. A daily script that commits as you can at most reach the full work score, and the moderation list (rankistan.dev/moderation.json) removes such a repository with public evidence. Merges by a fresh account, by a bot or by yourself earn nothing, and no single project or person can vouch for you without limit.` },
+  { q: 'Can I see exactly what my score was computed from?', a: 'Yes. Every developer\'s file on the site lists the evidence item by item. That covers each working day and each pull request, review and merge that counted, each a public link on GitHub. The Register tab measures any account live with the same code the pipeline runs.' },
+  { q: 'How does the scanner work at scale?', a: 'Rankistan runs a rolling daily scanner from year 2000 to present. It searches about 34,800 profiles (26,002 that say Pakistan and 8,836 that name only a Pakistani city, counted on 13 October 2026). It reads every candidate\'s contribution calendar, measures in full only those who could qualify, then applies the eligibility gate before ranking.' },
   { q: 'How does AI summary generation work?', a: 'It is on-demand only. Expanding a card triggers a request to the Cloudflare Worker, which rate-limits and sanitizes input, calls Groq, validates output, and returns a cached summary per username.' },
   { q: 'How does the Developer Map work?', a: 'The map uses deterministic location normalization with city aliases and token-aware matching, then maps developers to canonical Pakistani city keys. Unknowns fall back to Pakistan.' },
-  { q: 'Can I register manually?', a: 'Yes, by opening a Register issue on GitHub (linked from the Register tab). It is for developers whose GitHub location does not say Pakistan or one of the searched cities, and it replaces only that check: every other gate still applies. The account that opens the issue is the account registered, so you can only register yourself. The Register tab also checks a profile against every gate before you do.' },
+  { q: 'Can I register manually?', a: `Yes, by opening a Register issue on GitHub (linked from the Register tab). It is for developers whose GitHub location does not say Pakistan or one of the searched cities, and it replaces only that check. You still need ${WORK.GATE_MIN_DAYS} working days in the last ${WINDOW_DAYS}. The account that opens the issue is the account registered, so you can only register yourself.` },
   { q: 'How do I take myself off the leaderboard?', a: 'Open a Remove me issue on GitHub (linked from the Register tab). You are removed at the next pipeline run, whichever batch your row is in, and are not measured again while the opt-out stands. Only the account that opens the issue is removed, and a later Register issue reverses it.' },
-  { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase — pipeline scripts, scoring algorithm, and frontend — is on GitHub at github.com/Sudo-Ali-Dev/Rankistan.' },
+  { q: 'Is this open source?', a: 'Yes. The full Rankistan codebase, meaning the pipeline scripts, the scoring model and the frontend, is on GitHub at github.com/Sudo-Ali-Dev/Rankistan.' },
 ];
 
 export default function About({ onChangeTab }) {
@@ -144,8 +166,8 @@ export default function About({ onChangeTab }) {
           <p className="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed max-w-3xl">
             Rankistan is an automated leaderboard that discovers, tracks, and ranks active Pakistani developers on GitHub.
             The pipeline runs every hour as a rolling daily scanner across historical and modern GitHub accounts.
-            It searches about 34,800 profiles a day, screens every one, and publishes only developers that pass strict ranking gates.
-            Developers the location search cannot find can register themselves by GitHub issue, and anyone can opt out the same way. No vanity metrics. Just code.
+            It searches about 34,800 profiles a day, screens every one, and ranks developers by the public work they did in the last {WINDOW_DAYS} days.
+            Developers the location search cannot find can register themselves by GitHub issue, and anyone can opt out the same way. Followers and repository counts never count. Work does.
           </p>
         </div>
 
@@ -185,7 +207,7 @@ export default function About({ onChangeTab }) {
           <p className="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed max-w-4xl">
             Rankistan runs as a high-volume daily scanner from account-year 2000 to present.
             It does broad discovery first, then selective rescoring, then strict eligibility gating before publishing.
-            The process is intentionally heavy so ranking changes reflect real developer activity, not one-time spikes.
+            The process is intentionally heavy so ranking changes reflect real developer work, and a burst of commits on one day counts as one day.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mt-4 sm:mt-6">
@@ -275,10 +297,16 @@ export default function About({ onChangeTab }) {
 
             <div className="overflow-x-auto bg-surface-container-low border border-outline-variant p-3 sm:p-5 mb-4 sm:mb-6 font-mono text-xs sm:text-sm leading-relaxed">
               <div className="text-primary">
-                base_score = (min(stars, {MAX_STARS_FOR_SCORING}) × {STAR_WEIGHT}) + (activity_score) + (min(followers, {MAX_FOLLOWERS_FOR_SCORING}) × {WEIGHTS.followers}) + (min(public_repos, {MAX_PUBLIC_REPOS_FOR_SCORING}) × {WEIGHTS.publicRepos})
+                score = round({SCALE} × ({WEIGHTS.work} × work + {WEIGHTS.collaboration} × collaboration + {WEIGHTS.appreciation} × appreciation))
               </div>
               <div className="text-tertiary mt-2">
-                final_score = round(base_score × (account_age &lt; {SIX_MONTHS_DAYS}d ? {AGE_PENALTY_MULTIPLIER} : 1))
+                work = 1 − (1 − x)^{WORK.CURVE_POWER}, x = recency-weighted share of the last {WINDOW_DAYS} days you worked
+              </div>
+              <div className="text-tertiary mt-1">
+                collaboration = c / (c + {COLLABORATION.HALF_POINT}), c = accepted work counted per project and per person
+              </div>
+              <div className="text-tertiary mt-1">
+                appreciation = (log10(stars) − 1) / {APPRECIATION.DECADES} on your best active project, from {APPRECIATION.FROM_STARS} stars
               </div>
             </div>
 
@@ -293,10 +321,11 @@ export default function About({ onChangeTab }) {
             </div>
 
             <div className="mt-4 sm:mt-6 p-3 sm:p-4 border-l-2 border-tertiary bg-tertiary/5">
-              <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest">Penalty Notice</span>
+              <span className="font-mono text-[10px] text-tertiary uppercase tracking-widest">Not Scored</span>
               <p className="font-body text-xs text-outline leading-relaxed mt-1">
-                Accounts younger than <span className="text-on-surface font-bold">{SIX_MONTHS_DAYS} days</span> receive a <span className="text-on-surface font-bold">{AGE_PENALTY_MULTIPLIER}×</span> multiplier.
-                Stars are capped at <span className="text-on-surface font-bold">{MAX_STARS_FOR_SCORING}</span>, followers at <span className="text-on-surface font-bold">{MAX_FOLLOWERS_FOR_SCORING}</span>, and public repos at <span className="text-on-surface font-bold">{MAX_PUBLIC_REPOS_FOR_SCORING}</span> before weights are applied.
+                <span className="text-on-surface font-bold">Followers</span>, <span className="text-on-surface font-bold">repository counts</span> and <span className="text-on-surface font-bold">account age</span> never change a score.
+                <span className="text-on-surface font-bold"> Private contributions</span> are shown as context and never scored, because nobody outside can check them.
+                Commits from <span className="text-on-surface font-bold">forks</span>, <span className="text-on-surface font-bold">profile README repositories</span>, commits dated in the future or made by a bot in your name, and repositories on the public moderation list do not count.
               </p>
             </div>
 
@@ -319,7 +348,7 @@ export default function About({ onChangeTab }) {
               <h2 className="font-headline text-lg sm:text-xl font-bold tracking-tighter uppercase">Activity Filters</h2>
             </div>
             <p className="font-mono text-[10px] text-outline uppercase tracking-widest mb-4 sm:mb-6">
-              All checks must pass to appear on the leaderboard.
+              All checks must pass to be ranked.
             </p>
 
             <div className="space-y-3">
@@ -336,14 +365,14 @@ export default function About({ onChangeTab }) {
             </div>
 
             <div className="mt-4 sm:mt-6 p-3 bg-surface-container-low border border-outline-variant/50">
-              <span className="font-mono text-[10px] text-outline uppercase tracking-widest">Meaningful Events Only</span>
+              <span className="font-mono text-[10px] text-outline uppercase tracking-widest">A Working Day Is Any Of</span>
               <div className="mt-2 flex flex-wrap gap-2">
-                {['PushEvent', 'PullRequestEvent', 'IssuesEvent', 'ReleaseEvent'].map(e => (
+                {WORKING_DAY_KINDS.map(e => (
                   <span key={e} className="font-mono text-[9px] text-primary bg-primary/10 px-2 py-1">{e}</span>
                 ))}
               </div>
               <p className="font-mono text-[9px] text-outline/60 mt-2 uppercase leading-relaxed">
-                Stars, forks, watches, and comments do not count.
+                A day counts once however much was done. Stars, forks, watches and comments do not count.
               </p>
             </div>
           </div>

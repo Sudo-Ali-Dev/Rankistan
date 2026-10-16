@@ -1,153 +1,91 @@
 import fs from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { verifyPublished } from './verify-published.js';
-import { scoreModel, publishedScoreFields } from '../src/model/score.js';
-import { compareRows } from '../src/model/order.js';
-import { SCORE_CONFIG } from '../src/model/config.js';
+import { assignRanks, boardOrder, boardSeed } from '../src/model/order.js';
+import { measuredRow } from '../src/model/__fixtures__/measured.js';
+import { buildPublicPayload } from '../src/utils/split-data.js';
 
-const DAY = 24 * 60 * 60 * 1000;
-const NOW = Date.UTC(2026, 9, 13, 6, 0, 0, 0);
-
-function stamped(username, stars, pushes) {
-  const dev = {
-    username,
-    total_stars: stars,
-    followers: 10,
-    public_repos: 8,
-    created_at: '2018-02-03T04:05:06Z',
-    raw_events_60d: Array.from({ length: pushes }, (_, k) => ({
-      type: 'PushEvent',
-      created_at: new Date(NOW - k * DAY).toISOString()
-    }))
-  };
-  const result = scoreModel(dev, { config: SCORE_CONFIG, now: NOW });
-  return {
-    username,
-    total_stars: dev.total_stars,
-    followers: dev.followers,
-    public_repos: dev.public_repos,
-    created_at: dev.created_at,
-    ...publishedScoreFields(result, { config: SCORE_CONFIG, now: NOW })
-  };
-}
-
-const legacy = (username, score) => ({ username, score });
+const LAST_UPDATED = '2026-10-14T10:00:00.000Z';
 
 function board(rows) {
-  const ordered = [...rows].sort(compareRows).map((r, i) => ({ ...r, rank: i + 1 }));
-  return { last_updated: 'x', total_devs: ordered.length, leaderboard: ordered };
+  const ranked = assignRanks([...rows].sort(boardOrder(boardSeed(LAST_UPDATED))));
+  return { last_updated: LAST_UPDATED, total_devs: ranked.length, leaderboard: ranked };
 }
 
+const rows = [
+  measuredRow('ana', { days: 25, merges: 3, githubId: 1 }),
+  measuredRow('bob', { days: 12, githubId: 2 }),
+  measuredRow('cy', { days: 30, githubId: 3 }),
+  measuredRow('dee', { days: 30, githubId: 4 }),
+  measuredRow('eve', { days: 5, githubId: 5 })
+];
+
 describe('verifyPublished', () => {
-  it('counts legacy rows without failing them, and reports the order it would impose', () => {
-    // Rows the previous code ordered, in an order compareRows would change.
-    const leaderboard = [legacy('b', 500), legacy('A', 500), legacy('c', 400)].map((r, i) => ({
-      ...r,
-      rank: i + 1
-    }));
-    const report = verifyPublished({ leaderboard });
+  it('passes a board every score of which recomputes from its measurement', () => {
+    const report = verifyPublished(board(rows));
     expect(report.errors).toEqual([]);
-    expect(report.legacy).toBe(3);
-    expect(report.stamped).toBe(0);
-    expect(report.orderAsserted).toBe(false);
-    expect(report.wouldMove).toBe(2);
+    expect(report.fromMeasurement).toBe(5);
   });
 
-  it('passes a board of recomputable rows in order, legacy rows included', () => {
-    const report = verifyPublished(
-      board([stamped('one', 300, 12), stamped('two', 20, 3), legacy('old', 100)])
-    );
+  it('recomputes the served board, which carries no measurement, from its parts', () => {
+    const served = buildPublicPayload(board(rows));
+    expect(served.leaderboard.some((r) => 'contributions' in r)).toBe(false);
+    const report = verifyPublished(served);
     expect(report.errors).toEqual([]);
-    expect(report.recomputed).toBe(2);
-    expect(report.versions).toEqual([SCORE_CONFIG.MODEL_VERSION]);
+    expect(report.fromParts).toBe(5);
   });
 
-  it('fails a score that does not recompute, and names the row', () => {
-    const data = board([stamped('one', 300, 12), stamped('two', 20, 3)]);
-    data.leaderboard[1].score += 1;
-    const { errors } = verifyPublished(data);
-    expect(errors.some((e) => /"two": published score/.test(e))).toBe(true);
+  it('gives equal scores one rank, and checks it', () => {
+    const b = board(rows);
+    const tied = b.leaderboard.filter((r) => r.username === 'cy' || r.username === 'dee');
+    expect(tied[0].rank).toBe(tied[1].rank);
+    b.leaderboard[b.leaderboard.indexOf(tied[1])] = { ...tied[1], rank: tied[1].rank + 1 };
+    expect(verifyPublished(b).errors.join()).toMatch(/rank is \d+, expected \d+/);
   });
 
-  it('fails a stale score_exact even when the rounded score agrees', () => {
-    const data = board([stamped('one', 300, 12)]);
-    data.leaderboard[0].score_exact += 0.01;
-    expect(verifyPublished(data).errors.join('\n')).toMatch(/score_exact/);
+  it('fails a score that does not come from its measurement, and names the row', () => {
+    const b = board(rows);
+    b.leaderboard[1] = { ...b.leaderboard[1], score_exact: b.leaderboard[1].score_exact + 1e-9 };
+    expect(verifyPublished(b).errors.join()).toMatch(/its measurement scores/);
   });
 
-  it('fails a board that mixes model versions', () => {
-    const data = board([stamped('one', 300, 12), stamped('two', 20, 3)]);
-    data.leaderboard[1].model_version = '2.0.1';
-    expect(verifyPublished(data).errors.join('\n')).toMatch(/2 model versions/);
+  it('fails served parts that do not give the published score', () => {
+    const served = buildPublicPayload(board(rows));
+    served.leaderboard[0] = {
+      ...served.leaderboard[0],
+      score_parts: { ...served.leaderboard[0].score_parts, work: 0.1 }
+    };
+    expect(verifyPublished(served).errors.join()).toMatch(/its parts give/);
   });
 
-  it('fails a stamped board that is out of order, or misranked', () => {
-    const data = board([stamped('one', 300, 12), stamped('two', 20, 3)]);
-    data.leaderboard.reverse();
-    const { errors } = verifyPublished(data);
-    expect(errors.join('\n')).toMatch(/not in compareRows order/);
-    expect(errors.join('\n')).toMatch(/rank is 2, expected 1/);
+  it('fails a row scored by another model version', () => {
+    const b = board(rows);
+    b.leaderboard[0] = { ...b.leaderboard[0], model_version: '2.0.0' };
+    expect(verifyPublished(b).errors.join()).toMatch(/scored by "2.0.0", not 3.0.0/);
   });
 
-  it('fails a developer listed twice', () => {
-    const data = board([stamped('one', 300, 12), stamped('two', 20, 3)]);
-    data.leaderboard.push({ ...data.leaderboard[1], username: 'TWO', rank: 3 });
-    expect(verifyPublished(data).errors.join('\n')).toMatch(/more than once/);
-  });
-
-  it('fails a file with no leaderboard', () => {
+  it('fails a board out of order, a developer listed twice, and a file with no leaderboard', () => {
+    const b = board(rows);
+    const swapped = {
+      ...b,
+      leaderboard: [b.leaderboard[1], b.leaderboard[0], ...b.leaderboard.slice(2)]
+    };
+    expect(verifyPublished(swapped).errors.join()).toMatch(/not in board order/);
+    const twice = board([...rows, { ...rows[0], username: 'ANA' }]);
+    expect(verifyPublished(twice).errors.join()).toMatch(/more than once/);
     expect(verifyPublished({}).errors).toEqual(['payload has no "leaderboard" array']);
   });
 
-  describe('during a model migration (allowMixedVersions)', () => {
-    // One batch re-scored under the new major, 23 still on the old one: mixed
-    // by construction until every batch has run. Refusing that would refuse
-    // every run of the migration, and the board would never converge.
-    function migrating() {
-      const data = board([stamped('new', 300, 12), stamped('old', 20, 3)]);
-      const old = data.leaderboard.find((r) => r.username === 'old');
-      old.model_version = '1.4.0';
-      old.score += 7; // scored by a formula this code does not have
-      return data;
-    }
-
-    it('is refused without the option', () => {
-      const errors = verifyPublished(migrating()).errors.join('\n');
-      expect(errors).toMatch(/2 model versions/);
-      expect(errors).toMatch(/"old"/);
-    });
-
-    it('accepts both versions and skips recomputing the other major', () => {
-      const report = verifyPublished(migrating(), { allowMixedVersions: true });
-      expect(report.errors).toEqual([]);
-      expect(report.foreign).toBe(1);
-      expect(report.recomputed).toBe(1);
-    });
-
-    it('still recomputes rows on this major, and still checks the order', () => {
-      const data = migrating();
-      data.leaderboard.find((r) => r.username === 'new').score += 1;
-      data.leaderboard.reverse();
-      const errors = verifyPublished(data, { allowMixedVersions: true }).errors.join('\n');
-      expect(errors).toMatch(/"new": published score/);
-      expect(errors).toMatch(/not in compareRows order/);
-    });
+  it('fails a measurement that no longer passes the gate, as after a moderation entry', () => {
+    const b = board(rows);
+    const moderation = [{ repo: 'eve/app', reason: 'a script commits here' }];
+    expect(verifyPublished(b, { moderation }).errors.join()).toMatch(/eve/);
   });
 });
 
 describe('the committed sample board', () => {
-  // CI builds, smoke-tests and dry-runs against this file instead of live data.
   it('is a board the pipeline would publish', () => {
-    const sample = JSON.parse(
-      fs.readFileSync(new URL('../fixtures/data.sample.json', import.meta.url), 'utf8')
-    );
-    const report = verifyPublished(sample);
-    expect(report.errors).toEqual([]);
-    expect(report.total).toBe(50);
-    // Some rows must be versioned, or CI recomputes nothing and checks no order.
-    expect(report.recomputed).toBeGreaterThan(0);
-    expect(report.orderAsserted).toBe(true);
-    expect(sample.total_devs).toBe(50);
-    expect(sample.leaderboard.some((row) => row.batch_index === 0)).toBe(true);
+    const sample = JSON.parse(fs.readFileSync('fixtures/data.sample.json', 'utf8'));
+    expect(verifyPublished(sample).errors).toEqual([]);
   });
 });

@@ -98,12 +98,14 @@ jobs:
 
       # Refuses to save, and so to deploy, a board that fails verify:published
       # or that loses more than 5% of its developers with no recorded reason.
-      # During a scoring-model migration, set the repository variable
-      # ALLOW_MIXED_MODELS=1 until all 24 batches have run under the new model,
-      # and remove it after.
+      # Every run scores the whole board again from its measurements, so a
+      # board never mixes scoring models. On a model change it also refuses a
+      # board that would lose more than 2% of its rows as unscorable, or more
+      # than half as ineligible; the repository variable ALLOW_RESCORE_LOSS=1
+      # publishes anyway, and should be removed after the run it was set for.
       - name: Run the batch and save the state
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BATCH_INDEX: ${{ steps.batch.outputs.index }}
-          ALLOW_MIXED_MODELS: ${{ vars.ALLOW_MIXED_MODELS }}
+          ALLOW_RESCORE_LOSS: ${{ vars.ALLOW_RESCORE_LOSS }}
         run: node scripts/run-all.js --incremental "$BATCH_INDEX" --state release

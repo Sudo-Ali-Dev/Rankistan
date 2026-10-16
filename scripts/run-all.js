@@ -32,18 +32,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compareRows } from '../src/model/order.js';
-import {
-  fetchPakistaniDevelopers,
-  applyActivityFilter,
-  SEARCH_BATCHES,
-  MAX_DEVELOPERS,
-  ACTIVITY_THRESHOLDS
-} from './fetch-devs.js';
+import { assignRanks, boardOrder, boardSeed, cutAtLimit } from '../src/model/order.js';
+import { decodeMeasurement } from '../src/model/measurement.js';
+import { MODEL_VERSION } from '../src/model/config.js';
+import { fetchPakistaniDevelopers, SEARCH_BATCHES, MAX_DEVELOPERS } from './fetch-devs.js';
 import { fetchPronouns, attachPronouns } from './fetch-pronouns.js';
 import { scoreDevelopers } from './score.js';
-import { createShadowClient, shadowContributionsStep } from './measure/contributions.js';
-import { prescreenStep } from './measure/prescreen-log.js';
+import {
+  CONTRIBUTIONS_FIELD,
+  LEGACY_FIELD,
+  createMeasurementClient
+} from './measure/contributions.js';
+import { contributionsGate } from './measure/gate.js';
+import { loadModerationFile, MODERATION_PATH } from './moderation.js';
 import { stripInternalFields, atomicWriteJsonSync } from './write-leaderboard.js';
 import { verifyPublished } from './verify-published.js';
 import { makeGitHubClient, createStateStore, stateAssetName, DEFAULT_REPO } from './state-store.js';
@@ -217,8 +218,14 @@ export const UNMEASURED_AFTER_DAYS = 7;
  * produced it, this batch replaces only its own, and the other 23 batches are
  * carried across untouched.
  *
+ * Every row is re-scored from its stored measurement (rescoreRows), so the board is always one
+ * model's and one moderation list's: carried rows never keep a score the current code would not
+ * give them.
+ *
  * `removed` lists each developer who is not on the returned board, with the
- * reason: `ineligible` (fetched this run and failed the gate), `missed`
+ * reason: `ineligible` (fetched this run and failed the gate, or whose stored
+ * measurement no longer passes it), `unscorable` (no measurement the model
+ * can read), `missed`
  * (absent from MAX_MISSED_RUNS consecutive runs of their batch, the first at
  * least MIN_MISS_SPAN_HOURS ago), `unmeasured`
  * (not measured for UNMEASURED_AFTER_DAYS) or `displaced` (below the
@@ -236,6 +243,8 @@ export function mergeBatch({
   discoveryComplete = true,
   now = Date.now(),
   allowShrink = false,
+  moderation = [],
+  rescore = rescoreRows,
   log = console
 }) {
   const kept = existing.filter((d) => d.batch_index !== batchIndex);
@@ -304,25 +313,30 @@ export function mergeBatch({
     map.set(key(dev), dev);
   }
 
+  const rescored = rescore([...map.values()], { moderation });
+  for (const { row, why } of rescored.removed) reason(row, why);
+
   const cutoff = now - UNMEASURED_AFTER_DAYS * DAY_MS;
-  for (const [k, row] of map) {
+  const measured = rescored.rows.filter((row) => {
     const scoredAt = Date.parse(row.scored_at);
     if (Number.isFinite(scoredAt) && scoredAt < cutoff) {
-      map.delete(k);
       reason(row, 'unmeasured');
+      return false;
     }
-  }
+    return true;
+  });
 
-  // The whole board is re-sorted on every merge, carried rows included, so it
-  // is always in one order: see src/model/order.js.
-  const sorted = [...map.values()].sort(compareRows);
-  for (const row of sorted.slice(MAX_DEVELOPERS)) {
+  // The whole board is re-ranked on every merge, carried rows included, so it is always in one
+  // order (src/model/order.js): equal scores share a rank, and a tie is never split at the cap.
+  const lastUpdated = new Date(now).toISOString();
+  const ranked = assignRanks(measured.sort(boardOrder(boardSeed(lastUpdated))));
+  const leaderboard = cutAtLimit(ranked, MAX_DEVELOPERS);
+  for (const row of ranked.slice(leaderboard.length)) {
     reason(row, 'displaced');
   }
-  const leaderboard = sorted.slice(0, MAX_DEVELOPERS).map((d, i) => ({ ...d, rank: i + 1 }));
 
   const board = {
-    last_updated: new Date(now).toISOString(),
+    last_updated: lastUpdated,
     total_devs: leaderboard.length,
     leaderboard,
   };
@@ -344,6 +358,7 @@ export function mergeBatch({
     ['removed as ineligible', named('ineligible')],
     ['removed after consecutive misses', named('missed')],
     [`removed as unmeasured for ${UNMEASURED_AFTER_DAYS} days`, named('unmeasured')],
+    ['removed as unscorable (no measurement the model can read)', named('unscorable')],
     [`displaced below the ${MAX_DEVELOPERS} cap`, named('displaced')]
   ];
   for (const [what, rows] of lines) {
@@ -359,7 +374,88 @@ export function mergeBatch({
       `${kept.length} kept from other batches.`,
   );
 
-  return { board, removed, carried: carried.length };
+  return { board, removed, carried: carried.length, rescored: rescored.counts };
+}
+
+/**
+ * Every row scored again from its stored measurement and the moderation list. Pure. A row with no
+ * measurement the model can read is `unscorable`, and one whose measurement no longer passes the
+ * gate (a repository was added to the moderation list) is `ineligible`.
+ */
+export function rescoreRows(rows, { moderation = [] } = {}) {
+  const keep = [];
+  const removed = [];
+  let changed = 0;
+  for (const row of rows) {
+    if (!decodeMeasurement(row?.[CONTRIBUTIONS_FIELD])) {
+      removed.push({ row, why: 'unscorable' });
+      continue;
+    }
+    const [scored] = scoreDevelopers([row], { moderation });
+    const { gate, ...rest } = scored;
+    if (!gate) {
+      removed.push({ row, why: 'ineligible' });
+      continue;
+    }
+    if (rest.score_exact !== row.score_exact || rest.model_version !== row.model_version) changed += 1;
+    keep.push(rest);
+  }
+  return {
+    rows: keep,
+    removed,
+    counts: {
+      unscorable: removed.filter((r) => r.why === 'unscorable').length,
+      ineligible: removed.filter((r) => r.why === 'ineligible').length,
+      changed
+    }
+  };
+}
+
+/**
+ * A loaded board in the current shape: the measurement moves from LEGACY_FIELD to
+ * CONTRIBUTIONS_FIELD, and fields scoring v3 does not publish are dropped. A block of an older
+ * measurement shape is dropped too, which leaves the row unscorable. Pure.
+ */
+export function migrateRows(rows) {
+  let moved = 0;
+  const out = rows.map((row) => {
+    const next = { ...row };
+    if (next[CONTRIBUTIONS_FIELD] == null && next[LEGACY_FIELD] != null) {
+      if (decodeMeasurement(next[LEGACY_FIELD])) {
+        next[CONTRIBUTIONS_FIELD] = next[LEGACY_FIELD];
+        moved += 1;
+      }
+    }
+    for (const field of [LEGACY_FIELD, 'activity_score', 'events_window']) delete next[field];
+    return next;
+  });
+  return { rows: out, moved };
+}
+
+/**
+ * The share of the board a version change may lose to `unscorable` before the save is refused,
+ * and the share to `ineligible`. Past either, something is wrong with the measurement or the
+ * model, not with the developers. ALLOW_RESCORE_LOSS=1 publishes anyway.
+ */
+export const MAX_UNSCORABLE_SHARE = 0.02;
+export const MAX_RESCORED_INELIGIBLE_SHARE = 0.5;
+
+export function assertRescoreIsSafe({ previousCount, counts, allowRescoreLoss = false }) {
+  if (allowRescoreLoss || previousCount === 0) return;
+  if (counts.unscorable > previousCount * MAX_UNSCORABLE_SHARE) {
+    throw new Error(
+      `Refusing to save: ${counts.unscorable} of ${previousCount} rows carry no measurement the ` +
+        `model can read, more than ${MAX_UNSCORABLE_SHARE * 100}%. Set ALLOW_RESCORE_LOSS=1 to ` +
+        'publish anyway.'
+    );
+  }
+  if (counts.ineligible > previousCount * MAX_RESCORED_INELIGIBLE_SHARE) {
+    throw new Error(
+      `Refusing to save: ${counts.ineligible} of ${previousCount} stored measurements fail the ` +
+        `gate when scored again, more than ${MAX_RESCORED_INELIGIBLE_SHARE * 100}%. Set ` +
+        'ALLOW_RESCORE_LOSS=1 to publish anyway.'
+    );
+  }
 }
 
 // More than this share of the board leaving in one run with no recorded
@@ -370,9 +466,9 @@ export const MAX_UNEXPLAINED_LOSS = 0.05;
 /**
  * The checks a board must pass before it is saved. Throws to refuse.
  *
- * 1. verify:published on the result: every versioned score recomputes, one
- *    model version (unless migrating), compareRows order, ranks 1..n, no
- *    developer twice.
+ * 1. verify:published on the result: every score recomputes from its
+ *    measurement, one model version, board order, shared ranks for equal
+ *    scores, no developer twice.
  * 2. Of the developers on `previous` and not on `board`, those with no
  *    recorded reason in `removed` must be at most MAX_UNEXPLAINED_LOSS of
  *    `previous`. Any at all is reported by name.
@@ -381,10 +477,11 @@ export function guardBoard({
   previous,
   board,
   removed,
-  allowMixedVersions = false,
+  moderation = [],
+  verify = verifyPublished,
   log = console
 }) {
-  const report = verifyPublished(board, { allowMixedVersions });
+  const report = verify(board, { moderation });
   if (report.errors.length > 0) {
     const shown = report.errors.slice(0, 10).join('; ');
     const more = report.errors.length > 10 ? ` ... and ${report.errors.length - 10} more` : '';
@@ -443,7 +540,10 @@ export async function runBatch({
   now = () => Date.now(),
   name = null,
   allowShrink = false,
-  allowMixedVersions = false,
+  allowRescoreLoss = false,
+  moderation = [],
+  rescore = rescoreRows,
+  verify = verifyPublished,
   log = console
 }) {
   let loaded = await store.load();
@@ -465,7 +565,8 @@ export async function runBatch({
     loaded = { payload: { leaderboard: [] }, source: 'an empty board' };
   }
 
-  const ownership = reownRows(loaded.payload.leaderboard);
+  const migrated = migrateRows(loaded.payload.leaderboard);
+  const ownership = reownRows(migrated.rows);
   const previous = ownership.rows;
   const source = loaded.asset
     ? `${loaded.asset.name} (saved ${loaded.asset.created_at})`
@@ -487,10 +588,15 @@ export async function runBatch({
   const intents = await loadRegistry(registry, log);
   const optOut = applyOptOuts(previous, intents.optedOut, log);
 
+  if (migrated.moved > 0) {
+    log.log(`Migration: ${migrated.moved} measurement(s) moved to \`${CONTRIBUTIONS_FIELD}\`.`);
+  }
+
   const { newEntries, evaluated, discoveryComplete } = await measure({
     batchIndex,
     existing: optOut.kept,
-    registry: intents
+    registry: intents,
+    moderation
   });
   // Read after measuring, which takes up to an hour: the board is stamped, and
   // the unmeasured cutoff taken, at merge time.
@@ -503,8 +609,18 @@ export async function runBatch({
     discoveryComplete,
     now: at,
     allowShrink,
+    moderation,
+    rescore,
     log
   });
+  const versionChange = previous.some((row) => row.model_version !== MODEL_VERSION);
+  log.log(
+    `Rescored the board from its measurements: ${merged.rescored.changed} score(s) changed, ` +
+      `${merged.rescored.unscorable} unscorable, ${merged.rescored.ineligible} no longer eligible.`
+  );
+  if (versionChange) {
+    assertRescoreIsSafe({ previousCount: previous.length, counts: merged.rescored, allowRescoreLoss });
+  }
   // When each batch last ran, carried from run to run. The watchdog dates a batch by this rather
   // than by its rows, which a batch can lose to the 1,000 cap however recently it ran.
   merged.board.batch_runs = {
@@ -520,7 +636,8 @@ export async function runBatch({
     previous,
     board: merged.board,
     removed,
-    allowMixedVersions,
+    moderation,
+    verify,
     log
   });
 
@@ -594,12 +711,10 @@ export async function dispatchWorkflows({
 }
 
 /**
- * Everyone a run actually looked at and can therefore judge: developers fetched
- * in full, whether or not they then pass the gate; developers screened out on
- * their first events page, whose whole feed was read and failed it; and
- * developers found by a city name whose fetched location names a place outside
- * Pakistan. Anyone search did not return, or whose fetch errored, was never
- * looked at and is carried forward instead.
+ * Everyone a run actually looked at and can therefore judge: developers it measured and fetched,
+ * developers it screened out or measured short of the gate, and developers found by a city name
+ * whose fetched location names a place outside Pakistan. Anyone search did not return, or whose
+ * measurement or fetch failed, was never judged and is carried forward instead.
  */
 export function evaluatedLogins({ developers, screenedOut = [], locationRejected = [] }) {
   return [
@@ -610,74 +725,45 @@ export function evaluatedLogins({ developers, screenedOut = [], locationRejected
 }
 
 /**
- * Measures one batch on GitHub: discovery, fetch, activity gate, scoring, and the shadow
- * measurement of the next model's inputs. `existing` is the loaded board, where a developer this
- * run cannot shadow-measure finds their previous block.
+ * Measures one batch on GitHub: discovery, the contributions gate (screen, measure, gate), the
+ * profiles of everyone who passed it, and their scores. `existing` is the loaded board: the
+ * batch's own rows skip the calendar screen, so a developer on the board is always measured.
  */
-export async function measureBatch({ batchIndex, registry, existing = [] }) {
+export async function measureBatch({ batchIndex, registry, existing = [], moderation = [] }) {
+  const token = process.env.MY_GITHUB_PAT || process.env.GITHUB_TOKEN;
+  if (!token) throw new Error('A batch needs MY_GITHUB_PAT or GITHUB_TOKEN to measure.');
+  const client = createMeasurementClient({ token });
+  const ownIds = existing
+    .filter((row) => row.batch_index === batchIndex && Number.isInteger(row.github_id))
+    .map((row) => row.github_id);
+
   const fetched = await fetchPakistaniDevelopers({
     repoRoot: process.cwd(),
     batchIndex,
     registry,
-    rawOnly: true,
-    withScreening: true,
+    gate: (candidates, { registered }) =>
+      contributionsGate(candidates, {
+        client,
+        now: Date.now(),
+        bypass: new Set([...ownIds, ...(registered ? registered.keys() : [])]),
+        moderation
+      })
   });
-  const { developers: rawDevs, discoveryComplete } = fetched;
+  const { developers, discoveryComplete } = fetched;
 
-  console.log(`Fetched ${rawDevs.length} raw developers.`);
+  // Use each developer's own declared pronouns in the AI summaries rather than inferring gender
+  // from a name (#73). Failure is non-fatal: a developer with none simply carries none.
+  const pronounsByLogin = await fetchPronouns(developers.map((d) => d.username), token);
+  const withPronouns = attachPronouns(developers, pronounsByLogin);
 
-  const filtered = applyActivityFilter(rawDevs);
-  console.log(
-    `Activity filter: ${rawDevs.length} -> ${filtered.length} passed ` +
-      `(>=${ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D} contributions in 60d, ` +
-      `<=${ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS}d max gap)`,
-  );
-
-  // Use each developer's own declared pronouns in the AI summaries rather
-  // than inferring gender from a name (#73). Runs after the activity filter
-  // so it covers only the developers that will be published, and failure is
-  // non-fatal: a developer with none simply carries none.
-  const pronounsByLogin = await fetchPronouns(
-    filtered.map((d) => d.username),
-    process.env.MY_GITHUB_PAT || process.env.GITHUB_TOKEN
-  );
-  const withPronouns = attachPronouns(filtered, pronounsByLogin);
-
-  const scored = scoreDevelopers(withPronouns);
+  const scored = scoreDevelopers(withPronouns, { moderation });
   console.log(`Scored ${scored.length} developers.`);
 
-  // The next model's inputs, measured for the developers this batch publishes - a block is kept
-  // on a row, so measuring the gate's rejects would buy nothing - and attached after scoring, so
-  // nothing in it can reach a score (scripts/measure/contributions.js). Never fails the batch.
-  const token = process.env.MY_GITHUB_PAT || process.env.GITHUB_TOKEN;
-  const shadowClient = token ? createShadowClient({ token }) : null;
-  const shadow = await shadowContributionsStep(scored, {
-    existing,
-    client: shadowClient,
-    now: Date.now()
-  });
+  const newEntries = scored.map((d) => ({ ...stripInternalFields(d), batch_index: batchIndex }));
 
-  // The next model's pre-screen, beside today's and logged only (scripts/measure/prescreen-log.js):
-  // it decides nothing, and never fails the batch.
-  await prescreenStep({
-    candidates: fetched.candidates,
-    fullyFetched: rawDevs.map((d) => d.username),
-    published: scored.map((d) => d.username),
-    client: shadowClient,
-    now: Date.now()
-  });
-
-  const newEntries = shadow.developers.map((d) => ({
-    ...stripInternalFields(d),
-    batch_index: batchIndex,
-  }));
-
-  // Only these developers can be judged ineligible.
-  const evaluated = evaluatedLogins(fetched);
-
-  // False when either of this batch's searches is known to be short; the merge
-  // then freezes miss counters rather than count absence from it.
-  return { newEntries, evaluated, discoveryComplete };
+  // Only these developers can be judged ineligible. False when a search or the measurement is
+  // known to be short; the merge then freezes miss counters rather than count absence from it.
+  return { newEntries, evaluated: evaluatedLogins(fetched), discoveryComplete };
 }
 
 /**
@@ -717,7 +803,10 @@ async function runCli(args, env = process.env) {
   const shared = {
     batchIndex,
     allowShrink: env.ALLOW_LEADERBOARD_SHRINK === '1',
-    allowMixedVersions: env.ALLOW_MIXED_MODELS === '1'
+    allowRescoreLoss: env.ALLOW_RESCORE_LOSS === '1',
+    // The repository's own list, read from this checkout: a change to it is a commit, reviewed
+    // and dated like any other (public/moderation.json, scripts/moderation.js).
+    moderation: loadModerationFile(path.join(process.cwd(), MODERATION_PATH))
   };
 
   console.log(

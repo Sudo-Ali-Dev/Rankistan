@@ -7,6 +7,9 @@ import { annotation, describeDiscovery, discoverBatch } from './discovery/discov
 import { DISCOVERY_SOURCES, cityTwinQuery, foreignMarker } from './discovery/locations.js';
 import { SEARCH_BATCHES } from './discovery/batches.js';
 import { admitFetched, joinRegistry } from './registry.js';
+import { SCORE_CONFIG } from '../src/model/config.js';
+
+const { MIN_ACCOUNT_AGE_DAYS } = SCORE_CONFIG;
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const MAX_DEVELOPERS = 1000;
@@ -14,13 +17,8 @@ const USER_EVENTS_PER_PAGE = 100;
 const USER_EVENTS_MAX_PAGES = 2;
 const USER_REPOS_PER_PAGE = 100;
 const INACTIVE_DAYS_CUTOFF = 60;
-const MIN_ACCOUNT_AGE_DAYS = 30;
 const RATE_LIMIT_BUFFER = 150;
 
-const ACTIVITY_THRESHOLDS = {
-  MIN_CONTRIBUTIONS_60D: 30,
-  MAX_INACTIVITY_GAP_DAYS: 30
-};
 const REQUEST_TIMEOUT_MS = 20000;
 const RATE_LIMIT_RETRY_DELAY_MS = 60000;
 
@@ -112,48 +110,6 @@ function daysSince(date) {
   const now = Date.now();
   const then = new Date(date).getTime();
   return Math.floor((now - then) / (1000 * 60 * 60 * 24));
-}
-
-function computeActivityMetrics(rawEvents) {
-  const now = Date.now();
-  const CUTOFF_MS = INACTIVE_DAYS_CUTOFF * 24 * 60 * 60 * 1000;
-  const CUTOFF_30D_MS = 30 * 24 * 60 * 60 * 1000;
-
-  const meaningful = (rawEvents || []).filter((e) => MEANINGFUL_EVENT_TYPES.has(e.type));
-  const totalContributions = meaningful.length;
-
-  // Per-type counts for last 30 days
-  const event_counts_30d = { pushes: 0, prs: 0, issues: 0, releases: 0 };
-  for (const e of meaningful) {
-    if (now - new Date(e.created_at).getTime() > CUTOFF_30D_MS) continue;
-    if (e.type === 'PushEvent')        event_counts_30d.pushes++;
-    if (e.type === 'PullRequestEvent') event_counts_30d.prs++;
-    if (e.type === 'IssuesEvent')      event_counts_30d.issues++;
-    if (e.type === 'ReleaseEvent')     event_counts_30d.releases++;
-  }
-
-  const timestamps = meaningful
-    .map((e) => new Date(e.created_at).getTime())
-    .filter((t) => t >= now - CUTOFF_MS)
-    .sort((a, b) => a - b);
-
-  let longestGapDays = INACTIVE_DAYS_CUTOFF;
-
-  if (timestamps.length > 0) {
-    longestGapDays = 0;
-    for (let i = 1; i < timestamps.length; i += 1) {
-      const gap = Math.floor((timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60 * 24));
-      longestGapDays = Math.max(longestGapDays, gap);
-    }
-    const gapToNow = Math.floor((now - timestamps[timestamps.length - 1]) / (1000 * 60 * 60 * 24));
-    longestGapDays = Math.max(longestGapDays, gapToNow);
-  }
-
-  return {
-    total_contributions_60d: totalContributions,
-    longest_gap_days: longestGapDays,
-    event_counts_30d
-  };
 }
 
 function updateRateLimit(headers) {
@@ -378,14 +334,23 @@ async function discoverUsers(token, batches, { searchClient } = {}) {
   return { candidates: [...byId.values()], complete };
 }
 
-function isLikelyFakeFromProfile(profile) {
+/**
+ * Whether a profile looks like a throwaway account. Every account must be MIN_ACCOUNT_AGE_DAYS
+ * old. A developer search found must also have a repository and a follower or someone followed,
+ * which search's own `repos:` and `followers:` qualifiers already require. A registered developer
+ * is judged on age alone: scoring v3 does not read repository or follower counts, so they say
+ * nothing about whether someone is an active developer, and a contributor whose work is all in
+ * other people's repositories has no public repository of their own.
+ */
+function isLikelyFakeFromProfile(profile, { registered = false } = {}) {
   if (!profile) {
     return true;
   }
 
+  const isVeryNewAccount = daysSince(profile.created_at) < MIN_ACCOUNT_AGE_DAYS;
+  if (registered) return isVeryNewAccount;
   const hasNoRepos = (profile.public_repos || 0) === 0;
   const hasNoNetwork = (profile.followers || 0) === 0 && (profile.following || 0) === 0;
-  const isVeryNewAccount = daysSince(profile.created_at) < MIN_ACCOUNT_AGE_DAYS;
 
   return hasNoRepos || hasNoNetwork || isVeryNewAccount;
 }
@@ -398,39 +363,6 @@ function extractRecentEvents(events, maxAgeDays) {
     const createdAt = new Date(event.created_at).getTime();
     return now - createdAt <= maxAgeMs;
   });
-}
-
-// How far back a developer's events read reached, which is how much of the window the activity
-// term actually saw. The feed is capped by count, not by time, so the busier the account the less
-// time 200 events span: one top-30 developer's covered 6 of 30 days, and nothing in a row said so.
-//
-//   fetched    events read
-//   truncated  the read stopped at its page ceiling on a full page, so older events may exist
-//   days       days of history read back from `readAt`, to a tenth, at most INACTIVE_DAYS_CUTOFF.
-//              A read that was not truncated holds every event GitHub serves, so it covers the
-//              whole window however old its oldest event is: a quiet month is not a short window.
-//
-// A truncated read is measured to the newest event among its last EVENTS_TAIL, not to its oldest.
-// The feed is not reliably time-ordered (139 of 1,000 sampled feeds were out of order by over a
-// day), so the oldest event read can be a straggler with unread events newer than it; the newest
-// of the tail understates the window rather than overstating it. Context only: nothing scores it.
-const EVENTS_TAIL = 10;
-
-function eventsWindow(events, { truncated, readAt }) {
-  const fetched = Array.isArray(events) ? events.length : 0;
-  if (!truncated) {
-    return { fetched, truncated: false, days: INACTIVE_DAYS_CUTOFF };
-  }
-  const tail = events
-    .slice(-EVENTS_TAIL)
-    .map((event) => new Date(event?.created_at).getTime())
-    .filter((ts) => Number.isFinite(ts));
-  const days = tail.length === 0 ? 0 : (readAt - Math.max(...tail)) / (24 * 60 * 60 * 1000);
-  return {
-    fetched,
-    truncated: true,
-    days: Math.min(INACTIVE_DAYS_CUTOFF, Math.max(0, Math.floor(days * 10) / 10))
-  };
 }
 
 function filterMeaningfulEvents(events) {
@@ -616,31 +548,20 @@ function locationRejection(source, location) {
 }
 
 /**
+ * The profile, repositories and recent events of one developer who has passed the gate: the row
+ * the board shows. Nothing here decides eligibility except the location of a city-found developer
+ * and the throwaway-account check; the contributions measurement decided the rest before this
+ * runs (scripts/run-all.js), so each candidate costs REST calls only once they are known to count.
+ *
  * @param {string} username
  * @param {string} token
- * @param {{source?: string}} [options]  how discovery found them; see DISCOVERY_SOURCES
+ * @param {{source?: string, registered?: boolean}} [options]  how discovery found them
  */
-async function fetchDeveloperActivity(username, token, { source } = {}) {
-  // Events first: for most candidates this one call settles the gate.
-  const firstPage = await githubRequest(
-    `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=1`,
-    token,
-    { allow404: true }
-  );
-  if (firstPage === null) {
-    // By login, so this may be a rename rather than a deletion: report it as
-    // not found and let the merge's two-miss rule decide, rather than judging.
-    console.warn(`Skipping ${username}: user not found (404).`);
-    return null;
-  }
-
-  const screen = screenFirstPage(firstPage);
-  if (screen.complete && !screen.passes) {
-    return { screenedOut: true, username };
-  }
-
+async function fetchDeveloperActivity(username, token, { source, registered = false } = {}) {
   const profile = await githubRequest(`/users/${encodeURIComponent(username)}`, token, { allow404: true });
   if (!profile) {
+    // By login, so this may be a rename rather than a deletion: report it as not found and let
+    // the merge's two-miss rule decide, rather than judging.
     console.warn(`Skipping ${username}: user not found (404).`);
     return null;
   }
@@ -651,26 +572,23 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
     return { locationRejected: true, username, location: profile.location, reason: rejection };
   }
 
-  if (isLikelyFakeFromProfile(profile)) {
+  if (isLikelyFakeFromProfile(profile, { registered })) {
     return null;
   }
 
-  const events = Array.isArray(firstPage) ? [...firstPage] : [];
-  // Whether the last page read was full: if so, older events may exist that were not read.
-  let eventsTruncated = !screen.complete;
-  for (let page = 2; page <= USER_EVENTS_MAX_PAGES && !screen.complete; page += 1) {
-    const eventsResponse = await githubRequest(
+  // Recent events are context the board shows (events_30d, the Digest's active repositories),
+  // not a score input: up to USER_EVENTS_MAX_PAGES pages, stopping at the first short one.
+  const events = [];
+  for (let page = 1; page <= USER_EVENTS_MAX_PAGES; page += 1) {
+    const pageEvents = await githubRequest(
       `/users/${encodeURIComponent(username)}/events?per_page=${USER_EVENTS_PER_PAGE}&page=${page}`,
-      token
+      token,
+      { allow404: true }
     );
-    const pageEvents = Array.isArray(eventsResponse) ? eventsResponse : [];
-    events.push(...pageEvents);
-    eventsTruncated = pageEvents.length >= USER_EVENTS_PER_PAGE;
-    if (pageEvents.length < USER_EVENTS_PER_PAGE) {
-      break;
-    }
+    const list = Array.isArray(pageEvents) ? pageEvents : [];
+    events.push(...list);
+    if (list.length < USER_EVENTS_PER_PAGE) break;
   }
-  const eventsReadAt = Date.now();
 
   const repos = await fetchAllUserRepos(username, token);
   const socials = await fetchUserSocials(username, token);
@@ -679,11 +597,6 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
   const meaningfulLast30Days = filterMeaningfulEvents(extractRecentEvents(events, 30));
   const repoSummary = summarizeRepos(repos);
   const reposActive7d = extractReposPushedInLast7Days(recentEvents).map((repo) => repo.name);
-  const topRepos = mapTopRepos(repos);
-  const digestRepos = buildDigestRepos(reposActive7d, repos);
-  const linkedinUrl = extractLinkedinUrl(socials);
-
-  const activityMetrics = computeActivityMetrics(recentEvents);
 
   const developer = {
     username: profile.login || username,
@@ -696,18 +609,13 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
     following: profile.following || 0,
     public_repos: profile.public_repos || 0,
     total_stars: repoSummary.total_stars,
-    top_repos: topRepos,
+    top_repos: mapTopRepos(repos),
     top_languages: repoSummary.top_languages,
-    linkedin_url: linkedinUrl,
+    linkedin_url: extractLinkedinUrl(socials),
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,
-    event_counts_30d: activityMetrics.event_counts_30d,
-    total_contributions_60d: activityMetrics.total_contributions_60d,
-    longest_gap_days: activityMetrics.longest_gap_days,
-    events_window: eventsWindow(events, { truncated: eventsTruncated, readAt: eventsReadAt }),
     repos_active_7d: reposActive7d,
-    digest_repos: digestRepos,
-    raw_events_60d: recentEvents,
+    digest_repos: buildDigestRepos(reposActive7d, repos),
     ...(source ? { discovery_source: source } : {})
   };
 
@@ -716,46 +624,19 @@ async function fetchDeveloperActivity(username, token, { source } = {}) {
   return developer;
 }
 
-/** The activity gate. One definition, used by the screen and by the filter, so
- *  the two can never disagree about who passes. */
-function passesActivityGate(metrics) {
-  const hasEnoughContributions =
-    metrics.total_contributions_60d >= ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D;
-  const hasNoLongGaps = metrics.longest_gap_days <= ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS;
-  return hasEnoughContributions && hasNoLongGaps;
-}
-
-function applyActivityFilter(developers) {
-  return developers.filter((dev) => passesActivityGate(dev));
-}
-
 /**
- * Decides the gate from the first page of a developer's events, when it can.
+ * One batch: discover its candidates, put them through `gate`, and fetch the profile of everyone
+ * who passes.
  *
- * Why this exists: each candidate cost about 4 REST calls - profile, events,
- * repos, social accounts - and 94% of candidates then failed the gate, so
- * nearly all of a ~105k-call day bought nothing. Measured over 120 runs, 6.2%
- * pass.
+ * `gate(candidates)` is the contributions screen, measurement and eligibility gate
+ * (scripts/run-all.js). It resolves to `{ passed: Map<lowercased login, block>, screenedOut:
+ * logins, complete: boolean }`: who passed with their measurement, who was evaluated and failed,
+ * and whether every candidate was evaluated. A candidate in neither list was not evaluated this
+ * run (a failed measurement), and its row is carried, not judged. Without a gate everyone passes,
+ * which is what the tests of discovery and registration use.
  *
- * A page holding fewer than USER_EVENTS_PER_PAGE events is the whole feed: the
- * fetch loop below stops after such a page anyway. So the gate computed from it
- * is not an estimate but the identical decision the full fetch would reach, and
- * a failing developer can be rejected after one call instead of four.
- *
- * A full first page proves nothing - more events may follow - so it is always
- * forwarded to the full fetch. (An earlier design also treated "the 100th event
- * is older than the window" as complete; the feed is not reliably time-ordered,
- * 139 of 1,000 sampled feeds were out of order by over a day, so it is not.)
- *
- * @returns {{ complete: boolean, passes: boolean | null }}
+ * @returns {{developers, screenedOut, locationRejected, discoveryComplete, candidates}}
  */
-function screenFirstPage(firstPage) {
-  const events = Array.isArray(firstPage) ? firstPage : [];
-  if (events.length >= USER_EVENTS_PER_PAGE) return { complete: false, passes: null };
-  const metrics = computeActivityMetrics(extractRecentEvents(events, INACTIVE_DAYS_CUTOFF));
-  return { complete: true, passes: passesActivityGate(metrics) };
-}
-
 async function fetchPakistaniDevelopers(options = {}) {
   const repoRoot = options.repoRoot || process.cwd();
   await loadDotEnv(repoRoot);
@@ -766,7 +647,6 @@ async function fetchPakistaniDevelopers(options = {}) {
   }
 
   const batchIndex = options.batchIndex;
-  const rawOnly = options.rawOnly === true;
   const batches = batchIndex != null
     ? [SEARCH_BATCHES[batchIndex]]
     : SEARCH_BATCHES;
@@ -791,41 +671,42 @@ async function fetchPakistaniDevelopers(options = {}) {
     batches: SEARCH_BATCHES,
     graphql: options.searchClient || createSearchClient({ token })
   });
-  const discoveryComplete = searchComplete && joined.complete;
-
-  // How each login was found.
-  const sourceOf = new Map(joined.candidates.map((c) => [c.login.toLowerCase(), c.source]));
-  const allUsernames = [...sourceOf.keys()];
 
   const fromCities = candidates.filter((c) => c.source === DISCOVERY_SOURCES.CITY).length;
   console.log(
     `Discovered ${candidates.length} users from search: ${candidates.length - fromCities} ` +
     `by location:pakistan, ${fromCities} by a Pakistani city name alone.`
   );
-  console.log(`Total unique usernames to scan: ${allUsernames.length}`);
+
+  const all = joined.candidates.map(({ id, login, source }) => ({ id, login, source }));
+  const verdict = options.gate
+    ? await options.gate(all, { registered: joined.registered })
+    : { passed: new Map(all.map((c) => [c.login.toLowerCase(), null])), screenedOut: [], complete: true };
+  const discoveryComplete = searchComplete && joined.complete && verdict.complete !== false;
+  const toFetch = all.filter((c) => verdict.passed.has(c.login.toLowerCase()));
+  console.log(`Gate: ${toFetch.length} of ${all.length} candidates pass; fetching their profiles.`);
 
   const fetchedDevelopers = [];
-  const screenedOut = [];
+  const screenedOut = [...verdict.screenedOut];
   const locationRejected = [];
   let skippedProfile = 0;
   let skippedError = 0;
 
-  for (let index = 0; index < allUsernames.length; index += 1) {
-    const username = allUsernames[index];
+  for (let index = 0; index < toFetch.length; index += 1) {
+    const { login: username, source, id } = toFetch[index];
     if (index % 50 === 0) {
       console.log(
-        `[fetch ${index + 1}/${allUsernames.length}] ${username} ` +
+        `[fetch ${index + 1}/${toFetch.length}] ${username} ` +
         `(rate limit: ${rateLimit.remaining} remaining)`
       );
     }
 
     try {
       const developer = await fetchDeveloperActivity(username, token, {
-        source: sourceOf.get(username)
+        source,
+        registered: joined.registered?.has(id) === true
       });
-      if (developer?.screenedOut) {
-        screenedOut.push(developer.username);
-      } else if (developer?.locationRejected) {
+      if (developer?.locationRejected) {
         console.log(`Not counting ${username}: ${developer.reason} ("${developer.location}").`);
         locationRejected.push({
           username: developer.username,
@@ -833,11 +714,15 @@ async function fetchPakistaniDevelopers(options = {}) {
           reason: developer.reason
         });
       } else if (developer) {
-        // Registered developers meet search's own gates here, by account id (scripts/registry.js).
-        const verdict = admitFetched(joined, developer);
-        if (verdict.admit) fetchedDevelopers.push(verdict.admit);
-        else if (verdict.reject) screenedOut.push(developer.username);
-        else skippedProfile += 1;
+        const verdictFor = admitFetched(joined, developer);
+        if (verdictFor.admit) {
+          const block = verdict.passed.get(username.toLowerCase());
+          fetchedDevelopers.push(block ? { ...verdictFor.admit, contributions: block } : verdictFor.admit);
+        } else if (verdictFor.reject) {
+          screenedOut.push(developer.username);
+        } else {
+          skippedProfile += 1;
+        }
       } else {
         skippedProfile += 1;
       }
@@ -846,80 +731,41 @@ async function fetchPakistaniDevelopers(options = {}) {
       console.error(`Skipping ${username}: ${error.message}`);
     }
 
-    if (index < allUsernames.length - 1) {
+    if (index < toFetch.length - 1) {
       await sleep(randomDelayMs(USER_CALL_DELAY_MIN_MS, USER_CALL_DELAY_MAX_MS));
     }
   }
 
   console.log(
-    `Fetch complete: ${fetchedDevelopers.length} fetched in full, ` +
-    `${screenedOut.length} rejected on their first events page, ` +
-    `${locationRejected.length} found by city name and rejected on their location, ` +
+    `Fetch complete: ${fetchedDevelopers.length} fetched, ${screenedOut.length} evaluated and ` +
+    `not eligible, ${locationRejected.length} found by city name and rejected on their location, ` +
     `${skippedProfile} skipped (not found/fake), ${skippedError} errors`
   );
 
-  // Screened-out and location-rejected developers were observed and are not
-  // eligible, so a caller that asks for them can count them as evaluated -
-  // unlike a fetch that errored.
-  const withScreening = (developers) =>
-    options.withScreening
-      ? {
-          developers,
-          screenedOut,
-          locationRejected,
-          discoveryComplete,
-          candidates: joined.candidates.map(({ id, login, source }) => ({ id, login, source }))
-        }
-      : developers;
-
-  if (rawOnly) {
-    console.log(`Raw mode: returning ${fetchedDevelopers.length} unfiltered developers.`);
-    return withScreening(fetchedDevelopers);
-  }
-
-  const filteredDevelopers = applyActivityFilter(fetchedDevelopers);
-
-  console.log(
-    `Activity filter: ${fetchedDevelopers.length} profiles -> ${filteredDevelopers.length} passed ` +
-    `(>=${ACTIVITY_THRESHOLDS.MIN_CONTRIBUTIONS_60D} contributions in 60d, ` +
-    `<=${ACTIVITY_THRESHOLDS.MAX_INACTIVITY_GAP_DAYS}d max gap)`
-  );
-
-  filteredDevelopers.sort((a, b) => {
-    const followerDiff = Number(b.followers || 0) - Number(a.followers || 0);
-    if (followerDiff !== 0) {
-      return followerDiff;
-    }
-
-    return String(a.username || '').localeCompare(String(b.username || ''));
-  });
-
-  const finalDevelopers = filteredDevelopers.slice(0, MAX_DEVELOPERS);
-
-  console.log(`Final leaderboard: ${finalDevelopers.length} developers (capped at ${MAX_DEVELOPERS})`);
-  return withScreening(finalDevelopers);
+  return {
+    developers: fetchedDevelopers,
+    screenedOut,
+    locationRejected,
+    discoveryComplete,
+    candidates: all
+  };
 }
 
 export {
   fetchPakistaniDevelopers,
   fetchDeveloperActivity,
-  applyActivityFilter,
-  passesActivityGate,
-  screenFirstPage,
-  computeActivityMetrics,
-  eventsWindow,
+  isLikelyFakeFromProfile,
   SEARCH_BATCHES,
-  MAX_DEVELOPERS,
-  ACTIVITY_THRESHOLDS
+  MAX_DEVELOPERS
 };
 
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 
 if (isMain) {
-  console.log('Starting PakDev developer fetch...');
+  console.log('Discovering and fetching every candidate (no gate)...');
   fetchPakistaniDevelopers()
-    .then((developers) => {
-      console.log(`Fetched ${developers.length} valid developers.`);
+    .then(({ developers }) => {
+      console.log(`Fetched ${developers.length} developers.`);
       console.log(JSON.stringify(developers.slice(0, 3), null, 2));
     })
     .catch((error) => {
