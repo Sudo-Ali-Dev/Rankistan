@@ -99,7 +99,14 @@ describe('previewScore', () => {
     expect((await previewScore('nobody', { token: 't', now: NOW, fetchImpl })).status).toBe(404);
     const down = upstream({ onRequest: () => new Response('<html>502</html>', { status: 502 }) });
     expect(
-      (await previewScore('ana', { token: 't', now: NOW, fetchImpl: down.fetchImpl })).status
+      (
+        await previewScore('ana', {
+          token: 't',
+          now: NOW,
+          fetchImpl: down.fetchImpl,
+          sleep: async () => {}
+        })
+      ).status
     ).toBe(503);
   });
 });

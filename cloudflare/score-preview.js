@@ -31,7 +31,10 @@ export const PREVIEW_PER_IP = Object.freeze({ max: 5, windowMs: 60 * 1000 });
 // At about 2 points a measurement, at most ~1,200 points an hour.
 export const PREVIEW_TOTAL = Object.freeze({ max: 10, windowMs: 60 * 1000 });
 export const MODERATION_URL = 'https://rankistan.dev/moderation.json';
-const MAX_WAIT_MS = 2000;
+// Long enough for one retry of a request GitHub's gateway timed out (contributions.js waits 5 s
+// before it), short enough that an answer still arrives inside the page's 30 s timeout. A rate
+// limit, which would mean a wait of minutes, still answers 503.
+const MAX_WAIT_MS = 6000;
 const quiet = { log() {}, warn() {} };
 
 /** The moderation list the pipeline applies, or null when it cannot be read. */
@@ -51,13 +54,17 @@ export async function loadModeration(fetchImpl = (...args) => fetch(...args)) {
  * Measures and scores one developer. Pure apart from `fetchImpl`: everything else is passed in.
  * @returns {Promise<{status: number, body: object}>}
  */
-export async function previewScore(login, { token, now = Date.now(), fetchImpl, moderation = [] }) {
+export async function previewScore(
+  login,
+  { token, now = Date.now(), fetchImpl, moderation = [], sleep }
+) {
   const client = createShadowClient({
     token,
     fetchImpl,
     minIntervalMs: 0,
     maxWaitMs: MAX_WAIT_MS,
-    log: quiet
+    log: quiet,
+    ...(sleep ? { sleep } : {})
   });
   const { blocks, failed } = await measureShadowContributions([{ username: login }], {
     client,
