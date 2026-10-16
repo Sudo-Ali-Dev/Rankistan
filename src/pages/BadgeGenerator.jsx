@@ -94,6 +94,7 @@ export default function BadgeGenerator({
   const [style, setStyle] = useState("flat");
   const [fmt, setFmt] = useState("md");
   const [rank, setRank] = useState(null);
+  const [sharedBy, setSharedBy] = useState(1);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [lookupState, setLookupState] = useState("idle"); // idle | loading | found | notfound | error
   const inputRef = useRef(null);
@@ -133,6 +134,7 @@ export default function BadgeGenerator({
         );
         if (dev) {
           setRank(dev.rank);
+          setSharedBy((data.leaderboard || []).filter((d) => d.rank === dev.rank).length);
           setAvatarUrl(
             dev.avatar_url ||
               `https://github.com/${displayUser}.png?size=80`,
@@ -203,7 +205,9 @@ export default function BadgeGenerator({
                   </span>
                 )}
                 {lookupState === "found" && (
-                  <span className="text-tertiary">✓ Rank #{rank} found</span>
+                  <span className="text-tertiary">
+                    ✓ Rank #{rank} found{sharedBy > 1 ? `, tied with ${sharedBy - 1} ${sharedBy === 2 ? 'other' : 'others'}` : ''}
+                  </span>
                 )}
                 {lookupState === "notfound" && (
                   <span className="text-error">Not found in leaderboard</span>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { SCORE_CONFIG } from '../model/config.js';
 import {
+  FULL_CREDIT_STARS,
   PART_LABELS,
   pointsForCredits,
   pointsForStars,
@@ -14,6 +15,9 @@ const plural = (n, one, many) => `${n.toLocaleString('en-US')} ${n === 1 ? one :
 /** How the active-days points came out, in words, from the developer's own numbers. */
 function workHow(days, points) {
   if (days === 0) return 'No active days in the window.';
+  if (days >= WINDOW_DAYS) {
+    return `Active on all ${WINDOW_DAYS} days, the most this part can give. More days or more commits will not raise it.`;
+  }
   const even = workPointsForDays(days);
   const base = `Spread evenly across the month, ${plural(days, 'active day', 'active days')} would earn about ${Math.round(even)} points.`;
   if (points > even + 0.5)
@@ -197,6 +201,17 @@ export default function ScoreBreakdownPanel({ preview, gatesPassed = true }) {
           </tbody>
         </table>
       </div>
+
+      {parts.work === 1 && parts.collaboration === 0 && parts.appreciation === 0 && (
+        // Exactly the most active days can give and nothing else: a score many developers share.
+        <p className="px-4 sm:px-6 pt-4 sm:pt-6 font-body text-xs text-on-surface-variant leading-relaxed">
+          Everyone on the board with exactly this score shares one rank, and their order on the page
+          changes every day. One pull request merged into an open source project with{' '}
+          {FULL_CREDIT_STARS.toLocaleString('en-US')} or more stars would add up to{' '}
+          {Math.round(pointsForCredits(1))} points. Even a small one that another developer merges
+          would put you ahead of everyone at {Math.round(SCALE * WEIGHTS.work)}.
+        </p>
+      )}
 
       <p className="p-4 sm:p-6 font-mono text-[10px] text-outline/80 uppercase leading-relaxed border-t border-outline-variant/50">
         Measured live on {preview.measured_at.slice(0, 10)}. The board's own score comes from the

@@ -57,7 +57,7 @@ const COUNTERPARTY_AGE = Number.isInteger(yearsOld)
     : `${yearsOld} years`
   : `${COLLABORATION.COUNTERPARTY_MIN_AGE_DAYS} days`;
 const credit = (stars) => round1(starWeight(stars, SCORE_CONFIG));
-const FULL_CREDIT_STARS = Math.round(
+export const FULL_CREDIT_STARS = Math.round(
   10 ** ((1 - COLLABORATION.STARS_FLOOR) / COLLABORATION.STARS_PER_DIGIT)
 );
 
@@ -198,3 +198,69 @@ export const SCORE_EXAMPLE = {
   ],
   score: exampleResult.score
 };
+
+const { INTEGRITY } = SCORE_CONFIG;
+
+/**
+ * How the board stops people scoring work they did not do, for the About page. Each rule says
+ * what it stops and how, in plain words. All are automatic except the last, which a person runs
+ * and publishes.
+ */
+export const SCORE_SAFEGUARDS = [
+  {
+    what: 'Many commits on one day',
+    how: 'A day counts once. A thousand commits on one day earn the same as one, so committing more often gains nothing.'
+  },
+  {
+    what: 'Commits a bot makes in your name',
+    how: `When half or more of the sampled commits in a repository were made by an app or a bot account, that repository does not count. At least ${INTEGRITY.MIN_BOT_SAMPLE} sampled commits are needed before this is judged, so one automated commit never removes your work.`
+  },
+  {
+    what: 'Profile README commits',
+    how: 'Commits to your profile repository, the one named after your username, never count. It is the easiest place to keep a fake streak.'
+  },
+  {
+    what: 'Forks',
+    how: 'Commits to a fork do not count. The work belongs to the project it was copied from.'
+  },
+  {
+    what: 'Fake dates',
+    how: `A repository with commits dated in the future, or with commits that say they were written more than ${INTEGRITY.MAX_LEAD_HOURS} hours after they were saved, does not count. Real history never looks like that, and graph painting services do.`
+  },
+  {
+    what: 'Commits that are not there',
+    how: `When GitHub credits commits on ${INTEGRITY.MISSING_MIN_DAYS} or more days and the repository holds none of them, it does not count. Nobody can check work that is not there.`
+  },
+  {
+    what: 'Merging your own pull requests',
+    how: 'A pull request you merge yourself earns no open source points, unless another developer approved it first. Only another person accepting your work counts.'
+  },
+  {
+    what: 'Second accounts',
+    how: `The developer who merges, approves or sends you work must have a GitHub account at least ${COUNTERPARTY_AGE} old. A new account made to help yourself counts for nothing.`
+  },
+  {
+    what: 'Friends vouching for each other',
+    how: 'One person or one project can only add so much, and each further one counts a little less than the one before.'
+  },
+  {
+    what: 'Quick reviews of famous projects',
+    how: "A review by someone with no role in the project counts as if the project had no stars, so it cannot borrow the project's fame."
+  },
+  {
+    what: 'Pull request spam',
+    how: 'If most of your pull requests to other projects are closed without being merged, your open source points shrink in proportion.'
+  },
+  {
+    what: 'Bought or friendly stars',
+    how: `Stars count only from ${APPRECIATION.FROM_STARS} upward, only on a repository you worked on this month, and give at most ${APPRECIATION_POINTS} of ${fmt(SCALE)} points.`
+  },
+  {
+    what: 'Private work',
+    how: 'Activity in private repositories never earns points, because nobody outside can check it. It is still shown on your card.'
+  },
+  {
+    what: 'Scripts no rule can prove',
+    how: 'Every hour the board lists repositories that look automated for a person to read. When the commits show a script, the repository is added to a public list with the reason and a link to the evidence, at rankistan.dev/moderation.json. Anyone listed can appeal by opening a GitHub issue.'
+  }
+];

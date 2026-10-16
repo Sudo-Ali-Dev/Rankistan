@@ -370,9 +370,14 @@ async function loadLeaderboardIndex() {
   }
 
   const index = new Map();
+  const perRank = new Map();
+  for (const entry of data.leaderboard) {
+    perRank.set(entry?.rank, (perRank.get(entry?.rank) || 0) + 1);
+  }
   for (const entry of data.leaderboard) {
     const login = String(entry?.username || '').toLowerCase();
-    if (login) index.set(login, entry);
+    // Equal scores share a rank: the badge says so rather than claim an order the score does not have.
+    if (login) index.set(login, { ...entry, shared_by: perRank.get(entry?.rank) || 1 });
   }
 
   leaderboardIndex = index;
@@ -688,7 +693,7 @@ async function handleBadgeRequest(request, env) {
     return new Response(JSON.stringify({
       schemaVersion: 1,
       label: `Rankistan @${dev.username}`,
-      message: `rank #${dev.rank}`,
+      message: dev.shared_by > 1 ? `rank #${dev.rank} (tied)` : `rank #${dev.rank}`,
       color: '1a7f4e',
       labelColor: '0f6e56',
       namedLogo: 'github',

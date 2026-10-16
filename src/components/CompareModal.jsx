@@ -28,17 +28,21 @@ function formatValue(dev, row) {
   return val || '\u2014';
 }
 
-function findWinner(devs, row) {
-  if (row.type !== 'number' || devs.length < 2) return -1;
-  let bestIdx = 0;
-  for (let i = 1; i < devs.length; i++) {
-    const a = devs[bestIdx][row.key] ?? (row.lowerBetter ? Infinity : -Infinity);
-    const b = devs[i][row.key] ?? (row.lowerBetter ? Infinity : -Infinity);
-    if (row.lowerBetter ? b < a : b > a) {
-      bestIdx = i;
-    }
-  }
-  return bestIdx;
+/**
+ * The developers holding the best value of a row: every one of them when several share it, and
+ * nobody when all do, so equal scores and shared ranks never show a winner. Score compares the
+ * score before rounding, the number the rank is decided by.
+ */
+function findWinners(devs, row) {
+  if (row.type !== 'number' || devs.length < 2) return new Set();
+  const valueOf = (dev) => {
+    const v = row.key === 'score' ? dev.score_shown ?? dev.score : dev[row.key];
+    return v ?? (row.lowerBetter ? Infinity : -Infinity);
+  };
+  const values = devs.map(valueOf);
+  const best = row.lowerBetter ? Math.min(...values) : Math.max(...values);
+  const winners = new Set(values.flatMap((v, i) => (v === best ? [i] : [])));
+  return winners.size === devs.length ? new Set() : winners;
 }
 
 export default function CompareModal({ developers, onClose }) {
@@ -125,14 +129,14 @@ export default function CompareModal({ developers, onClose }) {
             </thead>
             <tbody>
               {COMPARE_ROWS.map((row) => {
-                const winnerIdx = findWinner(developers, row);
+                const winners = findWinners(developers, row);
                 return (
                   <tr key={row.key} className="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors">
                     <td className="sticky left-0 z-10 bg-surface-container-lowest px-3 sm:px-4 py-3 font-mono text-[10px] text-outline uppercase tracking-widest">
                       {row.label}
                     </td>
                     {developers.map((dev, idx) => {
-                      const isWinner = idx === winnerIdx;
+                      const isWinner = winners.has(idx);
                       return (
                         <td
                           key={dev.username}

@@ -62,7 +62,7 @@ function ContributionHeatmap({ username }) {
   );
 }
 
-export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect }) {
+export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect, sharedBy = 1 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   // The list hands this card a board row: what the collapsed row shows. The
   // bio, top repos and LinkedIn link come from the developer's own file,
@@ -138,8 +138,16 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
               )}
             </div>
           )}
-          <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
-            {String(dev.rank).padStart(3, '0')}
+          <span
+            className="flex flex-col leading-none"
+            title={sharedBy > 1 ? `Rank ${dev.rank}, shared by ${sharedBy} developers with exactly the same score` : undefined}
+          >
+            <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
+              {String(dev.rank).padStart(3, '0')}
+            </span>
+            {sharedBy > 1 && (
+              <span className="mt-1 font-mono text-[10px] uppercase tracking-widest text-outline">Tied</span>
+            )}
           </span>
         </div>
         <div className="col-span-full md:col-span-4 flex items-center gap-4 mb-4 md:mb-0">
@@ -171,7 +179,16 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
           </div>
           <div className="flex shrink-0 items-center gap-3 md:contents">
             <div className="whitespace-nowrap text-left font-mono font-bold text-tertiary tabular-nums md:col-span-1 md:flex md:justify-end md:text-right">
-              {dev.score?.toLocaleString() || 0}
+              {Number.isFinite(dev.score_shown) ? (
+                // The score to two decimals: the whole part and the hundredths from the same number,
+                // so 499.72 never reads as the rounded 500 followed by .72.
+                <span title={`${dev.score_shown.toFixed(2)} before rounding`}>
+                  {Math.trunc(dev.score_shown).toLocaleString()}
+                  <span className="text-[10px] font-normal text-outline/70">.{dev.score_shown.toFixed(2).split('.')[1]}</span>
+                </span>
+              ) : (
+                dev.score?.toLocaleString() || 0
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-2 justify-end md:col-span-1">
               <a
