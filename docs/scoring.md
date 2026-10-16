@@ -264,8 +264,10 @@ on the tie at 500 read four of its members and listed 79 repositories. 56 belong
 redeploying the same source to gh-pages every day, 15 to an account committing "automated update"
 in each three times a day, 7 to scheduled monitoring deploys, and 1 to a button label retyped one
 letter per commit every day. Where a listed repository also held a few real commits on its main
-branch, the reason says so and an appeal can restore it once the deploys stop. The 100 entries
-are read on every run.
+branch, the reason says so and an appeal can restore it once the deploys stop. A fourth pass, from the
+signals panel, listed 4 more repositories of three accounts in the same tie, a workflow named Auto
+Commit, a daily generated digest, and two scheduled gh-pages redeploys of an unchanged source. The
+104 entries are read on every run.
 
 **Collaboration.** 4,586 merges went into repositories the developer does not own, for 252
 developers. 3,525 of them the developer merged themselves, which counts for nothing. 1,046 were
