@@ -16,10 +16,11 @@ export const HISTORY_FILE_SCHEMA = 1;
 /**
  * Boards saved before this instant are not compared with. From scoring v3.0's launch until the fix
  * on 17 October 2026 (#154), the pipeline stored no merges for the developers it measured, and
- * batches 2 to 4 were whole again only once measured again that night. An arrow against one of
- * those boards would show the restore as hundreds of places of movement.
+ * batches 2 to 4 were whole again only once measured again that night, the last at about 00:30
+ * UTC. An arrow against one of those boards would show the restore as hundreds of places of
+ * movement.
  */
-export const COMPARABLE_FROM = '2026-10-17T00:30:00Z';
+export const COMPARABLE_FROM = '2026-10-17T01:00:00Z';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
