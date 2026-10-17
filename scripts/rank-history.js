@@ -10,7 +10,7 @@
 //    "model":"3.1.0","moderation":104,"n":1000,"last_score":212.41,
 //    "batches":"111111111111111111111111",
 //    "cols":["id","login","rank","tie","score","work","collab","appr","days","age","flags"],
-//    "rows":[[220040732,"ahmershahdev",1,0,773.15,495.2,267.9,10,27,0,0], ...],
+//    "rows":[[1234567,"devone",1,0,773.15,495.2,267.9,10,27,0,0], ...],
 //    "out_cols":["id","login","reason","rank","score","days"],
 //    "out":[[123,"someone","cut",1004,211.3,9]]}
 //
