@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   loadBoard,
   loadDeveloperDetail,
+  loadDeveloperHistory,
   loadDigest,
   loadLeaderboardData,
   resetLeaderboardData,
@@ -359,5 +360,32 @@ describe('loadDigest', () => {
   it('ignores a saved value that is not a digest of this schema', async () => {
     cache.set(CACHE_KEYS.DIGEST, { week: '2026-W34', stories: [] });
     await expect(loadDigest({ fetchImpl: offline(), now: 1_000 })).rejects.toThrow(/no saved copy/);
+  });
+});
+
+describe('loadDeveloperHistory', () => {
+  useFreshState();
+  const HISTORY = {
+    schema: 1,
+    login: 'Ali-Dev',
+    id: 1,
+    today: '2026-10-21',
+    points: [['2026-10-21', 1, 0, 900, null]]
+  };
+
+  it("reads the developer's own history file, once, by lowercased login", async () => {
+    const fetchImpl = serve({ '/history/ali-dev.json': HISTORY });
+    const { history } = await loadDeveloperHistory('Ali-Dev', { fetchImpl, now: 1_000 });
+    await loadDeveloperHistory('ali-dev', { fetchImpl, now: 1_001 });
+    expect(history).toEqual(HISTORY);
+    expect(urls(fetchImpl)).toEqual(['/history/ali-dev.json']);
+  });
+
+  it('rejects, with nothing to fall back to, when there is no file or it is not a history', async () => {
+    await expect(
+      loadDeveloperHistory('sara', { fetchImpl: serve({}), now: 1_000 })
+    ).rejects.toThrow(/No Rank History/);
+    const wrong = serve({ '/history/bob.json': { ...HISTORY, login: 'someone-else' } });
+    await expect(loadDeveloperHistory('bob', { fetchImpl: wrong, now: 1_000 })).rejects.toThrow();
   });
 });
