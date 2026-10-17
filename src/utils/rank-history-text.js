@@ -149,33 +149,93 @@ export function historySentences(file) {
   return out;
 }
 
-/** Register's one-line summary of a developer on the board, from their history file. */
-export function registerSummary(file) {
-  const now = file.points.at(-1)[1];
+const signed = (n) => (n > 0 ? `▲${n}` : n < 0 ? `▼${-n}` : '0');
+const pts = (n) => `${n.toFixed(2)} PTS`;
+
+/**
+ * The stat strip of a card's Rank_History panel, in the card's terse voice: `{rank, delta, peak,
+ * onBoard}`, each `{label, value, sub}`. The plain-words account of the same numbers is
+ * historySentences, which the panel gives screen readers and the delta's tooltip.
+ */
+export function panelStats(file) {
+  const [, rank, tie, score] = file.points.at(-1);
   const m = file.movement;
-  const moved =
+  const longAgoSince = m?.kind === 'move' && longAgo(m.since, file.generated);
+  const delta =
     m?.kind === 'move'
-      ? m.places > 0
-        ? `, up ${places(m.places)} since yesterday`
-        : m.places < 0
-          ? `, down ${places(-m.places)} since yesterday`
-          : ', the same as yesterday'
-      : '';
-  const out = [`Rank ${now} today${moved}.`, `First on the board ${dayMonth(file.first)}.`];
-  if (file.best) out.push(`Best rank ${file.best.rank} under the current scoring.`);
-  return out.join(' ');
+      ? {
+          value: m.places === 0 ? '= 0' : m.places > 0 ? `▲ ${m.places}` : `▼ ${-m.places}`,
+          sub: `SCORE ${m.score_now - m.score_then >= 0 ? '+' : '−'}${Math.abs(m.score_now - m.score_then).toFixed(2)}`
+        }
+      : m?.kind === 'new'
+        ? { value: 'NEW', sub: 'FIRST DAY' }
+        : m?.kind === 'back'
+          ? {
+              value: 'BACK',
+              sub:
+                m.away_days > 0
+                  ? `AWAY ${m.away_days}D · LAST #${m.last.rank}`
+                  : `LAST #${m.last.rank} · ${shortDate(m.last.d)}`
+            }
+          : m?.kind === 'scoring'
+            ? { value: 'N/A', sub: `MODEL CHANGED ${shortDate(file.scoring.since)}` }
+            : { value: 'N/A', sub: 'NO 24H BOARD' };
+  return {
+    rank: {
+      label: 'Rank',
+      value: `#${rank}`,
+      sub: tie > 1 ? `${pts(score)} · TIED ×${tie}` : pts(score)
+    },
+    delta: {
+      label: longAgoSince ? `Δ Since ${shortDate(pktDate(m.since))}` : 'Δ 24H',
+      ...delta
+    },
+    peak: file.best
+      ? { label: 'Peak', value: `#${file.best.rank}`, sub: shortDate(file.best.d) }
+      : { label: 'Peak', value: 'PENDING', sub: 'FIRST CLOSE 00:00 PKT' },
+    onBoard: {
+      label: 'On board',
+      value: `${file.days_on}/${file.days_span} D`,
+      sub: `FIRST ${shortDate(file.first)}`
+    }
+  };
 }
 
-const LEFT = {
-  cut: (d) => `Below the top 1,000 from ${dayMonth(d)}.`,
-  rescored: (d) => `Left when scoring changed on ${dayMonth(d)}.`,
-  unmeasured: (d) => `Not measured from ${dayMonth(d)}.`
+/**
+ * The move split exactly, `Δ ▼2 = OWN 0 + FIELD ▼2`: OWN the places the developer's own score
+ * change explains, FIELD the places other developers' changes explain. Null with nothing to split.
+ */
+export function attributionLine(file) {
+  const m = file.movement;
+  if (m?.kind !== 'move' || (m.places === 0 && m.own === 0)) return null;
+  return `Δ ${signed(m.places)} = OWN ${signed(m.own)} + FIELD ${signed(m.others)}`;
+}
+
+/** Register's line for a developer on the board. */
+export function registerSummary(file) {
+  const { rank, delta, peak, onBoard } = panelStats(file);
+  const parts = [`RANK ${rank.value}`];
+  if (file.movement?.kind === 'move') parts.push(`${delta.value} / 24H`);
+  else if (file.movement?.kind === 'new' || file.movement?.kind === 'back') parts.push(delta.value);
+  if (file.best) parts.push(`PEAK ${peak.value}`);
+  parts.push(onBoard.sub);
+  return parts.join(' · ');
+}
+
+const EXIT = {
+  cut: 'BELOW TOP 1,000',
+  below_gate: 'UNDER 4 ACTIVE DAYS',
+  moderated: 'REPO MODERATED',
+  rescored: 'MODEL CHANGE',
+  not_found: 'NOT IN SEARCH',
+  unmeasured: 'NOT MEASURED',
+  unscorable: 'NOT MEASURED'
 };
 
 /**
- * A developer's spells on the board under the current scoring, oldest first: `{from, to, best,
- * left}`, `left` the sentence for how the spell ended, null for the one still running. Days with
- * no board at all do not end a spell.
+ * A developer's spells on the board under the current scoring, oldest first: `{from, to, days,
+ * best, exit}`, `exit` how the spell ended (null for the one still running). Days with no board at
+ * all do not end a spell.
  */
 export function boardSpells(file) {
   const gaps = new Set(file.gaps);
@@ -192,16 +252,15 @@ export function boardSpells(file) {
     }
     if (joined) {
       last.to = d;
+      last.days += 1;
       last.best = Math.min(last.best, rank);
     } else {
-      spells.push({ from: d, to: d, best: rank, left: null });
+      spells.push({ from: d, to: d, days: 1, best: rank, exit: null });
     }
   }
   for (const spell of spells.slice(0, -1)) {
-    const after = spell.to;
-    const reason = file.left.find(([d]) => d > after)?.[1];
-    const day = file.left.find(([d]) => d > after)?.[0] ?? next(after);
-    spell.left = (LEFT[reason] ?? ((d) => `Not on the board from ${dayMonth(d)}.`))(day);
+    const reason = file.left.find(([d]) => d > spell.to)?.[1];
+    spell.exit = EXIT[reason] ?? 'LEFT BOARD';
   }
   return spells;
 }

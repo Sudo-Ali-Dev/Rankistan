@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  attributionLine,
   boardSpells,
   dayMonth,
+  panelStats,
   historySentences,
   moveMarker,
   moveSentences,
@@ -131,31 +133,76 @@ describe('dates', () => {
   });
 });
 
-describe('Register and the developer page', () => {
+describe('the panel, the developer page and Register', () => {
   const history = (points, extra = {}) => ({
+    generated: '2026-10-21T12:00:00.000Z',
     today: points.at(-1)[0],
     first: points[0][0],
+    scoring: { version: '3.1', since: '2026-10-17' },
     gaps: [],
     left: [],
     best: null,
     movement: null,
-    points: points.map(([d, rank]) => [d, rank, 0, 600, null]),
+    days_on: points.length,
+    days_span: points.length,
+    points: points.map(([d, rank, tie = 0]) => [d, rank, tie, 612.4, null]),
     ...extra
   });
+  const moved = history(
+    [
+      ['2026-10-17', 30],
+      ['2026-10-21', 41]
+    ],
+    {
+      best: { rank: 29, d: '2026-10-18' },
+      days_span: 5,
+      movement: {
+        kind: 'move',
+        since: '2026-10-20T12:00:00.000Z',
+        places: 12,
+        own: 9,
+        others: 3,
+        score_then: 609,
+        score_now: 612.4
+      }
+    }
+  );
 
-  it("sum up a developer's standing in one line", () => {
-    const file = history(
-      [
-        ['2026-10-17', 30],
-        ['2026-10-21', 41]
-      ],
-      { best: { rank: 29, d: '2026-10-18' }, movement: { kind: 'move', places: 12 } }
+  it('give the stat strip in the card voice', () => {
+    expect(panelStats(moved)).toEqual({
+      rank: { label: 'Rank', value: '#41', sub: '612.40 PTS' },
+      delta: { label: 'Δ 24H', value: '▲ 12', sub: 'SCORE +3.40' },
+      peak: { label: 'Peak', value: '#29', sub: '18 OCT' },
+      onBoard: { label: 'On board', value: '2/5 D', sub: 'FIRST 17 OCT' }
+    });
+    const fresh = history([['2026-10-21', 900, 3]], { movement: { kind: 'new' } });
+    expect(panelStats(fresh)).toMatchObject({
+      rank: { sub: '612.40 PTS · TIED ×3' },
+      delta: { value: 'NEW', sub: 'FIRST DAY' },
+      peak: { value: 'PENDING' }
+    });
+    const back = {
+      ...moved,
+      movement: { kind: 'back', last: { d: '2026-10-09', rank: 943 }, away_days: 6 }
+    };
+    expect(panelStats(back).delta).toMatchObject({ value: 'BACK', sub: 'AWAY 6D · LAST #943' });
+    expect(panelStats({ ...moved, movement: { kind: 'scoring' } }).delta.sub).toBe(
+      'MODEL CHANGED 17 OCT'
     );
-    expect(registerSummary(file)).toBe(
-      'Rank 41 today, up 12 places since yesterday. First on the board 17 October. Best rank 29 under the current scoring.'
-    );
-    expect(registerSummary(history([['2026-10-21', 900]]))).toBe(
-      'Rank 900 today. First on the board 21 October.'
+    expect(panelStats({ ...moved, movement: null }).delta.sub).toBe('NO 24H BOARD');
+  });
+
+  it('split the move exactly', () => {
+    expect(attributionLine(moved)).toBe('Δ ▲12 = OWN ▲9 + FIELD ▲3');
+    const mixed = { ...moved, movement: { ...moved.movement, places: -2, own: 0, others: -2 } };
+    expect(attributionLine(mixed)).toBe('Δ ▼2 = OWN 0 + FIELD ▼2');
+    expect(attributionLine({ ...moved, movement: { kind: 'new' } })).toBeNull();
+  });
+
+  it("sum up a developer's standing for Register", () => {
+    expect(registerSummary(moved)).toBe('RANK #41 · ▲ 12 / 24H · PEAK #29 · FIRST 17 OCT');
+    expect(registerSummary(history([['2026-10-21', 900]], { movement: { kind: 'new' } }))).toBe(
+      'RANK #900 · NEW · FIRST 21 OCT'
     );
   });
 
@@ -171,13 +218,8 @@ describe('Register and the developer page', () => {
       { gaps: ['2026-10-19'], left: [['2026-10-21', 'cut']] }
     );
     expect(boardSpells(file)).toEqual([
-      {
-        from: '2026-10-17',
-        to: '2026-10-20',
-        best: 25,
-        left: 'Below the top 1,000 from 21 October.'
-      },
-      { from: '2026-10-25', to: '2026-10-26', best: 980, left: null }
+      { from: '2026-10-17', to: '2026-10-20', days: 3, best: 25, exit: 'BELOW TOP 1,000' },
+      { from: '2026-10-25', to: '2026-10-26', days: 2, best: 980, exit: null }
     ]);
   });
 });

@@ -58,7 +58,17 @@ export function historyLines(file, width = 240, height = 40) {
       .filter((_, i) => alone[i])
       .map((p) => `M${at(p, y)} l0.01,0`)
       .join(' ');
+  // Each stretch off the board, between the last day of one spell and the first of the next.
+  const offBands = [];
+  points.forEach((p, i) => {
+    if (i > 0 && starts[i]) offBands.push({ x0: x(points[i - 1].d), x1: x(p.d) });
+  });
+  const ranks = points.map((p) => p.rank);
+  const scores = points.map((p) => p.score);
   return {
+    rankRange: { top: Math.min(...ranks), bottom: Math.max(...ranks) },
+    scoreRange: { top: Math.max(...scores), bottom: Math.min(...scores) },
+    offBands,
     rank: path((p) => yRank(p.rank)),
     score: path((p) => yScore(p.score)),
     rankDots: dotsOf((p) => yRank(p.rank)),

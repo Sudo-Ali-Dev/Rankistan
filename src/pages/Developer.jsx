@@ -21,30 +21,24 @@ function Spells({ username }) {
   return (
     <div className="border border-outline-variant bg-surface p-4">
       <h3 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-3">
-        On_The_Board
+        Board_Spells
       </h3>
       <ul className="space-y-2">
         {spells.map((spell) => (
           <li
             key={spell.from}
-            className="flex flex-col gap-1 border-b border-surface-container pb-2 sm:flex-row sm:items-baseline sm:justify-between"
+            className="flex flex-col gap-1 border-b border-surface-container pb-2 font-mono text-[10px] uppercase tracking-widest tabular-nums sm:flex-row sm:items-baseline sm:justify-between"
           >
-            <span className="font-mono text-xs text-on-surface tabular-nums">
-              {shortDate(spell.from)}
-              {spell.left === null
-                ? spell.from === spell.to
-                  ? ' · today'
-                  : ' to today'
-                : spell.to !== spell.from
-                  ? ` to ${shortDate(spell.to)}`
-                  : ''}
-              <span className="text-outline"> · best {spell.best}</span>
-            </span>
-            {spell.left ? (
-              <span className="font-mono text-[10px] text-outline uppercase tracking-widest">
-                {spell.left}
+            <span className="text-on-surface">
+              {shortDate(spell.from)} → {spell.exit === null ? 'Today' : shortDate(spell.to)}
+              <span className="text-outline">
+                {' '}
+                · {spell.days}D · Peak #{spell.best}
               </span>
-            ) : null}
+            </span>
+            <span className={spell.exit === null ? 'text-tertiary' : 'text-outline'}>
+              {spell.exit === null ? 'Active' : `Exit · ${spell.exit}`}
+            </span>
           </li>
         ))}
       </ul>
