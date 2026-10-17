@@ -8,6 +8,7 @@ import {
   locationTokens
 } from '../../scripts/discovery/locations.js';
 import ScoreBreakdownPanel from '../components/ScoreBreakdownPanel';
+import BoardStanding from '../components/BoardStanding';
 import { fetchScorePreview } from '../utils/score-preview.js';
 import { SCORE_CONFIG } from '../model/config.js';
 
@@ -397,6 +398,7 @@ export default function Register({ onChangeTab }) {
         </div>
 
         <ScoreBreakdownPanel preview={scorePreview} gatesPassed={gatesPassed} />
+        <BoardStanding login={profileData?.login ?? null} />
 
         <section
           aria-labelledby="register-by-issue"

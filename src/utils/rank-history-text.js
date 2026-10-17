@@ -148,3 +148,60 @@ export function historySentences(file) {
   }
   return out;
 }
+
+/** Register's one-line summary of a developer on the board, from their history file. */
+export function registerSummary(file) {
+  const now = file.points.at(-1)[1];
+  const m = file.movement;
+  const moved =
+    m?.kind === 'move'
+      ? m.places > 0
+        ? `, up ${places(m.places)} since yesterday`
+        : m.places < 0
+          ? `, down ${places(-m.places)} since yesterday`
+          : ', the same as yesterday'
+      : '';
+  const out = [`Rank ${now} today${moved}.`, `First on the board ${dayMonth(file.first)}.`];
+  if (file.best) out.push(`Best rank ${file.best.rank} under the current scoring.`);
+  return out.join(' ');
+}
+
+const LEFT = {
+  cut: (d) => `Below the top 1,000 from ${dayMonth(d)}.`,
+  rescored: (d) => `Left when scoring changed on ${dayMonth(d)}.`,
+  unmeasured: (d) => `Not measured from ${dayMonth(d)}.`
+};
+
+/**
+ * A developer's spells on the board under the current scoring, oldest first: `{from, to, best,
+ * left}`, `left` the sentence for how the spell ended, null for the one still running. Days with
+ * no board at all do not end a spell.
+ */
+export function boardSpells(file) {
+  const gaps = new Set(file.gaps);
+  const next = (d) =>
+    new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const spells = [];
+  for (const [d, rank] of file.points) {
+    const last = spells.at(-1);
+    let joined = false;
+    if (last) {
+      let day = next(last.to);
+      while (day < d && gaps.has(day)) day = next(day);
+      joined = day === d;
+    }
+    if (joined) {
+      last.to = d;
+      last.best = Math.min(last.best, rank);
+    } else {
+      spells.push({ from: d, to: d, best: rank, left: null });
+    }
+  }
+  for (const spell of spells.slice(0, -1)) {
+    const after = spell.to;
+    const reason = file.left.find(([d]) => d > after)?.[1];
+    const day = file.left.find(([d]) => d > after)?.[0] ?? next(after);
+    spell.left = (LEFT[reason] ?? ((d) => `Not on the board from ${dayMonth(d)}.`))(day);
+  }
+  return spells;
+}

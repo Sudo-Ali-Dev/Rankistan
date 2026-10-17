@@ -35,3 +35,18 @@ export function tabFromPath(pathname) {
 export function pathForTab(tab) {
   return TAB_PATHS[tab] || '/';
 }
+
+// GitHub's rule for a login: letters, digits and single hyphens, not starting or ending with one,
+// at most 39 characters.
+const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
+
+/** The developer a `#login` hash names, or null for any other hash. */
+export function loginFromHash(hash) {
+  let value;
+  try {
+    value = decodeURIComponent(String(hash || '').replace(/^#/, ''));
+  } catch {
+    return null;
+  }
+  return LOGIN_RE.test(value) ? value : null;
+}

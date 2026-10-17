@@ -64,8 +64,9 @@ function ContributionHeatmap({ username }) {
   );
 }
 
-export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect, sharedBy = 1 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect, sharedBy = 1, defaultExpanded = false }) {
+  // The developer page at /#login opens the card on arrival.
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   // The list hands this card a board row: what the collapsed row shows. The
   // bio, top repos and LinkedIn link come from the developer's own file,
   // fetched on first expand. A full data.json row (the fallback) already has
@@ -90,6 +91,18 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
       () => setDetail({ state: 'failed', row: null })
     );
   };
+
+  useEffect(() => {
+    if (!defaultExpanded || hasFullRow || !dev?.username) return undefined;
+    let cancelled = false;
+    loadDeveloperDetail(dev.username).then(
+      ({ developer }) => !cancelled && setDetail({ state: 'ready', row: developer }),
+      () => !cancelled && setDetail({ state: 'failed', row: null })
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [defaultExpanded, hasFullRow, dev?.username]);
 
   const toggleExpand = async () => {
     const wasCollapsed = !isExpanded;

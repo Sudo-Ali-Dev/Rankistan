@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  boardSpells,
   dayMonth,
   historySentences,
   moveMarker,
   moveSentences,
+  registerSummary,
   shortDate
 } from './rank-history-text';
 
@@ -126,5 +128,56 @@ describe('dates', () => {
   it('read as Pakistan dates, never converted', () => {
     expect(dayMonth('2026-10-17')).toBe('17 October');
     expect(shortDate('2026-11-03')).toBe('3 NOV');
+  });
+});
+
+describe('Register and the developer page', () => {
+  const history = (points, extra = {}) => ({
+    today: points.at(-1)[0],
+    first: points[0][0],
+    gaps: [],
+    left: [],
+    best: null,
+    movement: null,
+    points: points.map(([d, rank]) => [d, rank, 0, 600, null]),
+    ...extra
+  });
+
+  it("sum up a developer's standing in one line", () => {
+    const file = history(
+      [
+        ['2026-10-17', 30],
+        ['2026-10-21', 41]
+      ],
+      { best: { rank: 29, d: '2026-10-18' }, movement: { kind: 'move', places: 12 } }
+    );
+    expect(registerSummary(file)).toBe(
+      'Rank 41 today, up 12 places since yesterday. First on the board 17 October. Best rank 29 under the current scoring.'
+    );
+    expect(registerSummary(history([['2026-10-21', 900]]))).toBe(
+      'Rank 900 today. First on the board 21 October.'
+    );
+  });
+
+  it('list each spell on the board and how it ended, a day with no board ending none', () => {
+    const file = history(
+      [
+        ['2026-10-17', 30],
+        ['2026-10-18', 28],
+        ['2026-10-20', 25],
+        ['2026-10-25', 990],
+        ['2026-10-26', 980]
+      ],
+      { gaps: ['2026-10-19'], left: [['2026-10-21', 'cut']] }
+    );
+    expect(boardSpells(file)).toEqual([
+      {
+        from: '2026-10-17',
+        to: '2026-10-20',
+        best: 25,
+        left: 'Below the top 1,000 from 21 October.'
+      },
+      { from: '2026-10-25', to: '2026-10-26', best: 980, left: null }
+    ]);
   });
 });
