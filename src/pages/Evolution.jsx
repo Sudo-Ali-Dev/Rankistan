@@ -149,7 +149,7 @@ const EVOLUTION_ENTRIES = [
       'Recent days still count more, now by the same small step each day, which makes exact ties rare.',
     ],
     example:
-      'Measured on the whole board, 9 of the top 10 and 46 of the top 50 stay. headlessNode, with 66 large pull requests merged into one project, moves from 9th to 5th, and ZainnQureshii, with 62 small fixes across 52 projects, from 8th to 13th. Developers whose colleagues approved their pull requests move up, one from 70th to 23rd. Exact ties fall from 392 rows to 33.',
+      'Measured on the whole board, 9 of the top 10 and 46 of the top 50 stay. A developer with 66 large pull requests merged into one project moves from 9th to 5th, and one with 62 small fixes across 52 projects from 8th to 13th. Developers whose colleagues approved their pull requests move up, one from 70th to 23rd. Exact ties fall from 392 rows to 33.',
     reasoning:
       'The checks agreed that v3 was the right idea and much fairer than v2, but thirty quick reviews of strangers\' pull requests could reach the top of the board, and one friend could add hundreds of points. Each fix closes one of those without costing honest developers.',
   },

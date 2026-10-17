@@ -334,10 +334,10 @@ the new shape on 16 October with the 21 moderation entries applied.
 - Distinct scores rise from 759 to 968, and rows in a tie fall from 392 to 33.
 - 2 developers fall below the gate, both with repositories GitHub credits on 26 and 28 days whose
   only branch holds none of those commits.
-- The new #1 is ahmershahdev (was #2). headlessNode, with 66 large pull requests into one project,
-  goes from #9 to #5. ZainnQureshii, with 62 small fixes across 52 projects, goes from #8 to #13.
-- Approved pull requests count. arbirali goes from #70 to #23, razasaddiqi from #55 to #24 and
-  salman-codewar from #368 to #58.
+- The new #1 was #2. A developer with 66 large pull requests into one project goes from #9 to #5,
+  and one with 62 small fixes across 52 projects goes from #8 to #13.
+- Approved pull requests count. Three developers whose colleagues approved their work go from #70
+  to #23, #55 to #24 and #368 to #58.
 - The missing-commits rule was first drafted to exclude a repository whose sample found fewer than
   a quarter of its credited days. On the board that also excluded an honest history rewrite and a
   developer whose work sits on a renamed default branch, so it excludes only when none are found,
