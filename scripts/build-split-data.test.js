@@ -170,6 +170,75 @@ describe('buildSplitData', () => {
     expect(fs.existsSync(path.join(outDir, 'board.json'))).toBe(false);
   });
 
+  describe('Rank History', () => {
+    const measured = {
+      ...PAYLOAD,
+      last_updated: '2026-10-21T12:00:00.000Z',
+      leaderboard: [
+        { ...PAYLOAD.leaderboard[0], github_id: 1, score_exact: 900, model_version: '3.1.0' },
+        { ...PAYLOAD.leaderboard[1], github_id: 2, score_exact: 800, model_version: '3.1.0' }
+      ]
+    };
+    const COLS = [
+      'id',
+      'login',
+      'rank',
+      'tie',
+      'score',
+      'work',
+      'collab',
+      'appr',
+      'days',
+      'age',
+      'flags'
+    ];
+    function history() {
+      const historyDir = path.join(dir, 'rank-history');
+      fs.mkdirSync(historyDir);
+      const record = {
+        v: 1,
+        d: '2026-10-20',
+        model: '3.1.0',
+        cols: COLS,
+        rows: [[1, 'Ali-Dev', 2, 0, 790, 0, 0, 0, 12, 0, 0]],
+        out: []
+      };
+      fs.writeFileSync(path.join(historyDir, 'history.ndjson'), `${JSON.stringify(record)}\n`);
+      const then = {
+        last_updated: '2026-10-20T12:00:00.000Z',
+        model: '3.1.0',
+        rows: [[1, 2, 790]]
+      };
+      fs.writeFileSync(path.join(historyDir, 'then.json'), JSON.stringify(then));
+      return historyDir;
+    }
+
+    it("writes each developer's history, and the move under each rank", () => {
+      publish(measured);
+      const result = buildSplitData({ sourcePath, outDir, historyDir: history(), log: quiet });
+      expect(result.histories).toBe(2);
+      expect(fs.readdirSync(path.join(outDir, 'history')).sort()).toEqual([
+        'ali-dev.json',
+        'sara.json'
+      ]);
+      const ali = readJson('history', 'ali-dev.json');
+      expect(ali.points.map((p) => p[0])).toEqual(['2026-10-20', '2026-10-21']);
+      expect(ali.movement).toMatchObject({ kind: 'move', rank_then: 2, rank_now: 1 });
+      const board = readJson('board.json');
+      expect(board.leaderboard.map((r) => r.move)).toEqual([1, 'new']);
+      // data.json is the pipeline's board: it carries no history at all.
+      expect(readJson('data.json').leaderboard.some((r) => 'move' in r)).toBe(false);
+    });
+
+    it('writes no history and no markers when there is no history to read', () => {
+      publish(measured);
+      const result = buildSplitData({ sourcePath, outDir, historyDir: null, log: quiet });
+      expect(result.histories).toBe(0);
+      expect(fs.existsSync(path.join(outDir, 'history'))).toBe(false);
+      expect(readJson('board.json').leaderboard.some((r) => 'move' in r)).toBe(false);
+    });
+  });
+
   it('rejects a source with no leaderboard', () => {
     publish({ last_updated: 'x' });
     expect(() => buildSplitData({ sourcePath, outDir, log: quiet })).toThrow(/leaderboard/);
