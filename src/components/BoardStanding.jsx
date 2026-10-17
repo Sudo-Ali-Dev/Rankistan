@@ -38,12 +38,14 @@ export default function BoardStanding({ login }) {
       <h2 className="font-mono text-[10px] text-outline uppercase tracking-widest mb-2">
         On_The_Board
       </h2>
-      <p className="text-sm text-on-surface-variant leading-relaxed font-body">{state.text}</p>
+      <p className="font-mono text-xs text-on-surface uppercase tracking-widest tabular-nums">
+        {state.text}
+      </p>
       <a
         href={`/#${encodeURIComponent(state.username)}`}
         className="mt-3 inline-flex min-h-11 sm:min-h-0 items-center font-mono text-[10px] text-primary uppercase tracking-widest hover:underline"
       >
-        See the full Rank History
+        View rank history →
       </a>
     </section>
   );
