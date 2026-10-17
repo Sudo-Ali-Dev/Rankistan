@@ -37,6 +37,7 @@ export const SPLIT_SCHEMA = 1;
 //   events_30d     sort, Compare, CSV, Map
 //   top_languages  search, Compare, CSV
 //   tags           DevCard row, the tag filter, Compare
+//   move           DevCard row: the Rank History marker, set at build time only
 //
 // Detail only: bio, top_repos, digest_repos, linkedin_url, and anything the
 // pipeline adds later, except PIPELINE_ONLY_FIELDS. Register's ten bios come
@@ -54,7 +55,8 @@ export const BOARD_FIELDS = Object.freeze([
   'total_stars',
   'events_30d',
   'top_languages',
-  'tags'
+  'tags',
+  'move'
 ]);
 
 // Fields a board row gains from its row rather than copies: the score to two decimals.

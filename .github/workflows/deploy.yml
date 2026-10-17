@@ -54,9 +54,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/state-store.js pull public/data.json
 
+      # Rank History: the daily records and the board saved closest to 24
+      # hours earlier, kept outside public/ so the site serves each developer's
+      # own history and never the whole of it. Fail-soft: without them the site
+      # builds with no history (scripts/history-pull.js).
+      - name: Download Rank History
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/history-pull.js "$RUNNER_TEMP/rank-history" --board public/data.json
+
       - name: Build
         env:
           VITE_SUMMARY_API_URL: ${{ vars.VITE_SUMMARY_API_URL || 'https://rankistan-summary-api.academics-ali.workers.dev' }}
+          RANK_HISTORY_DIR: ${{ runner.temp }}/rank-history
         run: npm run build
 
       - name: Upload artifact
