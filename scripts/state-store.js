@@ -14,9 +14,8 @@
 // One that fails to download, match its digest or parse is skipped for the
 // next-newest, and the newest KEEP_ASSETS - three days of hourly runs - are
 // kept, so any of them can be restored by hand. So is the newest state of each
-// Pakistan date for KEEP_DAILY_DAYS: the board as it closed that day, the
-// record a history of the board is built from (pruning used to delete it after
-// three days, so nothing durable recorded the board at all).
+// Pakistan date for KEEP_DAILY_DAYS: the board as it closed that day, which
+// Rank History records each date from (scripts/history-store.js).
 //
 // Writes are serialized by the pipeline's concurrency group in
 // update-digest.yml. This module takes no lock of its own.
@@ -45,8 +44,13 @@ import { fileURLToPath } from 'node:url';
 
 export const STATE_TAG = 'pipeline-state';
 export const KEEP_ASSETS = 72;
-/** Days the last state of each Pakistan date is kept. Well under 1,000 assets a release. */
-export const KEEP_DAILY_DAYS = 400;
+/**
+ * Days the last state of each Pakistan date is kept: long enough for Rank History to write each
+ * date from its close after a run of failed writes (scripts/history-store.js). It was 400 until
+ * Rank History had a store of its own. A state holds every row on the board that day, and this
+ * release is public, so a developer who opts out leaves its copies within this many days.
+ */
+export const KEEP_DAILY_DAYS = 14;
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 

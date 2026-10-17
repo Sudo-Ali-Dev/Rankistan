@@ -11,7 +11,9 @@ body:
       value: |
         This removes **the GitHub account that opens this issue**, and no one else.
 
-        You are taken off the board at the next pipeline run, whichever batch your row is in, and you are not measured again while the opt-out stands. To come back, open a **Register** issue: your latest issue is the one that counts.
+        You are taken off the board at the next pipeline run, whichever batch your row is in, and you are not measured again while the opt-out stands. To come back, open a **Register** issue. Your latest issue is the one that counts.
+
+        Your **Rank History**, the record of where you stood on the board each day, is deleted for good at the same run, from every file and every copy of it. Coming back later starts a new one. The pipeline's own saved boards of the last 14 days still hold your row until they age out, and boards published in the repository's git history before 13 October 2026 cannot be rewritten.
 
         This issue is public. Do not add anything private to it.
 

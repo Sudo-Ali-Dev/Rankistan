@@ -264,7 +264,9 @@ would mostly report other developers.
 
 ## Already done, and still to fix first
 
-- Done. The last board of each Pakistan date is kept for 400 days (#151).
+- Done. The last board of each Pakistan date is kept (#151), for 400 days until Rank History had
+  its own store and then for 14, so an opted-out developer's row leaves the public states within two
+  weeks.
 - Done. One row per account when a developer renames (#152).
 - Done. Removals from scoring the board again have their own reasons, `rescored` and `moderated`,
   and every run logs who it removed and why in the state (#155).
