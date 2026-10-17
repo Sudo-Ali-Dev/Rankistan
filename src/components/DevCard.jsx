@@ -3,6 +3,8 @@ import { normalizeLocationForDisplay } from '../utils/location';
 import { resolveHeatmapApiUrl, resolveHeatmapDirectUrl } from '../utils/groq.js';
 import { loadDeveloperDetail } from '../utils/leaderboard-data';
 import ActivitySparkline from './ActivitySparkline';
+import RankHistoryPanel from './RankHistoryPanel';
+import { moveMarker } from '../utils/rank-history-text';
 
 const GitHubIcon = ({ size = 16 }) => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" width={size} height={size} aria-hidden="true">
@@ -101,6 +103,7 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
   };
 
   const username = dev?.username || '';
+  const marker = moveMarker(dev?.move);
   const githubUrl = `https://github.com/${username}`;
   const avatar = dev?.avatar_url || dev?.avatar || `https://github.com/${username}.png?size=80`;
   const cleanLocation = normalizeLocationForDisplay(dev?.location);
@@ -145,8 +148,20 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
             <span className="font-mono text-2xl font-bold text-outline-variant group-hover:text-primary transition-colors">
               {String(dev.rank).padStart(3, '0')}
             </span>
-            {sharedBy > 1 && (
-              <span className="mt-1 font-mono text-[10px] uppercase tracking-widest text-outline">Tied</span>
+            {(sharedBy > 1 || marker) && (
+              // Rank History's marker: places moved since this time yesterday, or a first day or
+              // a return. Grey whichever way it went: most daily movement comes from other
+              // developers, so a fall is not shown as a failure.
+              <span className="mt-1 font-mono text-[10px] uppercase tracking-widest text-outline whitespace-nowrap">
+                {sharedBy > 1 ? 'Tied' : null}
+                {sharedBy > 1 && marker ? ' ' : null}
+                {marker ? (
+                  <>
+                    <span aria-hidden="true">{marker.text}</span>
+                    <span className="sr-only">{marker.label}</span>
+                  </>
+                ) : null}
+              </span>
             )}
           </span>
         </div>
@@ -303,7 +318,8 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
               Inside `md:col-span-8` it was two thirds of it. This is where #50
               put it, and the long shallow band is the point of the panel: 30
               days only read as a trend when they have the width to spread out. */}
-          <div className="mt-8">
+          <div className="mt-8 space-y-6">
+            <RankHistoryPanel username={username} />
             <ActivitySparkline username={username} />
           </div>
         </div>

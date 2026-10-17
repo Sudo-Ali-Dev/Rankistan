@@ -1,12 +1,14 @@
 import { cache, CACHE_KEYS } from './cache';
 import {
   buildDigest,
+  developerFileName,
   developerFilePath,
   isBoardPayload,
   isDeveloperFileFor,
   isDigestPayload,
   toDeveloperRow
 } from './split-data';
+import { isHistoryFileFor } from './rank-history-view';
 
 // Every page reads the leaderboard through this module, and each page asks for
 // the smallest file that serves it:
@@ -14,6 +16,7 @@ import {
 //   loadBoard()               ./board.json      the list views     (~49 KB gzip)
 //   loadDeveloperDetail(l)    /dev/<l>.json     one expanded card  (~0.8 KB)
 //   loadDigest()              ./digest.json     the Digest         (~9 KB)
+//   loadDeveloperHistory(l)   /history/<l>.json one Rank History   (~1 KB a month)
 //   loadLeaderboardData()     ./data.json       everything         (~400 KB)
 //
 // The first three are derived from data.json at build time
@@ -233,11 +236,44 @@ export function loadDeveloperDetail(
   return details.get(key).get({ fetchImpl, now });
 }
 
+const histories = new Map();
+
+/**
+ * One developer's Rank History (history/<login>.json, src/utils/rank-history-view.js). It exists
+ * only as its own file, built at deploy for developers on the board, so there is no data.json to
+ * fall back to: a missing file rejects, and the card says the history is not available.
+ * @returns {Promise<{ history: object }>}
+ */
+export function loadDeveloperHistory(
+  login,
+  { fetchImpl = globalThis.fetch, now = Date.now() } = {}
+) {
+  const key = String(login ?? '')
+    .trim()
+    .toLowerCase();
+  const name = developerFileName(key);
+  if (!name) return Promise.reject(new Error('A developer login is required.'));
+  if (!histories.has(key)) {
+    histories.set(
+      key,
+      reusable(async ({ fetchImpl: f }) => {
+        const result = await fetchSplitFile(f, `/history/${name}`, (value) =>
+          isHistoryFileFor(value, key)
+        );
+        if (!result.ok) throw new Error(`No Rank History for ${login}.`);
+        return { history: result.value };
+      })
+    );
+  }
+  return histories.get(key).get({ fetchImpl, now });
+}
+
 /** Test seam: forget every in-memory copy. */
 export function resetLeaderboardData() {
   fullData.reset();
   board.reset();
   digest.reset();
   details.clear();
+  histories.clear();
   splitUnavailable = false;
 }
