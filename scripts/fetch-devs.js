@@ -499,14 +499,22 @@ function summarizeRepos(repos) {
     }
   }
 
-  const topLanguages = [...languageCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
+  const ranked = [...languageCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const topLanguages = ranked
     .slice(0, 3)
     .map(([language]) => language);
 
+  // The counts behind those names: how many repositories each language is written in. The
+  // names alone cannot say how much of the work is in each language, so the counts are kept
+  // and published - a developer's own page draws the mix from them.
+  const languageCountsOut = ranked
+    .slice(0, 5)
+    .map(([language, count]) => ({ language, count }));
+
   return {
     total_stars: totalStars,
-    top_languages: topLanguages
+    top_languages: topLanguages,
+    language_counts: languageCountsOut
   };
 }
 
@@ -611,6 +619,7 @@ async function fetchDeveloperActivity(username, token, { source, registered = fa
     total_stars: repoSummary.total_stars,
     top_repos: mapTopRepos(repos),
     top_languages: repoSummary.top_languages,
+    language_counts: repoSummary.language_counts,
     linkedin_url: extractLinkedinUrl(socials),
     created_at: profile.created_at,
     events_30d: meaningfulLast30Days.length,

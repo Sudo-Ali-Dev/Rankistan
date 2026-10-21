@@ -3,9 +3,11 @@
 // to, and so the back button moves between tabs. The developer deep link `/#username` stays on
 // the leaderboard path: a GitHub login contains no `/`, so it can never collide with a tab.
 //
-// Any other path - a campaign landing such as /from/linkedin/infra-1 (index.html rewrites UTM
-// links to that), or a stale link - shows the leaderboard and keeps its URL until the visitor
-// moves, so the landing is counted under the path it arrived on.
+// A developer's own page is /username: a real path, so it can be shared, previewed and crawled
+// rather than only reached through the leaderboard's hash. A path that names no tab and no
+// developer - a campaign landing such as /from/linkedin/infra-1 (index.html rewrites UTM links to
+// that), or a stale link - shows the leaderboard and keeps its URL until the visitor moves, so the
+// landing is counted under the path it arrived on.
 
 export const TAB_PATHS = Object.freeze({
   leaderboard: '/',
@@ -48,5 +50,46 @@ export function loginFromHash(hash) {
   } catch {
     return null;
   }
+  return LOGIN_RE.test(value) ? value : null;
+}
+
+// The tab paths, without the leaderboard's: a developer whose login is `map` cannot have a page
+// at /map, because the tab is there. Such a developer keeps the hash link their README badge
+// carries, and the build skips their file.
+export const RESERVED_PATHS = Object.freeze(
+  new Set(
+    Object.values(TAB_PATHS)
+      .filter((path) => path !== '/')
+      .map((path) => path.slice(1).toLowerCase())
+  )
+);
+
+/** Whether a path is a tab's own, and so belongs to that tab rather than to a developer. */
+export function isReservedPath(pathname) {
+  const segments = String(pathname || '/')
+    .split('/')
+    .filter(Boolean);
+  return segments.length === 1 && RESERVED_PATHS.has(segments[0].toLowerCase());
+}
+
+/**
+ * The developer a `/username` path names, or null for any other path.
+ *
+ * One segment only: a campaign landing is three, and a tab path is reserved. The login is read
+ * with GitHub's rule, so a path that names no GitHub account is no developer's page - it stays
+ * on the leaderboard rather than showing a "not found" for a link that was never a profile.
+ */
+export function usernameFromPath(pathname) {
+  const segments = String(pathname || '/')
+    .split('/')
+    .filter(Boolean);
+  if (segments.length !== 1) return null;
+  let value;
+  try {
+    value = decodeURIComponent(segments[0]);
+  } catch {
+    return null;
+  }
+  if (RESERVED_PATHS.has(value.toLowerCase())) return null;
   return LOGIN_RE.test(value) ? value : null;
 }

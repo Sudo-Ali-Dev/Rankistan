@@ -213,7 +213,7 @@ describe('pipeline-only fields', () => {
       'missed_runs',
       'missed_since'
     ]);
-    expect(DETAIL_ONLY_FIELDS).toEqual(['score_evidence']);
+    expect(DETAIL_ONLY_FIELDS).toEqual(['score_evidence', 'language_counts']);
     for (const field of DETAIL_ONLY_FIELDS) expect(BOARD_FIELDS).not.toContain(field);
     for (const field of PIPELINE_ONLY_FIELDS) expect(BOARD_FIELDS).not.toContain(field);
   });
