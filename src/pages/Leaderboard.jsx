@@ -62,7 +62,7 @@ function DataStatus({ status, loading }) {
   );
 }
 
-export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeTab, onNavigateToBadge }) {
+export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeTab, onNavigateToBadge, onOpenProfile }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [dataStatus, setDataStatus] = useState({ lastUpdated: '', fromCache: false });
   const [selectedTag, setSelectedTag] = useState('All');
@@ -346,6 +346,7 @@ export default function Leaderboard({ searchTerm = '', onSearchChange, onChangeT
                         sharedBy={sharedBy}
                         onGenerateSummary={handleGenerateSummary}
                         onGenerateBadge={onNavigateToBadge}
+                        onOpenProfile={onOpenProfile}
                         summary={summaryByUser[dev.username]}
                         loadingSummaryUser={loadingSummaryUser}
                         compareMode={compareMode}

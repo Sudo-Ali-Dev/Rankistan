@@ -30,6 +30,19 @@ An AI-powered daily leaderboard tracking active Pakistani developers on GitHub. 
 | **Evolution** | Plain-language history of scoring changes (oldest to newest), current formula, and why rules were tightened |
 | **About** | How the index works, how your score is calculated in plain words with a worked example, activity filters, hourly batches, and FAQs |
 
+A developer's own page is at `/username`, for example `rankistan.dev/ahmershahdev`. It is the
+same page the badge link opens (`/#username`), and it shows who a developer is: their rank,
+location, biography, tags and links; the score in its three parts (active days, open source
+contributions, stars) with what was found under each; the AI summary; the contribution heatmap;
+their language mix, top repositories and the counts behind the score; the developers whose tags
+overlap theirs; their Rank History; and the snippet that puts their badge in a README.
+
+The page is a real URL, so it can be linked to, previewed and crawled. The build writes one page
+per developer on the board (`scripts/build-routes.js`), each with its own title, description and
+preview tags, so a link to a developer in a tweet or a résumé answers 200 and shows that
+developer. A path that names no developer on the board falls back to the app through `404.html`,
+which keeps the path and restores it before the app mounts.
+
 The map assigns each developer to a canonical place key using a deterministic normalization strategy in `src/utils/location.js`. It does token-aware country detection, alias-based city matching (including common spellings and local variants), and safe fallback handling for unresolved locations.
 
 ## How It Works
@@ -58,7 +71,7 @@ The scanner is distributed across 24 hourly batches, so the full ecosystem is re
 | **Fetch** | `scripts/fetch-devs.js` | For those who pass the gate, the profile, recent events (shown as context, never scored), repositories and linked social accounts (for LinkedIn) |
 | **Score** | [`score-config.json`](score-config.json), [`src/model/`](src/model/), [`scripts/score.js`](scripts/score.js) | Scoring v3 from the measurement ([below](#scoring-formula)). Every run scores the whole board again from its stored measurements |
 | **Merge and save** | [`scripts/run-all.js`](scripts/run-all.js), [`scripts/state-store.js`](scripts/state-store.js) | Merges the batch into the whole board by row owner, refuses an unexplained loss, and saves the board to the `pipeline-state` release |
-| **Publish** | [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), [`scripts/build-split-data.js`](scripts/build-split-data.js) | Builds the site with `board.json`, `dev/<login>.json`, `digest.json` and the public `data.json` from the newest state, and deploys Pages |
+| **Publish** | [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), [`scripts/build-split-data.js`](scripts/build-split-data.js), [`scripts/build-routes.js`](scripts/build-routes.js) | Builds the site with `board.json`, `dev/<login>.json`, `digest.json` and the public `data.json` from the newest state, a page per tab and a page per developer on the board, and the sitemap, and deploys Pages |
 
 During **Fetch**, each developer is assigned category tags (AI/ML, Web, DevOps, etc.) by matching bio, repos, and languages against [`src/utils/tag-keywords.json`](src/utils/tag-keywords.json) via [`src/utils/tag-matcher.js`](src/utils/tag-matcher.js). Tags flow through scoring onto the board. The leaderboard UI uses those tags when present and only recomputes them for older rows missing tags. Re-run the pipeline to refresh tags after keyword changes.
 
@@ -131,7 +144,7 @@ The board is pipeline state, not a file in git. Each run of `update-digest.yml` 
 
 Rank History is kept beside it, on the [`board-history`](https://github.com/Sudo-Ali-Dev/Rankistan/releases/tag/board-history) release, one gzipped file per month with one line per Pakistan date, where every developer on the board stood at that day's close. The first run after a date ends writes it, about 24 KB. History starts on 17 October 2026, and a developer who opts out is removed from every file. See [`scripts/rank-history.js`](scripts/rank-history.js), [`scripts/history-store.js`](scripts/history-store.js) and [`docs/rank-history-design.md`](docs/rank-history-design.md).
 
-Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, unscorable, displaced below the 1,000 cap, or opted out. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. The site's own `data.json` is that state without its pipeline-only fields (the contributions measurement) and without the per-developer evidence, which only `dev/<login>.json` carries, so the Worker and outside readers download what they did before those fields existed. A code push and a data update therefore both deploy the latest of each.
+Before saving, the run refuses a board that fails `verify:published`, or that loses more than 5% of its developers without a recorded reason. Every removal is logged by name with its reason: ineligible, missed twice, unmeasured for 7 days, unscorable, displaced below the 1,000 cap, or opted out. It then dispatches `deploy.yml`, the only workflow that deploys Pages, which downloads the latest state into `public/data.json` before building. The site's own `data.json` is that state without its pipeline-only fields (the contributions measurement) and without the per-developer fields only `dev/<login>.json` carries (the score's evidence, and the count of repositories each language is written in), so the Worker and outside readers download what they did before those fields existed. A code push and a data update therefore both deploy the latest of each.
 
 `public/data.json` used to be committed every hour, and was 98.4% of the repository's packed size.
 
@@ -160,6 +173,10 @@ Ranked developers can embed a live badge in their GitHub README via the **Badge*
 3. Copy the generated snippet (Markdown, HTML, or reST).
 
 Badges are rendered by [Shields.io](https://shields.io) using the dynamic endpoint pattern. Shields fetches JSON from the Cloudflare Worker at `/api/badge/{username}`, which reads the current leaderboard and returns a Shields-compatible payload (for example `rank #247`). The badge updates automatically when the leaderboard changes.
+
+The link the badge wraps points at the developer's own page, `https://rankistan.dev/{username}`.
+The hash form, `https://rankistan.dev/#{username}`, is what earlier badges carry and opens the
+same page.
 
 Example badge URL (used inside copied snippets):
 
@@ -354,6 +371,7 @@ scripts/
   write-leaderboard.js  # Final leaderboard output (strips internal fields)
   run-all.js            # Pipeline orchestrator (--incremental N [--dry-run])
   build-split-data.js   # After vite build: splits data.json into dist/board.json, digest.json, dev/<login>.json
+  build-routes.js       # After that: a page per tab, a page per developer on the board, and the sitemap
   measure/
     contributions.js    # The contributions measurement the score is computed from
     gate.js             # Calendar screen, measurement and the eligibility gate
@@ -379,6 +397,7 @@ src/
     order.js            # Board order and ranks, equal scores sharing one
   pages/
     Leaderboard.jsx     # Developer rankings
+    DevProfile.jsx      # A developer's own page, at /username
     DevMap.jsx          # Pakistan map + place breakdown + per-place table
     BadgeGenerator.jsx  # README rank badge generator
     Register.jsx        # Eligibility checks and the live score from the Worker
@@ -386,9 +405,14 @@ src/
     About.jsx           # Pipeline, scoring summary, filters, FAQs
   components/
     ScoreBreakdownPanel.jsx  # The three parts of a previewed score
+    profile/            # The sections of a developer's own page
   utils/
     leaderboard-data.js   # The one place pages load the board and detail files from
     split-data.js         # board.json / dev / digest shapes, shared by the build and the browser
+    route.js              # Tab, campaign landing and developer page paths
+    activity-summary.js   # The counts behind a score, derived at build time
+    score-breakdown.js    # A score in its three parts, from the published row
+    similar-devs.js       # The developers whose tags overlap
     freshness.js          # The status line, derived from last_updated
     score-preview.js      # Fetches a score preview from the Worker
     groq.js               # Worker API URL helpers (summary + badge endpoints)
@@ -476,6 +500,7 @@ formatting rules, and PR scope guidance. Security reports go through
 - [x] About — On-site documentation for scoring, filters, and scheduling
 - [x] Evolution — Scoring formula history and plain-language rationale
 - [x] Register score breakdown — Live estimate with per-component points before batch sync
+- [x] Developer pages — A page per developer at /username, with the score in its three parts and the badge to put in a README
 - [x] Contributions-based scoring (scoring v3, [docs/scoring.md](docs/scoring.md))
 - [ ] Weekly Digest — AI-powered weekly summary of ecosystem trends
 - [ ] Archives — Browse previous weekly digest reports

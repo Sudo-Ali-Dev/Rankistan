@@ -42,12 +42,32 @@ for (const ref of refs) {
 note(`checked ${refs.length} local asset references`);
 
 // 1b. Every tab path has its own page (scripts/build-routes.js), identical to index.html.
-for (const name of ['map.html', 'badge.html', 'register.html', 'digest.html', 'about.html', 'evolution.html', '404.html']) {
+for (const name of ['map.html', 'badge.html', 'register.html', 'digest.html', 'about.html', 'evolution.html']) {
   const file = path.join(DIST, name);
   if (!fs.existsSync(file)) fail(`dist/${name} missing - did build-routes run?`);
   else if (fs.readFileSync(file, 'utf8') !== html) fail(`dist/${name} differs from dist/index.html`);
 }
 if (!html.includes('id="analytics-boot"')) fail('dist/index.html lost its analytics boot script');
+if (!html.includes('id="rankistan-path-restore"')) fail('dist/index.html lost its path restore script');
+
+// 1c. The 404 page keeps the path it was asked for and sends the visitor to the root, where
+//     index.html puts it back. It is not a copy of index.html: it has the store script instead
+//     of the restore script.
+const notFound = path.join(DIST, '404.html');
+if (!fs.existsSync(notFound)) {
+  fail('dist/404.html missing - did build-routes run?');
+} else {
+  const text = fs.readFileSync(notFound, 'utf8');
+  if (!text.includes("sessionStorage.setItem('rankistan:path'")) {
+    fail('dist/404.html does not keep the path it was asked for');
+  }
+  if (!text.includes("window.location.replace('/')")) {
+    fail('dist/404.html does not send the visitor to the root');
+  }
+  if (text.includes('rankistan-path-restore')) {
+    fail('dist/404.html restores a path as well as keeping one');
+  }
+}
 
 // 2. React and react-dom must agree. A mismatch is what caused the outage, and
 //    it is cheap to assert directly rather than relying on the mount to notice.
@@ -73,6 +93,38 @@ for (const file of ['board.json', 'digest.json']) {
 const devDir = path.join(DIST, 'dev');
 const devFiles = fs.existsSync(devDir) ? fs.readdirSync(devDir).length : 0;
 if (devFiles === 0) fail('dist/dev/ has no developer files');
+
+// 2b. Every developer on the board has a page of their own, with their name in it, so a link
+//     to them answers 200 and previews them (scripts/build-routes.js).
+const boardForPages = JSON.parse(fs.readFileSync(path.join(DIST, 'board.json'), 'utf8'));
+const boardRows = Array.isArray(boardForPages?.leaderboard) ? boardForPages.leaderboard : [];
+let pageCount = 0;
+for (const row of boardRows) {
+  const page = path.join(DIST, `${row.username}.html`);
+  if (!fs.existsSync(page)) {
+    fail(`dist/${row.username}.html missing - a developer on the board has no page`);
+    break;
+  }
+  const text = fs.readFileSync(page, 'utf8');
+  if (!text.includes(`https://rankistan.dev/${row.username}`)) {
+    fail(`dist/${row.username}.html does not point at its own URL`);
+    break;
+  }
+  if (!text.includes(`(@${row.username})`)) {
+    fail(`dist/${row.username}.html does not name the developer`);
+    break;
+  }
+  pageCount += 1;
+}
+if (pageCount === boardRows.length && boardRows.length > 0) {
+  note(`${pageCount} developer pages written, each naming its developer`);
+}
+const sitemapFile = path.join(DIST, 'sitemap.xml');
+if (!fs.existsSync(sitemapFile)) {
+  fail('dist/sitemap.xml missing - did build-routes run?');
+} else if (!fs.readFileSync(sitemapFile, 'utf8').includes('https://rankistan.dev/')) {
+  fail('dist/sitemap.xml does not list the site');
+}
 
 // 2c. Every developer file's published evidence gives its published score, bit for bit: the
 //     evidence is what a reader checks a score against, so it must be the evidence it came from.

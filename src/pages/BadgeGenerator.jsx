@@ -1,44 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
-import { resolveBadgeApiUrl } from "../utils/groq.js";
 import { loadBoard } from "../utils/leaderboard-data";
+import {
+  BADGE_FORMATS,
+  BADGE_STYLES,
+  buildBadgeUrl,
+  buildStaticBadgeUrl,
+  getSnippet
+} from "../utils/badge";
 
-const STYLES = [
-  { id: "flat", label: "Flat" },
-  { id: "for-the-badge", label: "For The Badge" },
-  { id: "flat-square", label: "Flat Square" },
-  { id: "plastic", label: "Plastic" },
-];
-
-function buildStaticBadgeUrl(message, style) {
-  return (
-    `https://img.shields.io/badge/Rankistan-${encodeURIComponent(message)}-1a7f4e` +
-    `?labelColor=0f6e56` +
-    `&style=${style}` +
-    `&logo=github` +
-    `&logoColor=white`
-  );
-}
-
-function buildBadgeUrl(username, style) {
-  const endpoint = resolveBadgeApiUrl(username);
-  return (
-    `https://img.shields.io/endpoint` +
-    `?url=${encodeURIComponent(endpoint)}` +
-    `&style=${style}`
-  );
-}
-
-function getSnippet(style, username, fmt) {
-  const img = buildBadgeUrl(username, style);
-  const link = `https://rankistan.dev/#${encodeURIComponent(username)}`;
-  const alt = "Rankistan rank badge";
-  if (fmt === "md") return `[![${alt}](${img})](${link})`;
-  if (fmt === "html")
-    return `<a href="${link}">\n  <img src="${img}" alt="${alt}">\n</a>`;
-  if (fmt === "rst")
-    return `.. image:: ${img}\n   :target: ${link}\n   :alt: ${alt}`;
-  return "";
-}
+const STYLES = BADGE_STYLES;
 
 function CopyButton({ text, className = "" }) {
   const [copied, setCopied] = useState(false);
@@ -252,7 +222,7 @@ export default function BadgeGenerator({
                 Snippet Format
               </label>
               <div className="flex gap-2">
-                {["md", "html", "rst"].map((f) => (
+                {BADGE_FORMATS.map((f) => (
                   <button
                     key={f}
                     type="button"
