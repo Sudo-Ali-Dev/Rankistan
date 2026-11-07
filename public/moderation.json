@@ -2,10 +2,34 @@
   "about": "Repositories whose commits do not count toward a Rankistan score, each with the reason and the evidence. A listed repository loses only its own commits, and the developer's other work still counts. To appeal an entry, open an issue at https://github.com/Sudo-Ali-Dev/Rankistan/issues.",
   "repositories": [
     {
+      "repo": "aashir-athar/painter",
+      "reason": "A scheduled workflow makes one commit every day, 31 in the window, each titled \"chore, daily activity update\" with the date and adding one timestamp to heartbeat.log. The repository describes itself as contribution graph automation.",
+      "evidence": "https://github.com/aashir-athar/painter/commits/master?author=aashir-athar&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "abbdullahjan/daily-autocommit",
+      "reason": "A scheduled workflow makes one commit a day, 27 in the window, each titled \"Daily auto-commit\" with the time and adding an entry to data/commits.json and data/streaks.json. The repository describes itself as committing automatically once a day.",
+      "evidence": "https://github.com/abbdullahjan/daily-autocommit/commits/main?author=abbdullahjan&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "Abdidev1/Apex-Realms-Studios",
       "reason": "A commit almost every day that changes one character inside a meaningless comment in index.html, made in the web editor.",
       "evidence": "https://github.com/Abdidev1/Apex-Realms-Studios/commits/main?author=Abdidev1&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
+    },
+    {
+      "repo": "Abdidev1/Apex-Realms-Studios-Old",
+      "reason": "28 of 32 commits in the window were made in the web editor, each adding one character inside the same meaningless comment in index.html, the pattern already listed for Abdidev1/Apex-Realms-Studios.",
+      "evidence": "https://github.com/Abdidev1/Apex-Realms-Studios-Old/commits/main?author=Abdidev1&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "abdullahsaif/daily-activity",
+      "reason": "One commit a day on 30 days, all made in the web editor and titled \"Update README.md\", each adding one line reading \"Update from web\" with the month and a number.",
+      "evidence": "https://github.com/abdullahsaif/daily-activity/commits/main?author=abdullahsaif&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
     },
     {
       "repo": "achillesion/daily-dev-log",
@@ -32,6 +56,24 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "AhmadRazaNewMan/Digital-Bit",
+      "reason": "A scheduled workflow makes four to eight commits a day, 188 in the window, under three titles that end \"real maintenance update\", each rewriting a generated file under content/automation, often only its timestamp.",
+      "evidence": "https://github.com/AhmadRazaNewMan/Digital-Bit/commits/main?author=AhmadRazaNewMan&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "aly-abbas11/Job-Hunter-AI",
+      "reason": "A workflow scheduled every six hours makes two to four commits a day, 104 in the window, all titled \"Auto update jobs\", each rewriting the scraped job list in README.md and a state file.",
+      "evidence": "https://github.com/aly-abbas11/Job-Hunter-AI/commits/main?author=aly-abbas11&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "amnaazhar5/core-engine-v8",
+      "reason": "A daily scheduled workflow makes one or two commits a day, 31 in the window, all titled \"Automated system integrity sync\", each changing only the date in logs.txt.",
+      "evidence": "https://github.com/amnaazhar5/core-engine-v8/commits/main?author=amnaazhar5&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "asimzeeshan/eva-tech-brief",
       "reason": "Every commit in the window is one a day titled with that day's date, 23 of them, each made between 14:26 and 14:28 UTC.",
       "evidence": "https://github.com/asimzeeshan/eva-tech-brief/commits/main?author=asimzeeshan&since=2026-09-16&until=2026-10-16",
@@ -44,16 +86,40 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "bia-studio18/bia-studio18-daily-log",
+      "reason": "A daily scheduled workflow makes one commit every day, 31 in the window, each titled \"log, daily entry\" with the date and adding a five-line log file for that date. The repository describes itself as an automated daily activity log.",
+      "evidence": "https://github.com/bia-studio18/bia-studio18-daily-log/commits/main?author=bia-studio18&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "BilalMoazzam/Aesthetic-CRM",
       "reason": "About 20 commits a day, each adding one letter to the same button label in BookingManager.jsx, which is broken and typed again letter by letter the next day. Seen on 4, 10 and 15 October.",
       "evidence": "https://github.com/BilalMoazzam/Aesthetic-CRM/commits?author=BilalMoazzam&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
     },
     {
+      "repo": "chsabii/daily-commit-bot",
+      "reason": "One commit every day, 31 in the window, each titled \"Automated commit on\" with the time and adding that line to log.txt. The repository describes itself as a GitHub Actions bot that commits daily.",
+      "evidence": "https://github.com/chsabii/daily-commit-bot/commits/main?author=chsabii&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "DevMirza-Blog/devmirza-blog-backend-new",
       "reason": "26 identical commits titled \"Update package-lock.json to latest\", one a day between 02:37 and 04:50 UTC.",
       "evidence": "https://github.com/DevMirza-Blog/devmirza-blog-backend-new/commits/main?author=Zaid-maker&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
+    },
+    {
+      "repo": "docs-migrax/docs-migrax.github.io",
+      "reason": "GitHub credits commits here on 24 days of the window, and the history holds one, because a workflow in fsmutimeer/migrax replaces the site with a single commit in the developer's name each time it publishes. The work itself is in fsmutimeer/migrax, whose own commits are not affected.",
+      "evidence": "https://github.com/docs-migrax/docs-migrax.github.io/commits/main",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "emZubair/CloudFunctionsAPI",
+      "reason": "A daily scheduled test workflow deploys a report to the gh-pages branch, one commit every day, 31 in the window, all titled with the same deploy hash. The main branch has no commits in the window.",
+      "evidence": "https://github.com/emZubair/CloudFunctionsAPI/commits/gh-pages?author=emZubair&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
     },
     {
       "repo": "faizanali2k05/daily-activity",
@@ -86,16 +152,52 @@
       "added": "2026-11-07"
     },
     {
+      "repo": "hamzaahmad3006/daily-log",
+      "reason": "A daily scheduled workflow, streak.yml, makes one commit a day, 30 in the window, each titled \"chore, daily log\" with the date and adding one timestamp to logs/activity.md.",
+      "evidence": "https://github.com/hamzaahmad3006/daily-log/commits/main?author=hamzaahmad3006&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "Haris-Ahmed83/Ai-Projects-Bundle",
       "reason": "Two commits a day titled \"chore(daily)\" with the date, each adding one generated project of exactly 144 lines from a series of 730.",
       "evidence": "https://github.com/Haris-Ahmed83/Ai-Projects-Bundle/commits/main?author=Haris-Ahmed83&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
     },
     {
+      "repo": "harys-development/github-daily-autocommit",
+      "reason": "A scheduled workflow makes one commit every day, 31 in the window, each titled \"Daily auto-commit\" with the time and adding an entry to data/commits.json. The repository describes itself as an auto-commit system to extend a GitHub streak. A copy of harys722/github-daily-autocommit, also listed.",
+      "evidence": "https://github.com/harys-development/github-daily-autocommit/commits/main?author=harys722&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "harys722/github-daily-autocommit",
+      "reason": "A scheduled workflow makes one commit every day, 31 in the window, each titled \"Daily auto-commit\" with the time and adding an entry to data/commits.json. The repository describes itself as an auto-commit system to extend a GitHub streak.",
+      "evidence": "https://github.com/harys722/github-daily-autocommit/commits/main?author=harys722&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "hassanhafiz44/laravel-mastery",
       "reason": "A workflow named Daily Laravel Digest makes one commit every day, 31 in the window, each titled \"study, Laravel digest\" with the date.",
       "evidence": "https://github.com/hassanhafiz44/laravel-mastery/commits?author=hassanhafiz44&since=2026-09-16&until=2026-10-17",
       "added": "2026-10-17"
+    },
+    {
+      "repo": "hellowahab/GroceryPriceCompare",
+      "reason": "A nightly scheduled scraping workflow publishes to the gh-pages branch, and GitHub credits commits here on 27 days of the window, one a day, while the branch holds only the latest publish. The credited days are scheduled runs, not work, and cannot be checked. The main branch has no commits in the window.",
+      "evidence": "https://github.com/hellowahab/GroceryPriceCompare/commits/gh-pages",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "hozaifa-ali/bootloader",
+      "reason": "A workflow named nightly-contribution.yml runs twice a day and makes two commits on each of 23 days, 46 in the window, all titled \"chore, Automated build and validation log update\", each changing only the time in BUILD_LOG.md.",
+      "evidence": "https://github.com/hozaifa-ali/bootloader/commits/main?author=hozaifa-ali&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "ikareem99/crypto-signal-dashboard",
+      "reason": "3,780 commits in the window titled \"Dashboard data update\", 66 to 146 a day on 27 days, minutes apart around the clock, each rewriting the timestamp and figures in data/dashboard-data.json.",
+      "evidence": "https://github.com/ikareem99/crypto-signal-dashboard/commits/main?author=ikareem99&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
     },
     {
       "repo": "mafzalkalwardev/andaaz-e-pakwaan-restaurant",
@@ -440,6 +542,18 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "mmilyas245-dot/artificial_intelligence_coarse26",
+      "reason": "28 commits on 27 days, all made in the web editor, each changing one line of a notebook, such as adding and removing the same numpy import on alternate days or changing Banana to Bananana in a print example.",
+      "evidence": "https://github.com/mmilyas245-dot/artificial_intelligence_coarse26/commits/main?author=mmilyas245-dot&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "mr-taha-saqib/fancy_job_incrementer",
+      "reason": "One commit every day, 31 in the window, each titled \"Update number\" with the date and adding one to the number in number.txt.",
+      "evidence": "https://github.com/mr-taha-saqib/fancy_job_incrementer/commits/main?author=mr-taha-saqib&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "mraliakber/My_WorkFlows-",
       "reason": "Exactly 15 commits a day on all 30 days, titled \"chore, auto commit\" with a number and the time, each day's commits seconds apart.",
       "evidence": "https://github.com/mraliakber/My_WorkFlows-/commits/main?author=mraliakber&since=2026-09-16&until=2026-10-16",
@@ -456,6 +570,18 @@
       "reason": "One commit a day on the gh-pages branch, all 30 titled with the same deploy hash, deploying the same source every day.",
       "evidence": "https://github.com/Muhammad-Ramazanovich/git-contribution/commits/gh-pages?author=Muhammad-Ramazanovich&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
+    },
+    {
+      "repo": "muzzammilminhas/paktechjobs",
+      "reason": "A daily scheduled scraping workflow makes every commit in the window, 31 on 28 days, all titled \"data, refresh daily job listings\", each writing that day's scraped listings under public/data.",
+      "evidence": "https://github.com/muzzammilminhas/paktechjobs/commits/main?author=muzzammilminhas&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "nodrits/nodrits-website",
+      "reason": "24 of 28 commits in the window are titled \"Dashboard daily refresh\", one each day at six minutes past four UTC, each rewriting the figures in dashboard/index.html.",
+      "evidence": "https://github.com/nodrits/nodrits-website/commits/main?author=nodrits&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
     },
     {
       "repo": "openedx/wg-maintenance",
@@ -578,6 +704,12 @@
       "added": "2026-10-17"
     },
     {
+      "repo": "SajidSaleemKhattak/yc_startup",
+      "reason": "A daily scheduled workflow makes one commit every day, 31 in the window, each titled \"Automated keepalive commit\" with the time and changing only the date in last_update.txt.",
+      "evidence": "https://github.com/SajidSaleemKhattak/yc_startup/commits/main?author=SajidSaleemKhattak&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "salman-rafii/School-Calendar-Demo",
       "reason": "GitHub counts 96 commits here on 20 days of the window, and the repository's history holds one of them, so the rest cannot be checked by anyone.",
       "evidence": "https://github.com/salman-rafii/School-Calendar-Demo/commits/main",
@@ -638,6 +770,18 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "TSun-FreeFire/TSun-FreeFire-Storage",
+      "reason": "580 commits on 30 days, 10 to 20 a day in bursts seconds apart, each titled \"Auto-update\" with a token file name and the time, and each rewriting that one file.",
+      "evidence": "https://github.com/TSun-FreeFire/TSun-FreeFire-Storage/commits/main?author=SaeedX302&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
+      "repo": "wakasabbasid/forex-signal-app",
+      "reason": "An hourly scheduled workflow deploys to the gh-pages branch, three to seven commits a day, 119 in the window, all titled with the same deploy hash, each rewriting the fetched headlines. The main branch has no commits in the window.",
+      "evidence": "https://github.com/wakasabbasid/forex-signal-app/commits/gh-pages?author=wakasabbasid&since=2026-10-08&until=2026-11-07",
+      "added": "2026-11-07"
+    },
+    {
       "repo": "Zaid-maker/status-page",
       "reason": "164 commits titled \"[Automated] Update Health Check Logs\" in 30 days, three to eight a day around the clock.",
       "evidence": "https://github.com/Zaid-maker/status-page/commits/main?author=Zaid-maker&since=2026-09-16&until=2026-10-16",
@@ -648,6 +792,12 @@
       "reason": "159 commits titled \"[Automated] Update Health Check Logs\" in 30 days, three to eight a day around the clock.",
       "evidence": "https://github.com/zaidhafeeez/ideal-bassoon/commits/main?author=zaidhafeeez&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
+    },
+    {
+      "repo": "ZakriyaAmir/ZakriyaAmir.github.io",
+      "reason": "GitHub credits commits here on 11 days of the window, and the history holds one, because each deploy replaces the branch with a single build commit, so the rest cannot be checked by anyone.",
+      "evidence": "https://github.com/ZakriyaAmir/ZakriyaAmir.github.io/commits/main",
+      "added": "2026-11-07"
     }
   ]
 }
