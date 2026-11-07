@@ -23,7 +23,7 @@ import {
 import { verifyPublished } from './verify-published.js';
 import { readBoardFile, mergeBatch, runBatch, dispatchWorkflows } from './run-all.js';
 import { readRegistry } from './registry.js';
-import { measuredRow } from '../src/model/__fixtures__/measured.js';
+import { MEASURED_AT, measuredRow } from '../src/model/__fixtures__/measured.js';
 import { assignRanks, boardOrder, boardSeed } from '../src/model/order.js';
 
 // A board of real measured rows: `days` working days each, so the order is known.
@@ -571,6 +571,8 @@ describe('restoreLatest, the rollback path', () => {
       batchIndex: 4,
       newEntries: [measuredRow('a', { days: 30, githubId: 100 }, { batch_index: 4 })],
       evaluated: ['a', 'b', 'c'],
+      // The fixture's measurement date, so the seven-day unmeasured cut does not depend on today.
+      now: Date.parse(MEASURED_AT),
       log: quiet
     });
     expect(next.leaderboard.map((r) => r.username)).toEqual(['a']);
