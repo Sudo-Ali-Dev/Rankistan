@@ -88,10 +88,10 @@ export const PIPELINE_ONLY_TOP_FIELDS = Object.freeze([
 ]);
 
 // Fields only a developer's own file carries: the score's evidence, every working day and every
-// pull request, review and merge that counted, each a public GitHub item (src/model/evidence.js).
-// About 2 KB a row, so the board and data.json, which every visitor or the Worker downloads
-// whole, leave it out.
-export const DETAIL_ONLY_FIELDS = Object.freeze(['score_evidence']);
+// pull request, review and merge that counted, each a public GitHub item (src/model/evidence.js),
+// and the count of repositories each language is written in. About 2 KB a row, so the board and
+// data.json, which every visitor or the Worker downloads whole, leave it out.
+export const DETAIL_ONLY_FIELDS = Object.freeze(['score_evidence', 'language_counts']);
 
 /** A row as the browser is given it in a developer's own file: everything but PIPELINE_ONLY_FIELDS. */
 export function toDeveloperRow(row) {

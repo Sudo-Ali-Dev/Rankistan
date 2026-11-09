@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { TAB_PATHS, TABS, tabFromPath, pathForTab, loginFromHash } from './route.js';
+import {
+  TAB_PATHS,
+  TABS,
+  RESERVED_PATHS,
+  tabFromPath,
+  pathForTab,
+  loginFromHash,
+  usernameFromPath,
+  isReservedPath
+} from './route.js';
 
 describe('route', () => {
   it('maps every tab to its path and back', () => {
@@ -45,6 +54,54 @@ describe('loginFromHash', () => {
       '#a b'
     ]) {
       expect(loginFromHash(hash)).toBeNull();
+    }
+  });
+});
+
+describe('usernameFromPath', () => {
+  it('reads a developer from their own page', () => {
+    expect(usernameFromPath('/ahmershahdev')).toBe('ahmershahdev');
+    expect(usernameFromPath('/Ali-Dev')).toBe('Ali-Dev');
+    expect(usernameFromPath('/ahmershahdev/')).toBe('ahmershahdev');
+    expect(usernameFromPath('/a')).toBe('a');
+  });
+
+  it('names no developer for a tab path, a campaign landing or a path that is not a login', () => {
+    for (const path of [
+      '/',
+      '/map',
+      '/MAP',
+      '/badge',
+      '/register',
+      '/digest',
+      '/about',
+      '/evolution',
+      '/from/linkedin/infra-1',
+      '/a/b',
+      '/a/b/c',
+      '/-ali',
+      '/ali-',
+      '/al--i',
+      '/a b',
+      '/a.b',
+      '/index.html',
+      '/404.html'
+    ]) {
+      expect(usernameFromPath(path)).toBeNull();
+    }
+  });
+
+  it('reads a login that arrived percent-encoded', () => {
+    expect(usernameFromPath('/Ali%2DDev')).toBe('Ali-Dev');
+    expect(usernameFromPath('/%E0%A4%A')).toBeNull();
+  });
+
+  it('keeps every tab path out of the developers’ names', () => {
+    for (const path of Object.values(TAB_PATHS)) {
+      if (path === '/') continue;
+      expect(usernameFromPath(path)).toBeNull();
+      expect(isReservedPath(path)).toBe(true);
+      expect(RESERVED_PATHS.has(path.slice(1).toLowerCase())).toBe(true);
     }
   });
 });

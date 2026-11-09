@@ -22,6 +22,29 @@
     <meta property="twitter:image" content="https://rankistan.dev/favicon.svg" />
 
     <!--
+      GitHub Pages answers a path it has no file for with 404.html, and a developer's own page
+      (rankistan.dev/username) is such a path when the developer is not on the board. That page
+      keeps the path it was asked for and sends the visitor to the root; this puts it back before
+      the app mounts, so the app reads the path and shows what it names. It runs before the
+      analytics boot below, so the page view is counted under the path the visitor asked for and
+      not under the root. The key is removed as it is read, so a later visit to the root is not
+      sent somewhere else.
+    -->
+    <script id="rankistan-path-restore">
+      (function () {
+        try {
+          var stored = sessionStorage.getItem('rankistan:path');
+          if (stored && stored !== window.location.pathname) {
+            sessionStorage.removeItem('rankistan:path');
+            window.history.replaceState(null, '', stored);
+          }
+        } catch (error) {
+          /* No storage: the path stays what the server sent. */
+        }
+      })();
+    </script>
+
+    <!--
       Cloudflare Web Analytics: cookieless, no personal data, no fingerprinting. Docs:
       docs/analytics.md. It records paths and referrers but never query strings, so a UTM link
       landing on / is rewritten here, before the beacon reads the URL, to a path it can see:

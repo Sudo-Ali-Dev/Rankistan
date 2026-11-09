@@ -37,7 +37,10 @@ import {
   developerFileName,
   hasPipelineOnlyFields
 } from '../src/utils/split-data.js';
-import { scoreModel } from '../src/model/score.js';
+import { decodeMeasurement } from '../src/model/measurement.js';
+import { deriveEvidence } from '../src/model/evidence.js';
+import { SCORE_CONFIG } from '../src/model/config.js';
+import { activitySummary } from '../src/utils/activity-summary.js';
 import { boardMoves, developerHistory } from '../src/utils/rank-history-view.js';
 import { CONTRIBUTIONS_FIELD } from './measure/contributions.js';
 import { loadModerationFile, MODERATION_PATH } from './moderation.js';
@@ -198,12 +201,22 @@ function readHistory(dir) {
  * A row with its score's evidence, derived from its measurement: every working day and every pull
  * request, review and merge that counted. Only the developer's own file carries it. A row with no
  * measurement the model reads gets none.
+ *
+ * The measurement is decoded once, and the evidence derived from it is also the source of the
+ * activity summary - the counts of what the developer did, which their own file carries too.
  */
 function withEvidence(row, moderation) {
   const block = row?.[CONTRIBUTIONS_FIELD];
   if (block == null) return row;
   try {
-    return { ...row, score_evidence: scoreModel(block, { moderation }).evidence };
+    const measurement = decodeMeasurement(block);
+    if (!measurement) return row;
+    const evidence = deriveEvidence(measurement, { config: SCORE_CONFIG, moderation });
+    return {
+      ...row,
+      score_evidence: evidence,
+      activity: activitySummary(measurement, evidence)
+    };
   } catch {
     return row;
   }

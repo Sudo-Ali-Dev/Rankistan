@@ -24,6 +24,9 @@ export const OUTPUT_FIELDS = [
   'total_stars',
   'top_repos',
   'top_languages',
+  // How many repositories each language is written in, behind those names. A developer's own
+  // page draws the mix from it; the board does not read it, so it is left out of board.json.
+  'language_counts',
   'linkedin_url',
   'tags',
   'score',
@@ -76,6 +79,7 @@ export function stripInternalFields(entry) {
     digest_repos: Array.isArray(entry?.digest_repos) ? entry.digest_repos : [],
     top_repos: Array.isArray(entry?.top_repos) ? entry.top_repos : [],
     top_languages: Array.isArray(entry?.top_languages) ? entry.top_languages : [],
+    language_counts: Array.isArray(entry?.language_counts) ? entry.language_counts : [],
     linkedin_url: typeof entry?.linkedin_url === 'string' ? entry.linkedin_url : ''
   };
 

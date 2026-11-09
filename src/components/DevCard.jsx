@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { normalizeLocationForDisplay } from '../utils/location';
-import { resolveHeatmapApiUrl, resolveHeatmapDirectUrl } from '../utils/groq.js';
 import { loadDeveloperDetail } from '../utils/leaderboard-data';
 import ActivitySparkline from './ActivitySparkline';
+import ContributionHeatmap from './ContributionHeatmap';
 import RankHistoryPanel from './RankHistoryPanel';
 import { moveMarker } from '../utils/rank-history-text';
 
@@ -12,59 +12,7 @@ const GitHubIcon = ({ size = 16 }) => (
   </svg>
 );
 
-function ContributionHeatmap({ username }) {
-  const [src, setSrc] = useState('');
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!username) {
-      setSrc('');
-      setFailed(false);
-      return;
-    }
-    setSrc(resolveHeatmapApiUrl(username));
-    setFailed(false);
-  }, [username]);
-
-  const handleError = () => {
-    const directUrl = resolveHeatmapDirectUrl(username);
-    if (src !== directUrl) {
-      setSrc(directUrl);
-      return;
-    }
-    setFailed(true);
-  };
-
-  if (!username) {
-    return (
-      <div className="font-mono text-[10px] text-outline uppercase text-center px-2">
-        No username available.
-      </div>
-    );
-  }
-
-  if (failed) {
-    return (
-      <div className="font-mono text-[10px] text-outline uppercase text-center px-2">
-        Activity graph unavailable
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt={`${username} contribution chart`}
-      referrerPolicy="no-referrer"
-      loading="lazy"
-      decoding="async"
-      onError={handleError}
-      className="w-full h-full object-contain opacity-80 hover:opacity-100 transition-all drop-shadow-md"
-    />
-  );
-}
-
-export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect, sharedBy = 1, defaultExpanded = false }) {
+export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, onOpenProfile, summary, loadingSummaryUser, compareMode = false, isCompareSelected = false, onCompareSelect, sharedBy = 1, defaultExpanded = false }) {
   // The developer page at /#login opens the card on arrival.
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   // The list hands this card a board row: what the collapsed row shows. The
@@ -289,7 +237,15 @@ export default function DevCard({ dev, onGenerateSummary, onGenerateBadge, summa
                   </div>
                 </div>
               </div>
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* The developer's own page, the URL they can put in a README or a bio. */}
+                <button
+                  type="button"
+                  onClick={() => onOpenProfile?.(username)}
+                  className="text-center bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase hover:text-primary transition-all active:translate-y-px"
+                >
+                  View Profile
+                </button>
                 <a href={githubUrl} target="_blank" rel="noreferrer" className="text-center bg-surface-container-high border border-outline-variant py-2.5 font-mono text-[10px] uppercase hover:text-primary transition-all active:translate-y-px">
                   View GitHub
                 </a>
