@@ -13,11 +13,11 @@ pages and campaigns.
 
 ## What each path means
 
-| Path                                                             | What it is                                                                |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `/`                                                              | Leaderboard (also `/#username` developer links; the hash is not recorded) |
-| `/map`, `/badge`, `/register`, `/digest`, `/about`, `/evolution` | The tabs                                                                  |
-| `/from/<source>/<campaign>`                                      | A visit that arrived on a campaign link (below)                           |
+| Path                                                                          | What it is                                                                |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `/`                                                                           | Leaderboard (also `/#username` developer links; the hash is not recorded) |
+| `/map`, `/badge`, `/register`, `/digest`, `/about`, `/evolution`, `/requests` | The tabs                                                                  |
+| `/from/<source>/<campaign>`                                                   | A visit that arrived on a campaign link (below)                           |
 
 Every tab change is a page view: the app moves between tabs with `history.pushState`, which the
 beacon counts.
