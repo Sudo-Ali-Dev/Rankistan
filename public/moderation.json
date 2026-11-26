@@ -26,6 +26,12 @@
       "added": "2026-11-07"
     },
     {
+      "repo": "Abdul-Rehman6/neetcode-submissions",
+      "reason": "One commit a day for 28 days adding the same solution again as a new submission file. All 28 copies of top-k-elements-in-list are byte for byte identical.",
+      "evidence": "https://github.com/Abdul-Rehman6/neetcode-submissions/commits/main?author=Abdul-Rehman6&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
       "repo": "abdullahsaif/daily-activity",
       "reason": "One commit a day on 30 days, all made in the web editor and titled \"Update README.md\", each adding one line reading \"Update from web\" with the month and a number.",
       "evidence": "https://github.com/abdullahsaif/daily-activity/commits/main?author=abdullahsaif&since=2026-10-08&until=2026-11-07",
@@ -60,6 +66,12 @@
       "reason": "A scheduled workflow makes four to eight commits a day, 188 in the window, under three titles that end \"real maintenance update\", each rewriting a generated file under content/automation, often only its timestamp.",
       "evidence": "https://github.com/AhmadRazaNewMan/Digital-Bit/commits/main?author=AhmadRazaNewMan&since=2026-10-08&until=2026-11-07",
       "added": "2026-11-07"
+    },
+    {
+      "repo": "ahmedmalik07/POINTERRRR",
+      "reason": "A scheduled workflow, daily-push.yml, makes one commit a day titled \"update\" with the date, 23 in the window, each adding one line to log.txt.",
+      "evidence": "https://github.com/ahmedmalik07/POINTERRRR/commits/main?author=ahmedmalik07&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
     },
     {
       "repo": "aly-abbas11/Job-Hunter-AI",
@@ -104,6 +116,12 @@
       "added": "2026-11-07"
     },
     {
+      "repo": "danialmalik/toggl-to-tempo-sync",
+      "reason": "All 22 commits in the window are titled \"Auto commit\" with a timestamp, made at the same minute of the day, and each changes only a database file, sync_records.db.",
+      "evidence": "https://github.com/danialmalik/toggl-to-tempo-sync/commits/main?author=danialmalik&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
       "repo": "DevMirza-Blog/devmirza-blog-backend-new",
       "reason": "26 identical commits titled \"Update package-lock.json to latest\", one a day between 02:37 and 04:50 UTC.",
       "evidence": "https://github.com/DevMirza-Blog/devmirza-blog-backend-new/commits/main?author=Zaid-maker&since=2026-09-16&until=2026-10-16",
@@ -114,6 +132,12 @@
       "reason": "GitHub credits commits here on 24 days of the window, and the history holds one, because a workflow in fsmutimeer/migrax replaces the site with a single commit in the developer's name each time it publishes. The work itself is in fsmutimeer/migrax, whose own commits are not affected.",
       "evidence": "https://github.com/docs-migrax/docs-migrax.github.io/commits/main",
       "added": "2026-11-07"
+    },
+    {
+      "repo": "EimanTahir027/Transfer-Learning-and-Fine-Tuning",
+      "reason": "One pull request a day for 27 days, each opened and merged within a minute and changing one line of README.md or CONTRIBUTING.md through the web editor.",
+      "evidence": "https://github.com/EimanTahir027/Transfer-Learning-and-Fine-Tuning/commits/main?author=EimanTahir027&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
     },
     {
       "repo": "emZubair/CloudFunctionsAPI",
@@ -140,6 +164,18 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "farjad-ui/intellia-ai-watchlist",
+      "reason": "22 of 26 commits in the window are a daily job's output, titled \"daily\" with the date, each regenerating index.html and today.json.",
+      "evidence": "https://github.com/farjad-ui/intellia-ai-watchlist/commits/main?author=farjad-ui&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
+      "repo": "fraisasghar/Autonomous-Vehicle-State-Estimation-Optimal-Control.",
+      "reason": "1,978 commits in 30 days, on every day and around the clock. Half are one-line edits to README.md and the other half merge each edit through its own pull request, opened and merged within seconds.",
+      "evidence": "https://github.com/fraisasghar/Autonomous-Vehicle-State-Estimation-Optimal-Control./commits/main?author=fraisasghar&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
       "repo": "geektoseek/Git-auto",
       "reason": "A workflow named Auto Commit runs about 35 times a day and makes 25 to 35 commits, 886 in the window, each adding one line to activity_log.txt under a made-up title such as \"perf, minify inline SVGs\".",
       "evidence": "https://github.com/geektoseek/Git-auto/commits/main?author=geektoseek&since=2026-10-08&until=2026-11-07",
@@ -156,6 +192,12 @@
       "reason": "A daily scheduled workflow, streak.yml, makes one commit a day, 30 in the window, each titled \"chore, daily log\" with the date and adding one timestamp to logs/activity.md.",
       "evidence": "https://github.com/hamzaahmad3006/daily-log/commits/main?author=hamzaahmad3006&since=2026-10-08&until=2026-11-07",
       "added": "2026-11-07"
+    },
+    {
+      "repo": "Hamzaisadev/daily-dev-vault",
+      "reason": "A scheduled workflow, daily-entry.yml, runs a generator script every morning and commits its output in the developer's name, 20 commits titled \"automated daily engineering deep dive\" in the window.",
+      "evidence": "https://github.com/Hamzaisadev/daily-dev-vault/commits/main?author=Hamzaisadev&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
     },
     {
       "repo": "Haris-Ahmed83/Ai-Projects-Bundle",
@@ -542,6 +584,18 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "Minaamahmad/python",
+      "reason": "A scheduled workflow, daily-commit.yml, makes one commit a day titled \"chore, automated daily activity check\", 30 in the window, each adding one line to automated_log.txt.",
+      "evidence": "https://github.com/Minaamahmad/python/commits/main?author=Minaamahmad&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
+      "repo": "mirza1272/Repo-Guardian",
+      "reason": "A scheduled workflow, streak-backup.yml, makes one commit a day updating a development log in README.md, 24 in the window, each changing one line.",
+      "evidence": "https://github.com/mirza1272/Repo-Guardian/commits/main?author=mirza1272&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
       "repo": "mmilyas245-dot/artificial_intelligence_coarse26",
       "reason": "28 commits on 27 days, all made in the web editor, each changing one line of a notebook, such as adding and removing the same numpy import on alternate days or changing Banana to Bananana in a print example.",
       "evidence": "https://github.com/mmilyas245-dot/artificial_intelligence_coarse26/commits/main?author=mmilyas245-dot&since=2026-10-08&until=2026-11-07",
@@ -584,10 +638,22 @@
       "added": "2026-11-07"
     },
     {
+      "repo": "OnlyRaahim/Data-Structure-And-Algorithm",
+      "reason": "24 commits titled \"commit\", nearly all adding one line to a file and the next day removing it again, mostly in LABS/LAB 6/Q5.cpp.",
+      "evidence": "https://github.com/OnlyRaahim/Data-Structure-And-Algorithm/commits/main?author=OnlyRaahim&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
       "repo": "openedx/wg-maintenance",
       "reason": "22 repository health data updates committed by Repo Health Bot in the developer's name, one a day, each merged about two hours later.",
       "evidence": "https://github.com/openedx/wg-maintenance/commits/main?author=UsamaSadiq&since=2026-09-16&until=2026-10-16",
       "added": "2026-10-16"
+    },
+    {
+      "repo": "pikacoder44/Study-Planner",
+      "reason": "A scheduled workflow, daily-maintenance.yml, makes one commit a day titled \"chore, record daily maintenance\", 31 in the window, each adding one line to a log file.",
+      "evidence": "https://github.com/pikacoder44/Study-Planner/commits/main?author=pikacoder44&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
     },
     {
       "repo": "rehan-devs/apex-ridge-roofing",
@@ -686,6 +752,12 @@
       "added": "2026-10-16"
     },
     {
+      "repo": "saad299/100-Days-of-Code",
+      "reason": "An existing project is being committed a few files a day under the same title, \"DevBoard, changed the name and fixed some issues in it\", 28 commits on 25 days. The files include a database migration generated in April and Django's own vendored admin scripts.",
+      "evidence": "https://github.com/saad299/100-Days-of-Code/commits/main?author=saad299&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
+    },
+    {
       "repo": "sabihkahn/testrepo",
       "reason": "Exactly 144 commits on every day of the window, one every ten minutes, 4,320 in all, each titled \"chore, automated update [skip ci]\" and changing one line of README.md.",
       "evidence": "https://github.com/sabihkahn/testrepo/commits/main?author=sabihkahn&since=2026-10-08&until=2026-11-07",
@@ -774,6 +846,12 @@
       "reason": "580 commits on 30 days, 10 to 20 a day in bursts seconds apart, each titled \"Auto-update\" with a token file name and the time, and each rewriting that one file.",
       "evidence": "https://github.com/TSun-FreeFire/TSun-FreeFire-Storage/commits/main?author=SaeedX302&since=2026-10-08&until=2026-11-07",
       "added": "2026-11-07"
+    },
+    {
+      "repo": "umer987/php",
+      "reason": "323 commits on 17 days, most titled \"removing error\" or \"rebase\", each adding or removing a single character on the same line of one file, seconds apart.",
+      "evidence": "https://github.com/umer987/php/commits/main?author=umer987&since=2026-10-27&until=2026-11-26",
+      "added": "2026-11-26"
     },
     {
       "repo": "wakasabbasid/forex-signal-app",
