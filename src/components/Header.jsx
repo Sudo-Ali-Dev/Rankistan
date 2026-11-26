@@ -80,6 +80,13 @@ export default function Header({ activeTab, onChangeTab, searchTerm, onSearchCha
           >
             Evolution
           </button>
+          <button 
+            type="button"
+            onClick={() => changeTab('requests')}
+            className={`${activeTab === 'requests' ? 'text-[#a2c9ff] border-b-2 border-[#a2c9ff] pb-1' : 'text-[#8b919d] hover:text-[#a2c9ff]'} transition-colors duration-50`}
+          >
+            Requests
+          </button>
         </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:gap-4">

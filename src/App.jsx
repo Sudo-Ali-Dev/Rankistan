@@ -10,6 +10,7 @@ import BadgeGenerator from './pages/BadgeGenerator';
 import Register from './pages/Register';
 import Digest from './pages/Digest';
 import Developer from './pages/Developer';
+import FeatureRequests from './pages/FeatureRequests';
 import { loginFromHash, pathForTab, tabFromPath } from './utils/route';
 
 // The tab comes from the URL path (src/utils/route.js). Anything else - `/`, a campaign landing -
@@ -39,6 +40,7 @@ function App() {
       about: 'Rankistan | About',
       evolution: 'Rankistan | Evolution',
       badge: 'Rankistan | Badge Generator',
+      requests: 'Rankistan | Request a Feature',
     };
     document.title =
       activeTab === 'leaderboard' && developer
@@ -98,13 +100,14 @@ function App() {
         {activeTab === 'map' && <DevMap />}
         {activeTab === 'about' && <About onChangeTab={handleChangeTab} />}
         {activeTab === 'evolution' && <Evolution />}
+        {activeTab === 'requests' && <FeatureRequests />}
         {activeTab === 'badge' && (
           <BadgeGenerator
             initialUsername={badgePrefillUsername}
             onInitialUsernameConsumed={handleBadgePrefillConsumed}
           />
         )}
-        <Footer />
+        <Footer onChangeTab={handleChangeTab} />
       </div>
       <MobileTabBar activeTab={activeTab} onChangeTab={handleChangeTab} />
     </>

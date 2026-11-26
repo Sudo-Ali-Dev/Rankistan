@@ -14,7 +14,8 @@ export const TAB_PATHS = Object.freeze({
   register: '/register',
   digest: '/digest',
   about: '/about',
-  evolution: '/evolution'
+  evolution: '/evolution',
+  requests: '/requests'
 });
 
 export const TABS = Object.freeze(Object.keys(TAB_PATHS));

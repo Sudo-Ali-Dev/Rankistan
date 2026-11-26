@@ -8,6 +8,7 @@ const TABS = [
   { id: 'badge', label: 'Badge', icon: 'badge' },
   { id: 'about', label: 'About', icon: 'info' },
   { id: 'evolution', label: 'Evol', icon: 'history' },
+  { id: 'requests', label: 'Ideas', icon: 'lightbulb' },
 ];
 
 export default function MobileTabBar({ activeTab, onChangeTab }) {

@@ -42,7 +42,7 @@ for (const ref of refs) {
 note(`checked ${refs.length} local asset references`);
 
 // 1b. Every tab path has its own page (scripts/build-routes.js), identical to index.html.
-for (const name of ['map.html', 'badge.html', 'register.html', 'digest.html', 'about.html', 'evolution.html', '404.html']) {
+for (const name of ['map.html', 'badge.html', 'register.html', 'digest.html', 'about.html', 'evolution.html', 'requests.html', '404.html']) {
   const file = path.join(DIST, name);
   if (!fs.existsSync(file)) fail(`dist/${name} missing - did build-routes run?`);
   else if (fs.readFileSync(file, 'utf8') !== html) fail(`dist/${name} differs from dist/index.html`);
